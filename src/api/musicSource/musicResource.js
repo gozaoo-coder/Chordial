@@ -44,18 +44,39 @@ export async function getAlbumArt(albumId, size = 'medium') {
  * @returns {Promise<ArrayBuffer>} 音乐文件二进制数据
  */
 export async function getMusicFile(trackId) {
-  const result = await invoke('get_music_file', { track_id: trackId });
-  // 处理 Tauri Response 返回的数据
-  if (result && result.data) {
-    if (result.data instanceof ArrayBuffer) {
-      return result.data;
+  try {
+    console.log('获取音乐文件:', trackId);
+    const result = await invoke('get_music_file', { track_id: trackId });
+    console.log('音乐文件响应类型:', typeof result, '长度:', result?.data?.byteLength || result?.byteLength || 0);
+    
+    // 处理 Tauri Response 返回的数据
+    if (result && result.data) {
+      // 如果返回的是 ArrayBuffer
+      if (result.data instanceof ArrayBuffer) {
+        return result.data;
+      }
+      // 如果返回的是 Uint8Array
+      if (result.data instanceof Uint8Array) {
+        return result.data.buffer;
+      }
     }
-    if (result.data instanceof Uint8Array) {
-      return result.data.buffer;
+    
+    // 兼容旧版本返回格式
+    if (result instanceof ArrayBuffer) {
+      return result;
     }
-    return new TextEncoder().encode(JSON.stringify(result.data)).buffer;
+    if (result instanceof Uint8Array) {
+      return result.buffer;
+    }
+    if (Array.isArray(result)) {
+      return new Uint8Array(result).buffer;
+    }
+    
+    throw new Error('无效的响应格式: ' + typeof result);
+  } catch (error) {
+    console.error('获取音乐文件失败:', error);
+    throw error;
   }
-  throw new Error('无效的响应格式');
 }
 
 /**

@@ -276,7 +276,7 @@ fn get_album_art(
     return Ok(Response::new(default_art));
 }
 
-/// 获取音乐文件（使用 Response 传递二进制数据）
+/// 获取音乐文件（使用二进制响应）
 #[tauri::command(rename_all = "snake_case")]
 fn get_music_file(
     state: State<AppState>,
@@ -291,9 +291,16 @@ fn get_music_file(
             if track.path.exists() {
                 let data = std::fs::read(&track.path)
                     .map_err(|e| e.to_string())?;
+                println!("成功读取音乐文件: {} ({} bytes)", track_id, data.len());
                 return Ok(Response::new(data));
+            } else {
+                println!("音乐文件不存在: {:?}", track.path);
             }
+        } else {
+            println!("未找到曲目: {}", track_id);
         }
+    } else {
+        println!("无法加载音乐库缓存");
     }
     
     Err("音乐文件不存在".to_string())
