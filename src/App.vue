@@ -12,31 +12,44 @@ async function greet() {
 </script>
 
 <template>
-  <main class="container">
-    <h1>Welcome to Tauri + Vue</h1>
-
-    <div class="row">
-      <a href="https://vite.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-      </a>
-      <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-      </a>
-    </div>
-    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
-
-    <form class="row" @submit.prevent="greet">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
-      <button type="submit">Greet</button>
-    </form>
-    <p>{{ greetMsg }}</p>
-  </main>
+  <div class="app">
+    <nav class="navigation">
+      <router-link to="/" class="nav-link">首页</router-link>
+      <router-link to="/music-sources" class="nav-link">音乐源管理</router-link>
+      <router-link to="/test" class="nav-link">测试页面</router-link>
+      <router-link to="/about" class="nav-link">关于</router-link>
+    </nav>
+    
+    <router-view />
+    
+  </div>
 </template>
 
 <style scoped>
+.navigation {
+  padding: 1rem;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #ddd;
+}
+
+.nav-link {
+  margin-right: 1rem;
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+  color: #333;
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+.nav-link:hover {
+  background-color: #e0e0e0;
+}
+
+.nav-link.router-link-active {
+  background-color: #007bff;
+  color: white;
+}
+
 .logo.vite:hover {
   filter: drop-shadow(0 0 2em #747bff);
 }
