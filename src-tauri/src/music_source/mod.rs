@@ -4,6 +4,10 @@
 
 pub mod source;
 pub mod source_manager;
+pub mod artist;
+pub mod album;
 
 pub use source::{MusicSource, SourceConfig, SourceType, WebDiskAuth};
 pub use source_manager::{SourceManager, MusicLibrary, TrackMetadata};
+pub use artist::{Artist, ArtistSummary, ArtistParser};
+pub use album::{Album, AlbumSummary, AlbumIdGenerator};

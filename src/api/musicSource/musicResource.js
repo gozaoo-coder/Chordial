@@ -1,17 +1,21 @@
 /**
  * 音乐资源获取 API
  * 使用 Tauri IPC Response 传递二进制大文件
+ * 
+ * 所有返回的数据都会被包装成对应的类实例
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { Track } from '@/class';
 
 /**
  * 获取音乐完整信息
  * @param {string} trackId - 曲目 ID
- * @returns {Promise<Object>} 音乐的完整信息
+ * @returns {Promise<Track>} 音乐的完整信息（Track 实例）
  */
 export async function getTrackInfo(trackId) {
-  return invoke('get_track_info', { track_id: trackId });
+  const data = await invoke('get_track_info', { track_id: trackId });
+  return new Track(data);
 }
 
 /**

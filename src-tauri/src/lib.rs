@@ -34,6 +34,12 @@ pub use music_source::{
     MusicSource,
     MusicLibrary,
     TrackMetadata,
+    Artist,
+    ArtistSummary,
+    Album,
+    AlbumSummary,
+    ArtistParser,
+    AlbumIdGenerator,
 };
 
 pub use cache::{
@@ -129,32 +135,76 @@ fn scan_all_sources(
     let mut source_manager = state.source_manager.lock().map_err(|e| e.to_string())?;
     let mut cache_manager = state.cache_manager.lock().map_err(|e| e.to_string())?;
     let scanner = state.scanner.lock().map_err(|e| e.to_string())?;
-    
+
     let sources = source_manager.get_all_sources().to_vec();
     let options = ScanOptions {
         force_rescan: true,
         parallel_tasks: 4,
         progress_callback: None,
     };
-    
+
     let results = scanner.scan_sources(&sources, &options);
-    
-    let mut library = MusicLibrary {
-        sources: source_manager.get_all_sources().to_vec(),
-        tracks: Vec::new(),
-    };
-    
+
+    let mut library = MusicLibrary::new();
+    library.sources = source_manager.get_all_sources().to_vec();
+
+    // 用于合并 Artist 和 Album 数据
+    let mut artists_map: std::collections::HashMap<String, Artist> = std::collections::HashMap::new();
+    let mut albums_map: std::collections::HashMap<String, Album> = std::collections::HashMap::new();
+
     for result in results {
+        // 合并曲目
         library.tracks.extend(result.tracks);
-        
+
+        // 合并歌手数据
+        for artist in result.artists {
+            artists_map.entry(artist.id.clone())
+                .and_modify(|existing| {
+                    // 合并专辑和歌曲列表
+                    for album_id in &artist.album_ids {
+                        existing.add_album(album_id.clone());
+                    }
+                    for track_id in &artist.track_ids {
+                        existing.add_track(track_id.clone());
+                    }
+                    // 更新封面（如果之前没有）
+                    if existing.cover_data.is_none() && artist.cover_data.is_some() {
+                        existing.cover_data = artist.cover_data.clone();
+                    }
+                })
+                .or_insert(artist);
+        }
+
+        // 合并专辑数据
+        for album in result.albums {
+            albums_map.entry(album.id.clone())
+                .and_modify(|existing| {
+                    // 合并歌曲列表
+                    for track_id in &album.track_ids {
+                        existing.add_track(track_id.clone());
+                    }
+                    // 更新总时长
+                    existing.total_duration += album.total_duration;
+                    // 更新封面（如果之前没有）
+                    if existing.cover_data.is_none() && album.cover_data.is_some() {
+                        existing.cover_data = album.cover_data.clone();
+                    }
+                })
+                .or_insert(album);
+        }
+
         if let Some(source) = source_manager.get_source_mut(&result.source.id) {
             source.set_last_scanned_at(chrono::Utc::now());
         }
     }
-    
+
+    // 将 HashMap 转换为 Vec
+    library.artists = artists_map.into_values().collect();
+    library.albums = albums_map.into_values().collect();
+
     let _ = cache_manager.save_sources(&source_manager);
     let _ = cache_manager.save_library(&library);
-    
+
     Ok(library)
 }
 
@@ -312,18 +362,179 @@ fn get_artist_image(
     state: State<AppState>,
     artist_id: String,
 ) -> Result<Response, String> {
-    let file_path = PathBuf::from("./artist_images").join(format!("{}.jpg", artist_id));
+    let cache_manager = state.cache_manager.lock().map_err(|e| e.to_string())?;
     
-    if !file_path.exists() {
-        // 返回默认图片
-        let default_image = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-        return Ok(Response::new(default_image));
+    // 首先从音乐库中查找歌手封面
+    if let Some(library) = cache_manager.load_library().ok() {
+        if let Some(artist) = library.artists.iter().find(|a| a.id == artist_id) {
+            if let Some(cover_data) = &artist.cover_data {
+                // 解析 Data URL
+                if cover_data.starts_with("data:image/") {
+                    let parts: Vec<&str> = cover_data.splitn(2, ",").collect();
+                    if parts.len() == 2 {
+                        let data = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, parts[1])
+                            .map_err(|e| e.to_string())?;
+                        return Ok(Response::new(data));
+                    }
+                }
+            }
+        }
     }
     
-    let data = std::fs::read(&file_path)
-        .map_err(|e| e.to_string())?;
+    // 尝试从本地文件加载
+    let file_path = PathBuf::from("./artist_images").join(format!("{}.jpg", artist_id));
     
-    Ok(Response::new(data))
+    if file_path.exists() {
+        let data = std::fs::read(&file_path)
+            .map_err(|e| e.to_string())?;
+        return Ok(Response::new(data));
+    }
+    
+    // 返回默认图片
+    let default_image = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    Ok(Response::new(default_image))
+}
+
+/// 获取歌手完整信息
+#[tauri::command(rename_all = "snake_case")]
+fn get_artist_info(
+    state: State<AppState>,
+    artist_id: String,
+) -> Result<Artist, String> {
+    let cache_manager = state.cache_manager.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(library) = cache_manager.load_library().ok() {
+        if let Some(artist) = library.artists.iter().find(|a| a.id == artist_id) {
+            return Ok(artist.clone());
+        }
+    }
+    
+    Err("歌手不存在".to_string())
+}
+
+/// 获取歌手摘要信息
+#[tauri::command(rename_all = "snake_case")]
+fn get_artist_summary(
+    state: State<AppState>,
+    artist_id: String,
+) -> Result<ArtistSummary, String> {
+    let cache_manager = state.cache_manager.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(library) = cache_manager.load_library().ok() {
+        if let Some(artist) = library.artists.iter().find(|a| a.id == artist_id) {
+            return Ok(artist.to_summary());
+        }
+    }
+    
+    Err("歌手不存在".to_string())
+}
+
+/// 获取专辑完整信息
+#[tauri::command(rename_all = "snake_case")]
+fn get_album_info(
+    state: State<AppState>,
+    album_id: String,
+) -> Result<Album, String> {
+    let cache_manager = state.cache_manager.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(library) = cache_manager.load_library().ok() {
+        if let Some(album) = library.albums.iter().find(|a| a.id == album_id) {
+            return Ok(album.clone());
+        }
+    }
+    
+    Err("专辑不存在".to_string())
+}
+
+/// 获取专辑摘要信息
+#[tauri::command(rename_all = "snake_case")]
+fn get_album_summary(
+    state: State<AppState>,
+    album_id: String,
+) -> Result<AlbumSummary, String> {
+    let cache_manager = state.cache_manager.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(library) = cache_manager.load_library().ok() {
+        if let Some(album) = library.albums.iter().find(|a| a.id == album_id) {
+            return Ok(album.to_summary());
+        }
+    }
+    
+    Err("专辑不存在".to_string())
+}
+
+/// 批量获取歌手信息
+#[tauri::command(rename_all = "snake_case")]
+fn get_artists_by_ids(
+    state: State<AppState>,
+    artist_ids: Vec<String>,
+) -> Result<Vec<Artist>, String> {
+    let cache_manager = state.cache_manager.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(library) = cache_manager.load_library().ok() {
+        let artists: Vec<Artist> = library.artists
+            .into_iter()
+            .filter(|a| artist_ids.contains(&a.id))
+            .collect();
+        return Ok(artists);
+    }
+    
+    Ok(Vec::new())
+}
+
+/// 批量获取专辑信息
+#[tauri::command(rename_all = "snake_case")]
+fn get_albums_by_ids(
+    state: State<AppState>,
+    album_ids: Vec<String>,
+) -> Result<Vec<Album>, String> {
+    let cache_manager = state.cache_manager.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(library) = cache_manager.load_library().ok() {
+        let albums: Vec<Album> = library.albums
+            .into_iter()
+            .filter(|a| album_ids.contains(&a.id))
+            .collect();
+        return Ok(albums);
+    }
+    
+    Ok(Vec::new())
+}
+
+/// 获取所有歌手列表
+#[tauri::command(rename_all = "snake_case")]
+fn get_all_artists(
+    state: State<AppState>,
+) -> Result<Vec<ArtistSummary>, String> {
+    let cache_manager = state.cache_manager.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(library) = cache_manager.load_library().ok() {
+        let summaries: Vec<ArtistSummary> = library.artists
+            .iter()
+            .map(|a| a.to_summary())
+            .collect();
+        return Ok(summaries);
+    }
+    
+    Ok(Vec::new())
+}
+
+/// 获取所有专辑列表
+#[tauri::command(rename_all = "snake_case")]
+fn get_all_albums(
+    state: State<AppState>,
+) -> Result<Vec<AlbumSummary>, String> {
+    let cache_manager = state.cache_manager.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(library) = cache_manager.load_library().ok() {
+        let summaries: Vec<AlbumSummary> = library.albums
+            .iter()
+            .map(|a| a.to_summary())
+            .collect();
+        return Ok(summaries);
+    }
+    
+    Ok(Vec::new())
 }
 
 /// 获取歌词
@@ -444,6 +655,14 @@ pub fn run() {
             get_lyrics,
             parse_lyric_content,
             detect_lyric_format,
+            get_artist_info,
+            get_artist_summary,
+            get_album_info,
+            get_album_summary,
+            get_artists_by_ids,
+            get_albums_by_ids,
+            get_all_artists,
+            get_all_albums,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

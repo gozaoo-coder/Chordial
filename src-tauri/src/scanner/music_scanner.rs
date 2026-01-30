@@ -3,13 +3,15 @@
 //! 使用多線程並行掃描音樂文件，支持進度回調和取消操作
 
 use super::super::music_source::{SourceConfig, SourceType, TrackMetadata, MusicSource};
-use super::super::audio_metadata::{read_metadata, AudioFormat};
+use super::super::music_source::{Artist, Album, ArtistParser, AlbumIdGenerator};
+use super::super::audio_metadata::read_metadata;
 use super::super::lyric_enhancer::{find_lyric_file, enhance_metadata_with_lyrics};
 use super::super::cache::CacheManager;
 use rayon::prelude::*;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::collections::HashMap;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -67,6 +69,10 @@ pub struct ScanResult {
     pub source: SourceConfig,
     /// 掃描到的歌曲列表
     pub tracks: Vec<TrackMetadata>,
+    /// 掃描到的歌手列表
+    pub artists: Vec<Artist>,
+    /// 掃描到的专辑列表
+    pub albums: Vec<Album>,
     /// 掃描耗時
     pub duration: Duration,
     /// 錯誤消息
@@ -78,6 +84,8 @@ impl Default for ScanResult {
         Self {
             source: SourceConfig::new_local_folder(PathBuf::new(), None, true),
             tracks: Vec::new(),
+            artists: Vec::new(),
+            albums: Vec::new(),
             duration: Duration::ZERO,
             error: None,
         }
@@ -113,17 +121,119 @@ impl MusicScanner {
             ..Default::default()
         };
 
-        match source.source_type() {
+        // 先扫描获取所有曲目
+        let tracks = match source.source_type() {
             SourceType::LocalFolder => {
-                result.tracks = self.scan_local_folder(source, options);
+                self.scan_local_folder(source, options)
             }
             SourceType::WebDisk => {
-                result.tracks = self.scan_web_disk(source, options);
+                self.scan_web_disk(source, options)
             }
-        }
+        };
 
+        // 构建 Artist 和 Album 数据
+        let (artists, albums, enriched_tracks) = self.build_artist_album_data(tracks);
+
+        result.tracks = enriched_tracks;
+        result.artists = artists;
+        result.albums = albums;
         result.duration = start_time.elapsed();
         result
+    }
+
+    /// 构建歌手和专辑数据
+    /// 从曲目列表中提取并构建 Artist 和 Album 信息
+    fn build_artist_album_data(&self, tracks: Vec<TrackMetadata>) -> (Vec<Artist>, Vec<Album>, Vec<TrackMetadata>) {
+        let mut artists_map: HashMap<String, Artist> = HashMap::new();
+        let mut albums_map: HashMap<String, Album> = HashMap::new();
+        let mut enriched_tracks = Vec::new();
+
+        for mut track in tracks {
+            // 解析歌手信息
+            let artist_names = track.parsed_artists();
+            let primary_artist_name = artist_names.first().cloned().unwrap_or_else(|| "未知歌手".to_string());
+
+            // 生成或获取歌手ID
+            let artist_id = if artist_names.len() == 1 {
+                ArtistParser::generate_id(&primary_artist_name)
+            } else {
+                ArtistParser::generate_combined_id(&artist_names)
+            };
+
+            // 创建或更新歌手信息
+            let artist = artists_map.entry(artist_id.clone()).or_insert_with(|| {
+                Artist::new(
+                    artist_id.clone(),
+                    if artist_names.len() == 1 {
+                        primary_artist_name.clone()
+                    } else {
+                        artist_names.join(" / ")
+                    },
+                )
+            });
+
+            // 添加歌曲到歌手
+            artist.add_track(track.id.clone());
+
+            // 处理专辑信息
+            if let Some(album_title) = &track.album {
+                let album_id = AlbumIdGenerator::generate_id(album_title, &primary_artist_name);
+
+                // 创建或更新专辑信息
+                let album = albums_map.entry(album_id.clone()).or_insert_with(|| {
+                    Album::new(
+                        album_id.clone(),
+                        album_title.clone(),
+                        artist_id.clone(),
+                        primary_artist_name.clone(),
+                    )
+                });
+
+                // 添加歌曲到专辑
+                album.add_track(track.id.clone());
+
+                // 更新专辑年份（使用歌曲年份）
+                if let Some(year) = track.year {
+                    if album.year.is_none() {
+                        album.year = Some(year);
+                    }
+                }
+
+                // 更新专辑封面（使用第一首有封面的歌曲）
+                if album.cover_data.is_none() && track.album_cover_data.is_some() {
+                    album.cover_data = track.album_cover_data.clone();
+                }
+
+                // 更新专辑总时长
+                if let Some(duration) = track.duration {
+                    album.total_duration += duration;
+                }
+
+                // 添加专辑到歌手
+                artist.add_album(album_id.clone());
+
+                // 创建专辑摘要
+                let album_summary = album.to_summary();
+                track.set_album_summary(album_summary);
+
+                // 更新 track 的 album_id
+                track.album_id = Some(album_id);
+            }
+
+            // 创建歌手摘要
+            let artist_summary = artist.to_summary();
+            track.set_artist_summary(artist_summary);
+
+            // 更新 track 的 artist_id
+            track.artist_id = Some(artist_id);
+
+            enriched_tracks.push(track);
+        }
+
+        let artists: Vec<Artist> = artists_map.into_values().collect();
+        let albums: Vec<Album> = albums_map.into_values().collect();
+
+        (artists, albums, enriched_tracks)
     }
 
     /// 批量掃描多個源（並行）
@@ -312,8 +422,10 @@ impl MusicScanner {
                 .unwrap_or_else(|| "未知標題".to_string()))),
             artist: audio_metadata.artist,
             artist_id: None,
+            artist_summary: None, // 将在 build_artist_album_data 中填充
             album: audio_metadata.album,
             album_id: None,
+            album_summary: None, // 将在 build_artist_album_data 中填充
             // 提取专辑封面（第一张封面图片）
             album_cover_data: audio_metadata.pictures.iter()
                 .find(|p| p.is_cover())

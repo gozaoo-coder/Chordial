@@ -3,6 +3,7 @@
 //! 管理所有音樂源的列表，提供添加、刪除、查詢等功能
 
 use super::{MusicSource, SourceConfig, SourceType};
+use super::{Artist, Album, ArtistSummary, AlbumSummary};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -13,6 +14,60 @@ pub struct MusicLibrary {
     pub sources: Vec<SourceConfig>,
     /// 所有歌曲的元數據
     pub tracks: Vec<TrackMetadata>,
+    /// 所有歌手信息
+    pub artists: Vec<Artist>,
+    /// 所有专辑信息
+    pub albums: Vec<Album>,
+}
+
+impl MusicLibrary {
+    /// 创建新的音乐库
+    pub fn new() -> Self {
+        Self {
+            sources: Vec::new(),
+            tracks: Vec::new(),
+            artists: Vec::new(),
+            albums: Vec::new(),
+        }
+    }
+
+    /// 添加或更新歌手
+    pub fn upsert_artist(&mut self, artist: Artist) {
+        if let Some(existing) = self.artists.iter_mut().find(|a| a.id == artist.id) {
+            *existing = artist;
+        } else {
+            self.artists.push(artist);
+        }
+    }
+
+    /// 添加或更新专辑
+    pub fn upsert_album(&mut self, album: Album) {
+        if let Some(existing) = self.albums.iter_mut().find(|a| a.id == album.id) {
+            *existing = album;
+        } else {
+            self.albums.push(album);
+        }
+    }
+
+    /// 根据ID获取歌手
+    pub fn get_artist(&self, id: &str) -> Option<&Artist> {
+        self.artists.iter().find(|a| a.id == id)
+    }
+
+    /// 根据ID获取专辑
+    pub fn get_album(&self, id: &str) -> Option<&Album> {
+        self.albums.iter().find(|a| a.id == id)
+    }
+
+    /// 根据名称获取歌手（模糊匹配）
+    pub fn find_artist_by_name(&self, name: &str) -> Option<&Artist> {
+        self.artists.iter().find(|a| a.name == name)
+    }
+
+    /// 根据名称获取专辑（模糊匹配）
+    pub fn find_album_by_title(&self, title: &str, artist_name: &str) -> Option<&Album> {
+        self.albums.iter().find(|a| a.title == title && a.artist_name == artist_name)
+    }
 }
 
 /// 單個歌曲的元數據
@@ -28,14 +83,18 @@ pub struct TrackMetadata {
     pub file_name: String,
     /// 標題
     pub title: Option<String>,
-    /// 藝術家
+    /// 藝術家（原始字符串，可能包含多個歌手）
     pub artist: Option<String>,
     /// 藝術家ID
     pub artist_id: Option<String>,
+    /// 歌手摘要信息（用於快速展示）
+    pub artist_summary: Option<ArtistSummary>,
     /// 專輯
     pub album: Option<String>,
     /// 專輯ID
     pub album_id: Option<String>,
+    /// 专辑摘要信息（用於快速展示）
+    pub album_summary: Option<AlbumSummary>,
     /// 專輯封面數據 (Base64 編碼)
     pub album_cover_data: Option<String>,
     /// 時長（秒）
@@ -64,6 +123,32 @@ pub struct TrackMetadata {
     pub synced_lyrics: Option<String>,
     /// 添加時間
     pub added_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl TrackMetadata {
+    /// 获取解析后的歌手列表
+    /// 支持 "/" 和 "&" 分隔符
+    pub fn parsed_artists(&self) -> Vec<String> {
+        match &self.artist {
+            Some(artist_str) => super::ArtistParser::parse(artist_str),
+            None => Vec::new(),
+        }
+    }
+
+    /// 获取主歌手名稱（第一个歌手）
+    pub fn primary_artist(&self) -> Option<String> {
+        self.parsed_artists().into_iter().next()
+    }
+
+    /// 更新歌手摘要
+    pub fn set_artist_summary(&mut self, summary: ArtistSummary) {
+        self.artist_summary = Some(summary);
+    }
+
+    /// 更新专辑摘要
+    pub fn set_album_summary(&mut self, summary: AlbumSummary) {
+        self.album_summary = Some(summary);
+    }
 }
 
 /// 音樂源管理器
