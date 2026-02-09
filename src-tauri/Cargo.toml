@@ -47,7 +47,7 @@ base64 = "0.22"
 regex = "1"
 
 # WebDAV 和 HTTP 请求
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
 tempfile = "3"
 quick-xml = { version = "0.36", features = ["serialize"] }
 url = "2"

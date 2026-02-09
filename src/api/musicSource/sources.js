@@ -26,6 +26,23 @@ export async function addWebDisk(url, username = null, password = null) {
 }
 
 /**
+ * 添加 WebDev 音乐源
+ * @param {string} apiBaseUrl - API 基础 URL
+ * @param {string} [name] - 源名称（可选）
+ * @param {string} [apiKey] - API 密钥（可选）
+ * @param {string} [authToken] - 认证令牌（可选）
+ * @returns {Promise<Object>} 创建的源配置
+ */
+export async function addWebDev(apiBaseUrl, name = null, apiKey = null, authToken = null) {
+  return invoke('add_webdev_source', { 
+    api_base_url: apiBaseUrl, 
+    name, 
+    api_key: apiKey, 
+    auth_token: authToken 
+  });
+}
+
+/**
  * 移除音乐源
  * @param {string} id - 源 ID
  * @returns {Promise<boolean>} 是否成功

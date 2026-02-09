@@ -2,7 +2,7 @@
 //!
 //! 管理所有音樂源的列表，提供添加、刪除、查詢等功能
 
-use super::{MusicSource, SourceConfig, SourceType};
+use super::{MusicSource, SourceConfig, SourceType, WebDevAuth};
 use super::{Artist, Album, ArtistSummary, AlbumSummary};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -208,6 +208,30 @@ impl SourceManager {
         Ok(source)
     }
 
+    /// 添加 WebDev 源
+    pub fn add_web_dev(
+        &mut self,
+        api_base_url: String,
+        name: Option<String>,
+        api_key: Option<String>,
+        auth_token: Option<String>,
+    ) -> Result<SourceConfig, String> {
+        // 驗證 URL 格式
+        if !api_base_url.starts_with("http://") && !api_base_url.starts_with("https://") {
+            return Err("API URL 必須以 http:// 或 https:// 開頭".to_string());
+        }
+
+        let auth = Some(WebDevAuth {
+            api_base_url: api_base_url.clone(),
+            api_key,
+            auth_token,
+        });
+
+        let source = SourceConfig::new_web_dev(api_base_url, name, auth);
+        self.sources.push(source.clone());
+        Ok(source)
+    }
+
     /// 移除音樂源
     pub fn remove_source(&mut self, id: &str) -> Option<SourceConfig> {
         self.sources.iter().position(|s| s.id() == id)
@@ -257,6 +281,11 @@ impl SourceManager {
     /// 獲取網盤源數量
     pub fn web_disk_count(&self) -> usize {
         self.sources.iter().filter(|s| s.source_type == SourceType::WebDisk).count()
+    }
+
+    /// 獲取 WebDev 源數量
+    pub fn web_dev_count(&self) -> usize {
+        self.sources.iter().filter(|s| s.source_type == SourceType::WebDev).count()
     }
 
     /// 獲取所有源的數量

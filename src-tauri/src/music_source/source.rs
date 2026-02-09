@@ -13,6 +13,8 @@ pub enum SourceType {
     LocalFolder,
     /// 網盤源 (webdev 協議)
     WebDisk,
+    /// WebDev 開發者音樂源
+    WebDev,
 }
 
 /// 音樂源配置
@@ -43,6 +45,8 @@ pub struct SourceOptions {
     pub recursive: bool,
     /// 網盤認證信息 (網盤源)
     pub auth: Option<WebDiskAuth>,
+    /// WebDev 認證信息 (WebDev 源)
+    pub webdev_auth: Option<WebDevAuth>,
     /// 文件擴展名過濾
     pub extensions: Vec<String>,
     /// 排除的路徑模式
@@ -56,6 +60,17 @@ pub struct WebDiskAuth {
     pub username: String,
     /// 密碼或令牌
     pub password: String,
+}
+
+/// WebDev 認證信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebDevAuth {
+    /// API 基礎 URL
+    pub api_base_url: String,
+    /// API 密鑰 (可選)
+    pub api_key: Option<String>,
+    /// 用戶認證令牌 (可選)
+    pub auth_token: Option<String>,
 }
 
 /// 音樂源trait
@@ -88,6 +103,7 @@ impl SourceConfig {
             options: SourceOptions {
                 recursive,
                 auth: None,
+                webdev_auth: None,
                 extensions: vec!["mp3".to_string(), "flac".to_string(), "m4a".to_string(), "ogg".to_string(), "wav".to_string()],
                 exclude_patterns: vec![],
             },
@@ -107,6 +123,27 @@ impl SourceConfig {
             options: SourceOptions {
                 recursive: true,
                 auth,
+                webdev_auth: None,
+                extensions: vec!["mp3".to_string(), "flac".to_string(), "m4a".to_string(), "ogg".to_string(), "wav".to_string()],
+                exclude_patterns: vec![],
+            },
+            created_at: chrono::Utc::now(),
+            last_scanned_at: None,
+        }
+    }
+
+    /// 創建新的 WebDev 源
+    pub fn new_web_dev(api_base_url: String, name: Option<String>, auth: Option<WebDevAuth>) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            source_type: SourceType::WebDev,
+            path: PathBuf::from(&api_base_url),
+            name: name.unwrap_or_else(|| "WebDev 音樂源".to_string()),
+            enabled: true,
+            options: SourceOptions {
+                recursive: false,
+                auth: None,
+                webdev_auth: auth,
                 extensions: vec!["mp3".to_string(), "flac".to_string(), "m4a".to_string(), "ogg".to_string(), "wav".to_string()],
                 exclude_patterns: vec![],
             },

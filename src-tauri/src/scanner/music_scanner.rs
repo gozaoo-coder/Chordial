@@ -35,12 +35,39 @@ pub enum ScanError {
     /// WebDAV 錯誤
     #[error("WebDAV 錯誤: {0}")]
     WebDavError(String),
+    /// WebDev API 錯誤
+    #[error("WebDev API 錯誤: {0}")]
+    WebDevError(String),
     /// 不支持的文件格式
     #[error("不支持的文件格式: {0}")]
     UnsupportedFormat(String),
     /// 掃描被取消
     #[error("掃描被取消")]
     ScanCancelled,
+}
+
+/// WebDev API 曲目數據結構
+#[derive(Debug, serde::Deserialize)]
+struct WebDevTrack {
+    id: String,
+    title: String,
+    artist: Option<String>,
+    album: Option<String>,
+    duration: Option<u64>,
+    file_url: String,
+    file_size: Option<u64>,
+    bitrate: Option<u32>,
+    sample_rate: Option<u32>,
+    channels: Option<u16>,
+    year: Option<u32>,
+    genre: Option<String>,
+    cover_url: Option<String>,
+}
+
+/// WebDev API 響應數據結構
+#[derive(Debug, serde::Deserialize)]
+struct WebDevResponse {
+    tracks: Vec<WebDevTrack>,
 }
 
 impl From<MetadataError> for ScanError {
@@ -175,6 +202,9 @@ impl MusicScanner {
             }
             SourceType::WebDisk => {
                 self.scan_web_disk(source, options)
+            }
+            SourceType::WebDev => {
+                self.scan_web_dev(source, options)
             }
         };
 
@@ -587,6 +617,131 @@ impl MusicScanner {
         };
 
         Ok(Some(track))
+    }
+
+    /// 掃描 WebDev 源
+    fn scan_web_dev(&self, source: &SourceConfig, options: &ScanOptions) -> Result<Vec<TrackMetadata>, ScanError> {
+        let auth = source.options().webdev_auth.as_ref()
+            .ok_or_else(|| ScanError::WebDevError("WebDev 認證信息缺失".to_string()))?;
+
+        let api_base_url = &auth.api_base_url;
+
+        // 創建 HTTP 客戶端
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| ScanError::WebDevError(format!("創建 HTTP 客戶端失敗: {}", e)))?;
+
+        // 構建請求
+        let mut request = client.get(format!("{}/api/music/list", api_base_url));
+
+        // 添加認證頭
+        if let Some(api_key) = &auth.api_key {
+            request = request.header("X-API-Key", api_key);
+        }
+        if let Some(auth_token) = &auth.auth_token {
+            request = request.header("Authorization", format!("Bearer {}", auth_token));
+        }
+
+        // 發送請求
+        let response = request.send()
+            .map_err(|e| ScanError::WebDevError(format!("API 請求失敗: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(ScanError::WebDevError(
+                format!("API 返回錯誤狀態: {}", response.status())
+            ));
+        }
+
+        let api_response: WebDevResponse = response.json()
+            .map_err(|e| ScanError::WebDevError(format!("解析 API 響應失敗: {}", e)))?;
+
+        let total_count = api_response.tracks.len();
+        let progress = Arc::new(Mutex::new(ScanProgress {
+            source_id: source.id().to_string(),
+            source_name: source.name().to_string(),
+            total_count,
+            ..Default::default()
+        }));
+
+        let scanned_count = Arc::new(AtomicUsize::new(0));
+        let found_count = Arc::new(AtomicUsize::new(0));
+        let error_count = Arc::new(AtomicUsize::new(0));
+
+        // 處理每個曲目
+        let tracks: Vec<TrackMetadata> = api_response.tracks.into_iter()
+            .filter_map(|track| {
+                let scanned = scanned_count.fetch_add(1, Ordering::SeqCst);
+
+                if let Some(callback) = &options.progress_callback {
+                    let mut progress = progress.lock().unwrap();
+                    progress.scanned_count = scanned + 1;
+                    callback(progress.clone());
+                }
+
+                match self.create_track_from_webdev(&track, source) {
+                    Ok(track_metadata) => {
+                        found_count.fetch_add(1, Ordering::SeqCst);
+                        Some(track_metadata)
+                    }
+                    Err(e) => {
+                        error_count.fetch_add(1, Ordering::SeqCst);
+                        log::warn!("處理 WebDev 曲目失敗 {}: {}", track.id, e);
+                        None
+                    }
+                }
+            })
+            .collect();
+
+        {
+            let mut progress = progress.lock().unwrap();
+            progress.scanned_count = total_count;
+            progress.found_count = found_count.load(Ordering::SeqCst);
+            progress.error_count = error_count.load(Ordering::SeqCst);
+            progress.is_complete = true;
+            if let Some(callback) = &options.progress_callback {
+                callback(progress.clone());
+            }
+        }
+
+        Ok(tracks)
+    }
+
+    /// 從 WebDev API 數據創建 TrackMetadata
+    fn create_track_from_webdev(
+        &self,
+        track: &WebDevTrack,
+        source: &SourceConfig
+    ) -> Result<TrackMetadata, ScanError> {
+        let track_metadata = TrackMetadata {
+            id: track.id.clone(),
+            source_id: source.id().to_string(),
+            path: PathBuf::from(&track.file_url),
+            file_name: format!("{}.mp3", track.title),
+            title: Some(track.title.clone()),
+            artist: track.artist.clone(),
+            artist_id: None,
+            artist_summaries: Vec::new(),
+            album: track.album.clone(),
+            album_id: None,
+            album_summary: None,
+            album_cover_data: None,
+            duration: track.duration,
+            format: "MP3".to_string(),
+            file_size: track.file_size.unwrap_or(0),
+            bitrate: track.bitrate,
+            sample_rate: track.sample_rate,
+            channels: track.channels,
+            year: track.year,
+            genre: track.genre.clone(),
+            composer: None,
+            comment: None,
+            lyrics: None,
+            synced_lyrics: None,
+            added_at: chrono::Utc::now(),
+        };
+
+        Ok(track_metadata)
     }
 
     /// 遞歸收集文件

@@ -18,7 +18,7 @@
         </div>
       </div>
       <!-- 更多选项按钮 -->
-      <button class="more-btn" @click="onMore" v-if="showMore">
+      <button class="more-btn" @click="onMore" v-if="showMore" title="更多选项">
         <svg viewBox="0 0 24 24" fill="currentColor">
           <circle cx="12" cy="6" r="2"/>
           <circle cx="12" cy="12" r="2"/>

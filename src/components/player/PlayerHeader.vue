@@ -1,12 +1,12 @@
 <template>
   <div class="player-header">
-    <button class="back-btn" @click="onBack">
+    <button class="back-btn" @click="onBack" title="返回">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M19 12H5M12 19l-7-7 7-7"/>
       </svg>
     </button>
     <div class="header-title">{{ title }}</div>
-    <button class="settings-btn" @click="onSettings">
+    <button class="settings-btn" @click="onSettings" title="设置">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"/>
         <path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 6.34L2.1 2.1m17.8 17.8l-4.24-4.24M6.34 17.66l-4.24 4.24M23 12h-6m-6 0H1m20.24-4.24l-4.24 4.24M6.34 6.34l-4.24-4.24"/>

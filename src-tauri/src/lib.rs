@@ -116,6 +116,18 @@ fn add_web_disk_source(
 }
 
 #[tauri::command]
+fn add_webdev_source(
+    state: State<AppState>,
+    api_base_url: String,
+    name: Option<String>,
+    api_key: Option<String>,
+    auth_token: Option<String>,
+) -> Result<SourceConfig, String> {
+    let mut source_manager = state.source_manager.lock().map_err(|e| e.to_string())?;
+    source_manager.add_web_dev(api_base_url, name, api_key, auth_token)
+}
+
+#[tauri::command]
 fn remove_source(
     state: State<AppState>,
     id: String,
@@ -408,19 +420,32 @@ fn get_music_file(
     state: State<AppState>,
     track_id: String,
 ) -> Result<Response, String> {
-    let _source_manager = state.source_manager.lock().map_err(|e| e.to_string())?;
+    let source_manager = state.source_manager.lock().map_err(|e| e.to_string())?;
     let cache_manager = state.cache_manager.lock().map_err(|e| e.to_string())?;
-    
+
     // 尝试从缓存加载曲目信息
     if let Some(library) = cache_manager.load_library().ok() {
-        if let Some(track) = library.tracks.into_iter().find(|t| t.id == track_id) {
-            if track.path.exists() {
-                let data = std::fs::read(&track.path)
-                    .map_err(|e| e.to_string())?;
-                println!("成功读取音乐文件: {} ({} bytes)", track_id, data.len());
-                return Ok(Response::new(data));
-            } else {
-                println!("音乐文件不存在: {:?}", track.path);
+        if let Some(track) = library.tracks.iter().find(|t| t.id == track_id) {
+            // 获取源信息以确定源类型
+            if let Some(source) = source_manager.get_source(&track.source_id) {
+                match source.source_type {
+                    SourceType::LocalFolder | SourceType::WebDisk => {
+                        // 本地文件或网盘源，直接读取文件
+                        if track.path.exists() {
+                            let data = std::fs::read(&track.path)
+                                .map_err(|e| e.to_string())?;
+                            println!("成功读取音乐文件: {} ({} bytes)", track_id, data.len());
+                            return Ok(Response::new(data));
+                        } else {
+                            println!("音乐文件不存在: {:?}", track.path);
+                        }
+                    }
+                    SourceType::WebDev => {
+                        // WebDev 源，从 URL 下载文件
+                        let file_url = track.path.to_string_lossy().to_string();
+                        return download_webdev_file(&source, &file_url);
+                    }
+                }
             }
         } else {
             println!("未找到曲目: {}", track_id);
@@ -428,8 +453,46 @@ fn get_music_file(
     } else {
         println!("无法加载音乐库缓存");
     }
-    
+
     Err("音乐文件不存在".to_string())
+}
+
+/// 从 WebDev 源下载文件
+fn download_webdev_file(source: &SourceConfig, file_url: &str) -> Result<Response, String> {
+    let auth = source.options().webdev_auth.as_ref()
+        .ok_or("WebDev 认证信息缺失")?;
+
+    // 创建 HTTP 客户端
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    // 构建请求
+    let mut request = client.get(file_url);
+
+    // 添加认证头
+    if let Some(api_key) = &auth.api_key {
+        request = request.header("X-API-Key", api_key);
+    }
+    if let Some(auth_token) = &auth.auth_token {
+        request = request.header("Authorization", format!("Bearer {}", auth_token));
+    }
+
+    // 发送请求
+    let response = request.send()
+        .map_err(|e| format!("下载文件失败: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("下载文件失败，状态码: {}", response.status()));
+    }
+
+    // 读取响应体
+    let data = response.bytes()
+        .map_err(|e| format!("读取响应数据失败: {}", e))?;
+
+    println!("成功下载 WebDev 音乐文件: {} ({} bytes)", file_url, data.len());
+    Ok(Response::new(data.to_vec()))
 }
 
 /// 获取歌手图片（使用二进制响应）
@@ -782,6 +845,7 @@ pub fn run() {
             greet,
             add_local_source,
             add_web_disk_source,
+            add_webdev_source,
             remove_source,
             get_all_sources,
             set_source_enabled,
