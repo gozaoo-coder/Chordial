@@ -12,13 +12,45 @@
  * import { Artist, Album, Track } from '@/class';
  */
 
-// 音乐源相关 API
-export * from './musicSource/index.js';
+// 音乐源相关 API（排除与 artist.js/album.js 冲突的函数）
+export {
+  // sources.js
+  addLocalFolder,
+  addWebDisk,
+  remove,
+  getAll,
+  setEnabled,
+  // library.js
+  scanAll,
+  getCached,
+  refreshSource,
+  getSourceFromCache,
+  // cache.js
+  clearAll,
+  getSize,
+  // musicResource.js（排除 getAlbumArt 和 getArtistImage）
+  getTrackInfo,
+  getMusicFile,
+  getLyrics,
+  parseSyncedLyrics,
+  formatToLRC,
+  getPlaylistInfo,
+  // resourceLoader.js
+  getAlbumArtResource,
+  getMusicFileResource,
+  getArtistImageResource,
+  preloadAlbumArt,
+  preloadMusicFile,
+  releaseAlbumArt,
+  releaseMusicFile,
+  clearAllResources,
+  getResourceStats,
+} from './musicSource/index.js';
 
-// 歌手相关 API（返回类实例）
+// 歌手相关 API（返回类实例）- 包含 getArtistImage
 export * from './artist.js';
 
-// 专辑相关 API（返回类实例）
+// 专辑相关 API（返回类实例）- 包含 getAlbumArt
 export * from './album.js';
 
 // 类型类导出（方便直接使用）

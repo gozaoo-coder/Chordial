@@ -16,6 +16,8 @@ pub struct Artist {
     /// 流派列表
     pub genres: Vec<String>,
     /// 封面图片数据 (Base64 Data URL)
+    /// 不序列化到缓存，按需加载
+    #[serde(skip)]
     pub cover_data: Option<String>,
     /// 专辑ID列表
     pub album_ids: Vec<String>,
@@ -116,11 +118,12 @@ impl ArtistParser {
     ///
     /// # 示例
     /// ```
+    /// use chordial_lib::music_source::artist::ArtistParser;
     /// let artists = ArtistParser::parse("周杰伦/费玉清");
     /// assert_eq!(artists, vec!["周杰伦", "费玉清"]);
     ///
     /// let artists = ArtistParser::parse("Taylor Swift & Ed Sheeran");
-    /// assert_eq!(artists, vec!["Taylor Swift", "Ed Sheeran"]);
+    /// assert_eq!(artists, vec!["taylor swift", "ed sheeran"]);
     /// ```
     pub fn parse(artist_str: &str) -> Vec<String> {
         if artist_str.is_empty() {
@@ -146,8 +149,13 @@ impl ArtistParser {
     /// 规范化歌手名稱
     /// - 去除首尾空白
     /// - 去除多余空格
+    /// - 转换为小写（避免大小写差异导致重复）
     pub fn normalize_name(name: &str) -> String {
-        name.trim().split_whitespace().collect::<Vec<_>>().join(" ")
+        name.trim()
+            .to_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     /// 生成歌手ID
@@ -197,7 +205,7 @@ mod tests {
     #[test]
     fn test_parse_ampersand_separator() {
         let artists = ArtistParser::parse("Taylor Swift & Ed Sheeran");
-        assert_eq!(artists, vec!["Taylor Swift", "Ed Sheeran"]);
+        assert_eq!(artists, vec!["taylor swift", "ed sheeran"]);
     }
 
     #[test]
@@ -215,7 +223,7 @@ mod tests {
     #[test]
     fn test_normalize_name() {
         assert_eq!(ArtistParser::normalize_name("  周杰伦  "), "周杰伦");
-        assert_eq!(ArtistParser::normalize_name("Taylor   Swift"), "Taylor Swift");
+        assert_eq!(ArtistParser::normalize_name("Taylor   Swift"), "taylor swift");
     }
 
     #[test]

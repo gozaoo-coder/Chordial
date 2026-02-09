@@ -20,6 +20,8 @@ pub struct Album {
     /// 流派列表
     pub genres: Vec<String>,
     /// 封面图片数据 (Base64 Data URL)
+    /// 不序列化到缓存，按需从音乐文件读取
+    #[serde(skip)]
     pub cover_data: Option<String>,
     /// 歌曲ID列表 (按曲目顺序)
     pub track_ids: Vec<String>,

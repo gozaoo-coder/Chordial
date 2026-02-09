@@ -1,0 +1,142 @@
+## 项目分析
+
+基于现有代码库的分析，这是一个使用 Vue 3 + Tauri 构建的音乐播放器应用。目前已定义了完整的数据类型（Track, Artist, Album）和 API，但缺少 views 目录和完整的 UI 布局。
+
+## 实现计划
+
+### 1. 布局架构设计
+
+**整体布局结构（上-中-左）：**
+
+```
+┌─────────────────────────────────────┐
+│           Header (顶部栏)            │  ← 上栏：标题、搜索、用户操作
+├──────────┬──────────────────────────┤
+│          │                          │
+│ Sidebar  │     Main Content         │  ← 中栏：左侧导航 + 主内容区
+│ (左导航) │     (路由视图)            │
+│          │                          │
+├──────────┴──────────────────────────┤
+│         Bottom Nav (底部导航)        │  ← 非宽屏时显示（响应式）
+└─────────────────────────────────────┘
+```
+
+**响应式规则：**
+
+* **宽屏（≥1024px）**：左侧固定导航栏（200px），主内容区自适应
+
+* **窄屏（<1024px）**：底部固定导航栏（60px），主内容区全宽
+
+### 2. 需要创建的文件
+
+**核心布局组件：**
+
+1. `src/App.vue` - 重写为主布局容器
+2. `src/components/layout/AppHeader.vue` - 顶部栏组件
+3. `src/components/layout/AppSidebar.vue` - 左侧导航组件
+4. `src/components/layout/AppBottomNav.vue` - 底部导航组件（响应式）
+5. `src/components/layout/AppLayout.vue` - 布局组合组件
+
+**数据展示页面（views）：**
+
+1. `src/views/Home.vue` - 首页/仪表盘
+2. `src/views/Tracks.vue` - 歌曲列表页
+3. `src/views/TrackDetail.vue` - 歌曲详情页
+4. `src/views/Artists.vue` - 歌手列表页
+5. `src/views/ArtistDetail.vue` - 歌手详情页
+6. `src/views/Albums.vue` - 专辑列表页
+7. `src/views/AlbumDetail.vue` - 专辑详情页
+8. `src/views/MusicSourceManager.vue` - 音乐源管理页
+9. `src/views/About.vue` - 关于页面
+10. `src/views/TestPage.vue` - 测试页面
+
+**通用组件：**
+
+1. `src/components/common/TrackList.vue` - 歌曲列表组件
+2. `src/components/common/ArtistList.vue` - 歌手列表组件
+3. `src/components/common/AlbumList.vue` - 专辑列表组件
+4. `src/components/common/EmptyState.vue` - 空状态组件
+5. `src/components/common/LoadingState.vue` - 加载状态组件
+
+### 3. 设计风格
+
+**扁平化设计原则：**
+
+* 无阴影或微阴影（box-shadow: 0 1px 3px rgba(0,0,0,0.1)）
+
+* 纯色背景，无渐变
+
+* 简洁的图标（使用 SVG）
+
+* 圆角设计（border-radius: 8px-12px）
+
+* 清晰的视觉层次
+
+**配色方案：**
+
+* 主色：#667eea（紫色）
+
+* 背景：#f5f5f7（浅灰）/ #1a1a1a（深色模式）
+
+* 文字：#333（主文字）/ #666（次要文字）
+
+* 边框：rgba(0,0,0,0.1)
+
+### 4. 路由结构
+
+已存在的路由配置完整，无需修改：
+
+* `/` - 首页
+
+* `/tracks` - 歌曲列表
+
+* `/tracks/:trackId` - 歌曲详情
+
+* `/artists` - 歌手列表
+
+* `/artists/:artistId` - 歌手详情
+
+* `/albums` - 专辑列表
+
+* `/albums/:albumId` - 专辑详情
+
+* `/music-sources` - 音乐源管理
+
+* `/about` - 关于
+
+* `/test` - 测试页面
+
+### 5. 响应式断点
+
+```css
+/* 移动端 */
+@media (max-width: 767px) { }
+
+/* 平板 */
+@media (min-width: 768px) and (max-width: 1023px) { }
+
+/* 桌面 */
+@media (min-width: 1024px) { }
+```
+
+### 6. 实现步骤
+
+1. **创建布局组件** - AppHeader, AppSidebar, AppBottomNav, AppLayout
+2. **重写 App.vue** - 整合布局组件
+3. **创建通用列表组件** - TrackList, ArtistList, AlbumList
+4. **创建数据展示页面** - 所有 views 页面
+5. **添加响应式样式** - CSS媒体查询
+6. **测试响应式布局** - 验证不同屏幕尺寸下的显示效果
+
+### 7. 技术要点
+
+* 使用 Vue 3 Composition API
+
+* 使用 CSS Grid 和 Flexbox 布局
+
+* 使用 CSS 变量支持深色模式
+
+* 保持与现有 API 和类型定义兼容
+
+* 使用现有的 Track, Artist, Album 类进行数据操作
+

@@ -8,4 +8,5 @@ export { Artist } from './Artist';
 export { ArtistSummary } from './ArtistSummary';
 export { Album } from './Album';
 export { AlbumSummary } from './AlbumSummary';
-export { Track } from './Track';
+export { Track, trackResourcePool } from './Track';
+export { BlobResource, BlobResourcePool, globalResourceManager } from './BlobResource';

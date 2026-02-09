@@ -1,271 +1,229 @@
+<script setup>
+import { ref } from 'vue';
+
+const testResults = ref([]);
+
+const runTests = () => {
+  testResults.value = [];
+  
+  // Test 1: Check if API modules are available
+  try {
+    const modules = import.meta.glob('../api/**/*.js');
+    addResult('API Modules', '通过', `找到 ${Object.keys(modules).length} 个 API 模块`);
+  } catch (error) {
+    addResult('API Modules', '失败', error.message);
+  }
+  
+  // Test 2: Check if class modules are available
+  try {
+    const modules = import.meta.glob('../class/**/*.js');
+    addResult('Class Modules', '通过', `找到 ${Object.keys(modules).length} 个类模块`);
+  } catch (error) {
+    addResult('Class Modules', '失败', error.message);
+  }
+  
+  // Test 3: Check if components are available
+  try {
+    const components = import.meta.glob('../components/**/*.vue');
+    addResult('Components', '通过', `找到 ${Object.keys(components).length} 个组件`);
+  } catch (error) {
+    addResult('Components', '失败', error.message);
+  }
+  
+  // Test 4: Check if views are available
+  try {
+    const views = import.meta.glob('./*.vue');
+    addResult('Views', '通过', `找到 ${Object.keys(views).length} 个视图`);
+  } catch (error) {
+    addResult('Views', '失败', error.message);
+  }
+  
+  // Test 5: Check localStorage
+  try {
+    localStorage.setItem('test', 'test');
+    localStorage.removeItem('test');
+    addResult('LocalStorage', '通过', '可以正常读写');
+  } catch (error) {
+    addResult('LocalStorage', '失败', error.message);
+  }
+};
+
+const addResult = (name, status, message) => {
+  testResults.value.push({
+    name,
+    status,
+    message,
+    time: new Date().toLocaleTimeString()
+  });
+};
+
+const clearResults = () => {
+  testResults.value = [];
+};
+</script>
+
 <template>
   <div class="test-page">
-    <h1>音乐资源测试</h1>
-    
-    <div class="test-section">
-      <h2>扫描并获取曲目</h2>
-      <button @click="scanAndGetTracks" class="btn btn-primary" :disabled="isScanning">
-        {{ isScanning ? '扫描中...' : '扫描所有源' }}
+    <div class="page-header">
+      <h1 class="page-title">测试页面</h1>
+      <p class="page-subtitle">运行系统测试</p>
+    </div>
+
+    <div class="test-actions">
+      <button class="btn btn-primary" @click="runTests">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        运行测试
+      </button>
+      <button class="btn btn-secondary" @click="clearResults">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+        </svg>
+        清除结果
       </button>
     </div>
 
-    <div class="test-section" v-if="tracks.length > 0">
-      <h2>曲目列表</h2>
-      <div class="tracks-grid">
+    <div v-if="testResults.length > 0" class="test-results card">
+      <h3 class="results-title">测试结果</h3>
+      <div class="results-list">
         <div 
-          v-for="track in tracks" 
-          :key="track.id" 
-          class="track-card"
-          :class="{ 'selected': selectedTrackId === track.id }"
-          @click="selectTrack(track)"
+          v-for="(result, index) in testResults" 
+          :key="index"
+          class="result-item"
+          :class="{ 'result-pass': result.status === '通过', 'result-fail': result.status === '失败' }"
         >
-          <div class="track-title">{{ track.title || track.file_name }}</div>
-          <div class="track-artist">{{ track.artist || '未知艺术家' }}</div>
-          <div class="track-album">{{ track.album || '未知专辑' }}</div>
-          <div class="track-duration" v-if="track.duration">
-            {{ formatDuration(track.duration) }}
+          <div class="result-header">
+            <span class="result-name">{{ result.name }}</span>
+            <span class="result-status">{{ result.status }}</span>
           </div>
+          <p class="result-message">{{ result.message }}</p>
+          <span class="result-time">{{ result.time }}</span>
         </div>
       </div>
     </div>
 
-    <div class="test-section" v-if="selectedTrackId">
-      <h2>曲目详情</h2>
-      <TrackDetail :trackId="selectedTrackId" />
-    </div>
-
-    <div class="test-section">
-      <h2>资源管理测试</h2>
-      <div class="resource-stats">
-        <div class="stat-item">
-          <span class="label">缓存资源数:</span>
-          <span class="value">{{ resourceStats.cachedResources }}</span>
-        </div>
-        <button @click="clearResources" class="btn btn-warning">
-          清理所有资源
-        </button>
-      </div>
-    </div>
-
-    <div v-if="error" class="test-section error-message">
-      <h2>错误信息</h2>
-      <div class="error-content">{{ error }}</div>
+    <div v-else class="empty-state">
+      <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+      </svg>
+      <h3 class="empty-state-title">准备就绪</h3>
+      <p class="empty-state-desc">点击"运行测试"按钮开始测试</p>
     </div>
   </div>
 </template>
 
-<script>
-import { ref, onMounted } from 'vue'
-import { scanAll, getCached } from '@/api/musicSource/library.js'
-import { getResourceStats, clearAllResources } from '@/api/musicSource/resourceLoader.js'
-import TrackDetail from './TrackDetail.vue'
-
-export default {
-  name: 'TestPage',
-  components: {
-    TrackDetail
-  },
-  setup() {
-    const tracks = ref([])
-    const selectedTrackId = ref(null)
-    const isScanning = ref(false)
-    const error = ref('')
-    const resourceStats = ref({ cachedResources: 0 })
-
-    const scanAndGetTracks = async () => {
-      try {
-        isScanning.value = true
-        error.value = ''
-        
-        console.log('开始扫描...')
-        const library = await scanAll()
-        console.log('扫描完成:', library)
-        
-        tracks.value = library.tracks || []
-        console.log('找到曲目数:', tracks.value.length)
-      } catch (err) {
-        error.value = '扫描失败: ' + err.message
-        console.error('扫描失败:', err)
-        
-        // 尝试从缓存加载
-        console.log('尝试从缓存加载...')
-        try {
-          const cached = await getCached()
-          if (cached) {
-            tracks.value = cached.tracks || []
-            console.log('从缓存加载曲目数:', tracks.value.length)
-          }
-        } catch (cacheErr) {
-          console.error('加载缓存失败:', cacheErr)
-        }
-      } finally {
-        isScanning.value = false
-      }
-    }
-
-    const selectTrack = (track) => {
-      selectedTrackId.value = track.id
-      console.log('选择曲目:', track.title)
-    }
-
-    const formatDuration = (seconds) => {
-      if (!seconds) return '0:00'
-      const minutes = Math.floor(seconds / 60)
-      const remainingSeconds = Math.floor(seconds % 60)
-      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
-    }
-
-    const clearResources = () => {
-      clearAllResources()
-      resourceStats.value = getResourceStats()
-      console.log('资源已清理')
-    }
-
-    const updateStats = () => {
-      resourceStats.value = getResourceStats()
-    }
-
-    // 定期更新资源统计
-    setInterval(updateStats, 1000)
-
-    return {
-      tracks,
-      selectedTrackId,
-      isScanning,
-      error,
-      resourceStats,
-      scanAndGetTracks,
-      selectTrack,
-      formatDuration,
-      clearResources
-    }
-  }
-}
-</script>
-
 <style scoped>
 .test-page {
-  padding: 20px;
-  max-width: 1200px;
+  max-width: 800px;
   margin: 0 auto;
 }
 
-.test-section {
-  margin-bottom: 30px;
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 8px;
+.test-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
-.test-section h2 {
-  margin-top: 0;
-  margin-bottom: 15px;
-  color: #333;
-  border-bottom: 1px solid #ddd;
-  padding-bottom: 10px;
-}
-
-.tracks-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 15px;
-}
-
-.track-card {
-  padding: 15px;
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.track-card:hover {
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-
-.track-card.selected {
-  border-color: #007bff;
-  background: #f0f7ff;
-}
-
-.track-title {
-  font-weight: bold;
-  margin-bottom: 5px;
-  color: #333;
-}
-
-.track-artist, .track-album {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 3px;
-}
-
-.track-duration {
-  font-size: 12px;
-  color: #999;
-  margin-top: 5px;
-}
-
-.resource-stats {
+.test-actions .btn {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 8px;
 }
 
-.stat-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.test-actions .btn svg {
+  width: 18px;
+  height: 18px;
 }
 
-.stat-item .label {
-  font-weight: bold;
-  color: #333;
+.test-results {
+  padding: 24px;
 }
 
-.stat-item .value {
+.results-title {
   font-size: 18px;
-  color: #007bff;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+  margin: 0 0 20px 0;
 }
 
-.error-message {
-  background: #f8d7da;
-  color: #721c24;
-  padding: 15px;
-  border-radius: 4px;
-  border: 1px solid #f5c6cb;
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+.result-item {
+  padding: 16px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-tertiary, #e8e8ed);
+}
+
+.result-item.result-pass {
+  background: rgba(34, 197, 94, 0.1);
+  border-left: 4px solid #22c55e;
+}
+
+.result-item.result-fail {
+  background: rgba(239, 68, 68, 0.1);
+  border-left: 4px solid #ef4444;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.result-name {
   font-size: 14px;
-  transition: all 0.3s;
+  font-weight: 600;
+  color: var(--text-primary, #333);
 }
 
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.result-status {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--bg-secondary, #ffffff);
 }
 
-.btn-primary {
-  background: #007bff;
-  color: white;
+.result-pass .result-status {
+  color: #22c55e;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: #0056b3;
+.result-fail .result-status {
+  color: #ef4444;
 }
 
-.btn-warning {
-  background: #ffc107;
-  color: #212529;
+.result-message {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  margin: 0 0 8px 0;
 }
 
-.btn-warning:hover:not(:disabled) {
-  background: #e0a800;
+.result-time {
+  font-size: 11px;
+  color: var(--text-tertiary, #999);
+}
+
+@media (max-width: 767px) {
+  .test-actions {
+    flex-direction: column;
+  }
+  
+  .test-actions .btn {
+    justify-content: center;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .results-title,
+  .result-name {
+    color: var(--text-primary, #f6f6f6);
+  }
 }
 </style>

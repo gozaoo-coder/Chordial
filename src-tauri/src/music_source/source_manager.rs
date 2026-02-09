@@ -87,8 +87,8 @@ pub struct TrackMetadata {
     pub artist: Option<String>,
     /// 藝術家ID
     pub artist_id: Option<String>,
-    /// 歌手摘要信息（用於快速展示）
-    pub artist_summary: Option<ArtistSummary>,
+    /// 歌手摘要信息數組（支持多歌手）
+    pub artist_summaries: Vec<ArtistSummary>,
     /// 專輯
     pub album: Option<String>,
     /// 專輯ID
@@ -96,6 +96,8 @@ pub struct TrackMetadata {
     /// 专辑摘要信息（用於快速展示）
     pub album_summary: Option<AlbumSummary>,
     /// 專輯封面數據 (Base64 編碼)
+    /// 不序列化到缓存，按需从音乐文件读取
+    #[serde(skip)]
     pub album_cover_data: Option<String>,
     /// 時長（秒）
     pub duration: Option<u64>,
@@ -140,9 +142,29 @@ impl TrackMetadata {
         self.parsed_artists().into_iter().next()
     }
 
-    /// 更新歌手摘要
-    pub fn set_artist_summary(&mut self, summary: ArtistSummary) {
-        self.artist_summary = Some(summary);
+    /// 获取主歌手摘要（第一个歌手）
+    pub fn primary_artist_summary(&self) -> Option<&ArtistSummary> {
+        self.artist_summaries.first()
+    }
+
+    /// 获取所有歌手名稱（用 / 分隔）
+    pub fn all_artists_text(&self) -> String {
+        self.artist_summaries.iter()
+            .map(|a| a.name.clone())
+            .collect::<Vec<_>>()
+            .join(" / ")
+    }
+
+    /// 更新歌手摘要數組
+    pub fn set_artist_summaries(&mut self, summaries: Vec<ArtistSummary>) {
+        self.artist_summaries = summaries;
+    }
+
+    /// 添加歌手摘要
+    pub fn add_artist_summary(&mut self, summary: ArtistSummary) {
+        if !self.artist_summaries.iter().any(|a| a.id == summary.id) {
+            self.artist_summaries.push(summary);
+        }
     }
 
     /// 更新专辑摘要

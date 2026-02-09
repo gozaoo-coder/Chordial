@@ -58,9 +58,12 @@ export async function getSourceFromCache(sourceId) {
   return Track.fromDataArray(result);
 }
 
-export default {
+const library = {
   scanAll,
   getCached,
   refreshSource,
   getSourceFromCache,
 };
+
+export { library };
+export default library;

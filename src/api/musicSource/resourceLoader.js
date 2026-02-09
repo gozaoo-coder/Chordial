@@ -3,9 +3,7 @@
  * 管理音乐资源（图片、音频文件）的内存引用和生命周期
  */
 
-import ResourceManager from '@/js/resourceManager.js';
-
-const resourceManager = new ResourceManager();
+import { resourceManager } from '@/js/resourceManager.js';
 
 /**
  * 获取专辑图片资源

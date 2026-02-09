@@ -1,173 +1,141 @@
 <script setup>
-import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-
-const greetMsg = ref("");
-const name = ref("");
-
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsg.value = await invoke("greet", { name: name.value });
-}
+import AppLayout from './components/layout/AppLayout.vue';
 </script>
 
 <template>
-  <div class="app">
-    <nav class="navigation">
-      <router-link to="/" class="nav-link">首页</router-link>
-      <router-link to="/music-sources" class="nav-link">音乐源管理</router-link>
-      <router-link to="/test" class="nav-link">测试页面</router-link>
-      <router-link to="/about" class="nav-link">关于</router-link>
-    </nav>
-    
-    <router-view />
-    
-  </div>
+  <AppLayout />
 </template>
 
-<style scoped>
-.navigation {
-  padding: 1rem;
-  background-color: #f0f0f0;
-  border-bottom: 1px solid #ddd;
-}
-
-.nav-link {
-  margin-right: 1rem;
-  padding: 0.5rem 1rem;
-  text-decoration: none;
-  color: #333;
-  border-radius: 4px;
-  transition: background-color 0.3s;
-}
-
-.nav-link:hover {
-  background-color: #e0e0e0;
-}
-
-.nav-link.router-link-active {
-  background-color: #007bff;
-  color: white;
-}
-
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #249b73);
-}
-
-</style>
 <style>
+/* EffiTools 设计风格 - 全局样式变量 */
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
+  /* 主色调 - 微软蓝 */
+  --primary-color: #0078d7;
+  --primary-hover: #006cbd;
+  --primary-light: rgba(0, 120, 215, 0.1);
+  
+  /* 背景色 */
+  --bg-primary: #F3F3F3;
+  --bg-secondary: #FBFBFB;
+  --bg-tertiary: rgba(15, 15, 15, 0.05);
+  --bg-hover: rgba(15, 15, 15, 0.08);
+  --bg-active: rgba(15, 15, 15, 0.1);
+  
+  /* 文字色 */
+  --text-primary: #333;
+  --text-secondary: #666;
+  --text-tertiary: #999;
+  
+  /* 边框 */
+  --border-color: rgba(0, 0, 0, 0.15);
+  --border-light: rgba(0, 0, 0, 0.1);
+  
+  /* 阴影 */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --shadow-primary: 0 2px 8px rgba(0, 120, 215, 0.15);
+  
+  /* 圆角 */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 18px;
+  --radius-full: 50%;
+  
+  /* 字体 */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  
+  /* 间距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  
+  /* 动画 */
+  --transition-fast: 0.2s ease;
+  --transition-normal: 0.3s ease;
+  
+  /* 布局 */
+  --header-height: 60px;
+  --sidebar-width: 200px;
+  --bottom-nav-height: 60px;
+  --player-bar-height: 100px;
 }
 
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
+/* 深色模式 */
 @media (prefers-color-scheme: dark) {
   :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
+    --bg-primary: #2f2f2f;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: rgba(15, 15, 15, 0.6);
+    --bg-hover: rgba(255, 255, 255, 0.1);
+    --bg-active: rgba(255, 255, 255, 0.15);
+    
+    --text-primary: #f6f6f6;
+    --text-secondary: #999;
+    --text-tertiary: #666;
+    
+    --border-color: rgba(255, 255, 255, 0.15);
+    --border-light: rgba(255, 255, 255, 0.1);
+    
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.4);
   }
 }
 
+/* 全局样式重置 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  line-height: 1.5;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* 选中文字样式 */
+::selection {
+  background: var(--primary-light);
+  color: var(--primary-color);
+}
+
+/* 图片拖拽 */
+img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
 </style>

@@ -9,6 +9,45 @@ import { invoke } from '@tauri-apps/api/core';
 import { Track } from '@/class';
 
 /**
+ * 处理二进制响应数据
+ * 统一处理 Tauri 返回的各种二进制数据格式
+ * @param {Object|ArrayBuffer|Uint8Array} result - Tauri 响应结果
+ * @returns {ArrayBuffer} 处理后的 ArrayBuffer
+ * @throws {Error} 当响应格式无效时抛出
+ */
+function processBinaryResponse(result) {
+  // 处理包含 data 属性的响应对象
+  if (result && result.data) {
+    if (result.data instanceof ArrayBuffer) {
+      return result.data;
+    }
+    if (result.data instanceof Uint8Array) {
+      return result.data.buffer;
+    }
+    if (Array.isArray(result.data)) {
+      return new Uint8Array(result.data).buffer;
+    }
+  }
+
+  // 直接返回的 ArrayBuffer
+  if (result instanceof ArrayBuffer) {
+    return result;
+  }
+
+  // 直接返回的 Uint8Array
+  if (result instanceof Uint8Array) {
+    return result.buffer;
+  }
+
+  // 数组格式（JSON 序列化的二进制数据）
+  if (Array.isArray(result)) {
+    return new Uint8Array(result).buffer;
+  }
+
+  throw new Error(`无效的响应格式: ${typeof result}`);
+}
+
+/**
  * 获取音乐完整信息
  * @param {string} trackId - 曲目 ID
  * @returns {Promise<Track>} 音乐的完整信息（Track 实例）
@@ -19,6 +58,19 @@ export async function getTrackInfo(trackId) {
 }
 
 /**
+ * 批量获取曲目信息
+ * @param {string[]} trackIds - 曲目 ID 数组
+ * @returns {Promise<Track[]>} 曲目实例数组
+ */
+export async function getTracksByIds(trackIds) {
+  if (!trackIds || trackIds.length === 0) {
+    return [];
+  }
+  const data = await invoke('get_tracks_by_ids', { track_ids: trackIds });
+  return data.map(item => new Track(item));
+}
+
+/**
  * 获取专辑图片（使用二进制响应）
  * @param {string} albumId - 专辑 ID
  * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
@@ -26,20 +78,7 @@ export async function getTrackInfo(trackId) {
  */
 export async function getAlbumArt(albumId, size = 'medium') {
   const result = await invoke('get_album_art', { album_id: albumId, size });
-  // 处理 Tauri Response 返回的数据
-  if (result && result.data) {
-    // 如果返回的是 ArrayBuffer
-    if (result.data instanceof ArrayBuffer) {
-      return result.data;
-    }
-    // 如果返回的是 Uint8Array
-    if (result.data instanceof Uint8Array) {
-      return result.data.buffer;
-    }
-    // 如果返回的是普通的对象
-    return new TextEncoder().encode(JSON.stringify(result.data)).buffer;
-  }
-  throw new Error('无效的响应格式');
+  return processBinaryResponse(result);
 }
 
 /**
@@ -48,39 +87,8 @@ export async function getAlbumArt(albumId, size = 'medium') {
  * @returns {Promise<ArrayBuffer>} 音乐文件二进制数据
  */
 export async function getMusicFile(trackId) {
-  try {
-    console.log('获取音乐文件:', trackId);
-    const result = await invoke('get_music_file', { track_id: trackId });
-    console.log('音乐文件响应类型:', typeof result, '长度:', result?.data?.byteLength || result?.byteLength || 0);
-    
-    // 处理 Tauri Response 返回的数据
-    if (result && result.data) {
-      // 如果返回的是 ArrayBuffer
-      if (result.data instanceof ArrayBuffer) {
-        return result.data;
-      }
-      // 如果返回的是 Uint8Array
-      if (result.data instanceof Uint8Array) {
-        return result.data.buffer;
-      }
-    }
-    
-    // 兼容旧版本返回格式
-    if (result instanceof ArrayBuffer) {
-      return result;
-    }
-    if (result instanceof Uint8Array) {
-      return result.buffer;
-    }
-    if (Array.isArray(result)) {
-      return new Uint8Array(result).buffer;
-    }
-    
-    throw new Error('无效的响应格式: ' + typeof result);
-  } catch (error) {
-    console.error('获取音乐文件失败:', error);
-    throw error;
-  }
+  const result = await invoke('get_music_file', { track_id: trackId });
+  return processBinaryResponse(result);
 }
 
 /**
@@ -90,16 +98,7 @@ export async function getMusicFile(trackId) {
  */
 export async function getArtistImage(artistId) {
   const result = await invoke('get_artist_image', { artist_id: artistId });
-  if (result && result.data) {
-    if (result.data instanceof ArrayBuffer) {
-      return result.data;
-    }
-    if (result.data instanceof Uint8Array) {
-      return result.data.buffer;
-    }
-    return new TextEncoder().encode(JSON.stringify(result.data)).buffer;
-  }
-  throw new Error('无效的响应格式');
+  return processBinaryResponse(result);
 }
 
 /**
@@ -130,15 +129,17 @@ export async function getLyrics(trackId) {
 }
 
 /**
- * 解析同步歌词 JSON 字符串
- * @param {string} jsonString - JSON 字符串
+ * 解析同步歌词
+ * 支持 JSON 格式和 LRC 文本格式 [mm:ss.xx]歌词内容
+ * @param {string} content - 歌词内容（JSON 字符串或 LRC 格式文本）
  * @returns {Array} 解析后的同步歌词数组
  */
-export function parseSyncedLyrics(jsonString) {
-  if (!jsonString) return [];
-  
+export function parseSyncedLyrics(content) {
+  if (!content) return [];
+
+  // 首先尝试解析为 JSON 格式
   try {
-    const data = JSON.parse(jsonString);
+    const data = JSON.parse(content);
     if (Array.isArray(data)) {
       return data.map(line => ({
         time: line.timestamp / 1000,  // 转换为秒
@@ -146,10 +147,50 @@ export function parseSyncedLyrics(jsonString) {
       }));
     }
   } catch (e) {
-    console.error('解析同步歌词失败:', e);
+    // 不是 JSON，继续尝试 LRC 格式
   }
-  
-  return [];
+
+  // 解析 LRC 格式: [mm:ss.xx]歌词内容 或 [mm:ss.xxx]歌词内容
+  const lyrics = [];
+  const lines = content.split(/\r?\n/);
+  // 支持 [mm:ss.xx] 或 [mm:ss.xxx] 格式，分钟可以是1位或2位
+  const timeRegex = /\[(\d{1,2}):(\d{2})\.(\d{2,3})\]/g;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // 重置正则表达式的 lastIndex
+    timeRegex.lastIndex = 0;
+
+    // 查找所有时间标签
+    const timeMatches = [...trimmed.matchAll(timeRegex)];
+
+    if (timeMatches.length > 0) {
+      // 获取最后一个时间标签后的文本
+      const lastMatch = timeMatches[timeMatches.length - 1];
+      const textStartIndex = lastMatch.index + lastMatch[0].length;
+      const text = trimmed.substring(textStartIndex).trim();
+
+      // 为每个时间标签创建一个歌词条目
+      for (const match of timeMatches) {
+        const minutes = parseInt(match[1], 10);
+        const seconds = parseInt(match[2], 10);
+        const msPart = match[3];
+        // 处理毫秒：2位是百分之一秒，3位是毫秒
+        const milliseconds = msPart.length === 2
+          ? parseInt(msPart, 10) * 10
+          : parseInt(msPart, 10);
+        const time = (minutes * 60 + seconds) + milliseconds / 1000;
+
+        if (text) {
+          lyrics.push({ time, text });
+        }
+      }
+    }
+  }
+
+  return lyrics.sort((a, b) => a.time - b.time);
 }
 
 /**
@@ -179,6 +220,7 @@ export async function getPlaylistInfo(playlistId) {
 
 export default {
   getTrackInfo,
+  getTracksByIds,
   getAlbumArt,
   getMusicFile,
   getArtistImage,

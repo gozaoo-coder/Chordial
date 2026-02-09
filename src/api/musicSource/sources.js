@@ -51,11 +51,3 @@ export async function getAll() {
 export async function setEnabled(id, enabled) {
   return invoke('set_source_enabled', { id, enabled });
 }
-
-export default {
-  addLocalFolder,
-  addWebDisk,
-  remove,
-  getAll,
-  setEnabled,
-};

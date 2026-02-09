@@ -22,13 +22,13 @@ export interface Track {
   artist?: string;
   /** 艺术家ID */
   artist_id?: string;
-  /** 歌手摘要信息（用于快速展示） */
-  artist_summary?: ArtistSummary;
+  /** 歌手摘要信息数组（支持多歌手） */
+  artist_summaries: ArtistSummary[];
   /** 专辑 */
   album?: string;
   /** 专辑ID */
   album_id?: string;
-  /** 专辑摘要信息（用于快速展示） */
+  /** 专辑摘要信息（AlbumSummary 类型） */
   album_summary?: AlbumSummary;
   /** 专辑封面数据 (Base64 编码) */
   album_cover_data?: string;

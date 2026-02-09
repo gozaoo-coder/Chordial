@@ -4,6 +4,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { Album } from './Album';
+import { resourceManager } from '@/js/resourceManager';
 
 export class AlbumSummary {
   /**
@@ -13,11 +14,13 @@ export class AlbumSummary {
   constructor(data = {}) {
     this.id = data.id || '';
     this.title = data.title || '';
-    this.artistId = data.artist_id || '';
-    this.artistName = data.artist_name || '';
-    this.coverData = data.cover_data || null;
+    // 兼容蛇形命名和驼峰命名（Tauri IPC 可能转换命名）
+    this.artistId = data.artist_id || data.artistId || '';
+    this.artistName = data.artist_name || data.artistName || '';
+    // coverData 不再从缓存读取，改为按需加载
+    this.coverData = null;
     this.year = data.year || null;
-    this.trackCount = data.track_count || 0;
+    this.trackCount = data.track_count || data.trackCount || data.track_ids?.length || data.trackIds?.length || 0;
   }
 
   /**
@@ -49,9 +52,125 @@ export class AlbumSummary {
   /**
    * 获取专辑封面 URL
    * @returns {string|null} 封面 URL 或 null
+   * @deprecated 使用 getCoverImageUrl 或 getCoverResource 代替
    */
   getCoverUrl() {
     return this.coverData || null;
+  }
+
+  /**
+   * 获取专辑封面资源（使用 ResourceManager 管理）
+   * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
+   * @returns {Promise<{url: string, release: Function}>} 资源对象，使用完后调用 release()
+   */
+  async getCoverResource(size = 'medium') {
+    const key = `album-cover-${this.id}-${size}`;
+    return resourceManager.getResource(key, async () => {
+      const result = await invoke('get_album_art', { 
+        album_id: this.id, 
+        size 
+      });
+      
+      // Tauri v2 返回的是 Uint8Array 数组
+      if (Array.isArray(result)) {
+        return new Uint8Array(result);
+      }
+      
+      // 如果已经是 Uint8Array 或 ArrayBuffer，直接返回
+      if (result instanceof Uint8Array || result instanceof ArrayBuffer) {
+        return result;
+      }
+      
+      // 如果 result 有 data 属性（某些 Tauri 版本）
+      if (result && result.data) {
+        if (Array.isArray(result.data)) {
+          return new Uint8Array(result.data);
+        }
+        if (result.data instanceof Uint8Array || result.data instanceof ArrayBuffer) {
+          return result.data;
+        }
+      }
+      
+      throw new Error('Invalid cover data format');
+    });
+  }
+
+  /**
+   * 获取专辑封面图片 URL（可用于 img 标签 src）
+   * 使用 ResourceManager 缓存，需要手动释放
+   * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
+   * @returns {Promise<string>} 封面图片 URL（Blob URL）
+   */
+  async getCoverImageUrl(size = 'medium') {
+    const resource = await this.getCoverResource(size);
+    return resource.url;
+  }
+
+  /**
+   * 获取专辑封面图片 Blob
+   * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
+   * @returns {Promise<Blob|null>} 封面图片 Blob 或 null
+   */
+  async getCoverImage(size = 'medium') {
+    try {
+      const resource = await this.getCoverResource(size);
+      const cacheEntry = resourceManager.cache.get(`album-cover-${this.id}-${size}`);
+      return cacheEntry?.blob || null;
+    } catch (error) {
+      console.error('Failed to get album cover image:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 预加载专辑封面图片
+   * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
+   * @returns {Promise<boolean>} 是否成功加载
+   */
+  async preloadCoverImage(size = 'medium') {
+    try {
+      const key = `album-cover-${this.id}-${size}`;
+      resourceManager.preload(key, async () => {
+        const result = await invoke('get_album_art', { 
+          album_id: this.id, 
+          size 
+        });
+        
+        if (result && result.data) {
+          if (result.data instanceof ArrayBuffer) {
+            return result.data;
+          }
+          if (result.data instanceof Uint8Array) {
+            return result.data.buffer;
+          }
+        }
+        if (result instanceof ArrayBuffer) {
+          return result;
+        }
+        if (result instanceof Uint8Array) {
+          return result.buffer;
+        }
+        if (Array.isArray(result)) {
+          return new Uint8Array(result).buffer;
+        }
+        throw new Error('Invalid cover data format');
+      });
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * 释放封面资源引用
+   * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
+   */
+  releaseCoverResource(size = 'medium') {
+    const key = `album-cover-${this.id}-${size}`;
+    const resource = resourceManager.cache.get(key);
+    if (resource) {
+      resourceManager._releaseResource(key);
+    }
   }
 
   /**

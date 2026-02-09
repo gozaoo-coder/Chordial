@@ -3,6 +3,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { AlbumSummary } from './AlbumSummary';
+import { resourceManager } from '@/js/resourceManager';
 
 export class Album {
   /**
@@ -12,13 +13,14 @@ export class Album {
   constructor(data = {}) {
     this.id = data.id || '';
     this.title = data.title || '';
-    this.artistId = data.artist_id || '';
-    this.artistName = data.artist_name || '';
+    // 兼容蛇形命名和驼峰命名（Tauri IPC 可能转换命名）
+    this.artistId = data.artist_id || data.artistId || '';
+    this.artistName = data.artist_name || data.artistName || '';
     this.year = data.year || null;
     this.genres = data.genres || [];
-    this.coverData = data.cover_data || null;
-    this.trackIds = data.track_ids || [];
-    this.totalDuration = data.total_duration || 0;
+    this.coverData = data.cover_data || data.coverData || null;
+    this.trackIds = data.track_ids || data.trackIds || [];
+    this.totalDuration = data.total_duration || data.totalDuration || 0;
   }
 
   /**
@@ -100,6 +102,173 @@ export class Album {
    */
   getCoverUrl() {
     return this.coverData || null;
+  }
+
+  /**
+   * 获取专辑封面图片 Blob
+   * 优先使用已缓存的 coverData，如果没有则调用后端 API 获取
+   * @returns {Promise<Blob|null>} 封面图片 Blob 或 null
+   */
+  async getCoverImage() {
+    // 如果已有 coverData（Base64 Data URL），转换为 Blob
+    if (this.coverData && this.coverData.startsWith('data:image/')) {
+      try {
+        const response = await fetch(this.coverData);
+        return await response.blob();
+      } catch (error) {
+        console.warn('Failed to convert cover data to blob:', error);
+      }
+    }
+
+    // 否则调用后端 API 获取
+    try {
+      const result = await invoke('get_album_art', { 
+        album_id: this.id, 
+        size: 'large' 
+      });
+      
+      // 处理 Tauri Response 返回的数据
+      if (result && result.data) {
+        if (result.data instanceof ArrayBuffer) {
+          return new Blob([result.data], { type: 'image/jpeg' });
+        }
+        if (result.data instanceof Uint8Array) {
+          return new Blob([result.data.buffer], { type: 'image/jpeg' });
+        }
+      }
+      
+      // 兼容旧版本返回格式
+      if (result instanceof ArrayBuffer) {
+        return new Blob([result], { type: 'image/jpeg' });
+      }
+      if (result instanceof Uint8Array) {
+        return new Blob([result.buffer], { type: 'image/jpeg' });
+      }
+      if (Array.isArray(result)) {
+        return new Blob([new Uint8Array(result).buffer], { type: 'image/jpeg' });
+      }
+    } catch (error) {
+      console.error('Failed to get album cover image:', error);
+    }
+    
+    return null;
+  }
+
+  /**
+   * 获取专辑封面图片 URL（可用于 img 标签 src）
+   * @returns {Promise<string>} 封面图片 URL（Data URL 或 Blob URL）
+   */
+  async getCoverImageUrl() {
+    // 如果已有 coverData，直接返回
+    if (this.coverData) {
+      return this.coverData;
+    }
+
+    // 否则获取 Blob 并创建 Object URL
+    const blob = await this.getCoverImage();
+    if (blob) {
+      return URL.createObjectURL(blob);
+    }
+
+    // 返回默认占位图或空字符串
+    return '';
+  }
+
+  /**
+   * 获取专辑封面资源（使用 ResourceManager 管理）
+   * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
+   * @returns {Promise<{url: string, release: Function}>} 资源对象，使用完后调用 release()
+   */
+  async getCoverResource(size = 'medium') {
+    const key = `album-cover-${this.id}-${size}`;
+    return resourceManager.getResource(key, async () => {
+      const result = await invoke('get_album_art', {
+        album_id: this.id,
+        size
+      });
+
+      // Tauri v2 返回的是 Uint8Array 数组
+      if (Array.isArray(result)) {
+        return new Uint8Array(result);
+      }
+
+      // 如果已经是 Uint8Array 或 ArrayBuffer，直接返回
+      if (result instanceof Uint8Array || result instanceof ArrayBuffer) {
+        return result;
+      }
+
+      // 如果 result 有 data 属性（某些 Tauri 版本）
+      if (result && result.data) {
+        if (Array.isArray(result.data)) {
+          return new Uint8Array(result.data);
+        }
+        if (result.data instanceof Uint8Array || result.data instanceof ArrayBuffer) {
+          return result.data;
+        }
+      }
+
+      throw new Error('Invalid cover data format');
+    });
+  }
+
+  /**
+   * 获取指定尺寸的专辑封面图片
+   * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
+   * @returns {Promise<Blob|null>} 封面图片 Blob 或 null
+   */
+  async getCoverImageBySize(size = 'large') {
+    try {
+      const result = await invoke('get_album_art', { 
+        album_id: this.id, 
+        size 
+      });
+      
+      // 处理 Tauri Response 返回的数据
+      if (result && result.data) {
+        if (result.data instanceof ArrayBuffer) {
+          return new Blob([result.data], { type: 'image/jpeg' });
+        }
+        if (result.data instanceof Uint8Array) {
+          return new Blob([result.data.buffer], { type: 'image/jpeg' });
+        }
+      }
+      
+      // 兼容旧版本返回格式
+      if (result instanceof ArrayBuffer) {
+        return new Blob([result], { type: 'image/jpeg' });
+      }
+      if (result instanceof Uint8Array) {
+        return new Blob([result.buffer], { type: 'image/jpeg' });
+      }
+      if (Array.isArray(result)) {
+        return new Blob([new Uint8Array(result).buffer], { type: 'image/jpeg' });
+      }
+    } catch (error) {
+      console.error(`Failed to get album cover image (${size}):`, error);
+    }
+    
+    return null;
+  }
+
+  /**
+   * 预加载专辑封面图片
+   * @returns {Promise<boolean>} 是否成功加载
+   */
+  async preloadCoverImage() {
+    try {
+      const blob = await this.getCoverImage();
+      return blob !== null && blob.size > 0;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * 检查是否有封面图片
+   * @returns {boolean}
+   */
+  hasCoverImage() {
+    return !!this.coverData;
   }
 
   /**

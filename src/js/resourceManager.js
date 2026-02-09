@@ -91,6 +91,55 @@ class ResourceManager {
     }
 
     /**
+     * 获取当前引用计数
+     * @param {string} key - 资源标识
+     * @returns {number}
+     */
+    getReferenceCount(key) {
+        return this.referenceCount.get(key) || 0;
+    }
+
+    /**
+     * 检查资源是否存在
+     * @param {string} key - 资源标识
+     * @returns {boolean}
+     */
+    has(key) {
+        return this.cache.has(key);
+    }
+
+    /**
+     * 获取资源信息
+     * @param {string} key - 资源标识
+     * @returns {Object|null}
+     */
+    getResourceInfo(key) {
+        const resource = this.cache.get(key);
+        if (resource) {
+            return {
+                key,
+                url: resource.url,
+                size: resource.blob?.size || 0,
+                type: resource.blob?.type || 'unknown',
+                referenceCount: this.getReferenceCount(key)
+            };
+        }
+        return null;
+    }
+
+    /**
+     * 获取所有资源信息
+     * @returns {Array}
+     */
+    getAllResourceInfo() {
+        const info = [];
+        for (const key of this.cache.keys()) {
+            info.push(this.getResourceInfo(key));
+        }
+        return info;
+    }
+
+    /**
      * 预加载资源
      */
     preload(key, fetchFn) {
@@ -111,57 +160,10 @@ class ResourceManager {
     }
 }
 
-// 使用示例
-// class AlbumCoverSource {
-//     constructor(albumId, manager) {
-//         this.albumId = albumId;
-//         this.manager = manager;
-//         this.key = `album-cover-${albumId}`;
-//     }
-
-//     async get() {
-//         return await this.manager.getResource(this.key, async () => {
-//             // 模拟从不同来源获取数据
-//             return await this._fetchCoverData();
-//         });
-//     }
-
-//     async _fetchCoverData() {
-//         // 实际实现：
-//         // 1. 检查本地缓存
-//         // 2. 检查在线源
-//         // 3. 下载并存储到缓存
-//         console.log(`正在获取专辑 ${this.albumId} 封面...`);
-        
-//         // 模拟网络请求
-//         await new Promise(resolve => setTimeout(resolve, 1000));
-        
-//         // 返回模拟的图片数据
-//         const canvas = document.createElement('canvas');
-//         canvas.width = 300;
-//         canvas.height = 300;
-//         const ctx = canvas.getContext('2d');
-        
-//         // 生成简单图片
-//         ctx.fillStyle = `hsl(${this.albumId % 360}, 70%, 50%)`;
-//         ctx.fillRect(0, 0, 300, 300);
-//         ctx.fillStyle = 'white';
-//         ctx.font = '48px Arial';
-//         ctx.fillText(`Album ${this.albumId}`, 50, 150);
-        
-//         return await new Promise(resolve => {
-//             canvas.toBlob(resolve, 'image/jpeg', 0.8);
-//         });
-//     }
-// }
-
-// 使用
+// 创建全局单例实例
 const resourceManager = new ResourceManager();
 
 // 导出为 ES Module
-export default ResourceManager;
-
-// 这里默认导出类定义，便于浏览器或 Node 直接使用
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = ResourceManager;
-}
+export { ResourceManager };
+export { resourceManager };
+export default resourceManager;
