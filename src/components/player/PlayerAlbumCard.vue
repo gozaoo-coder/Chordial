@@ -80,7 +80,7 @@ export default {
 .player-album-card {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 2vh;
   position: relative;
 }
