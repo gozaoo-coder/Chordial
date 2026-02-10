@@ -6,6 +6,7 @@ pub mod error;
 pub mod audio_metadata;
 pub mod lyric_parser;
 pub mod lyric_enhancer;
+pub mod audio_engine;
 
 pub use audio_metadata::{
     read_metadata,
@@ -62,8 +63,10 @@ mod tests;
 
 use std::sync::Mutex;
 use std::path::PathBuf;
-use tauri::{State, Manager};
+use tauri::{State, Manager, AppHandle};
 use tauri::ipc::Response;
+use audio_engine::{SharedAudioPlayer, PlaybackState};
+use audio_engine::analyzer::SharedAudioAnalyzer;
 
 /// 默认透明 PNG 图片数据（1x1 像素）
 const DEFAULT_TRANSPARENT_PNG: &[u8] = &[
@@ -87,6 +90,8 @@ struct AppState {
     source_manager: Mutex<SourceManager>,
     cache_manager: Mutex<CacheManager>,
     scanner: Mutex<MusicScanner>,
+    audio_player: Mutex<SharedAudioPlayer>,
+    audio_analyzer: Mutex<SharedAudioAnalyzer>,
 }
 
 #[tauri::command]
@@ -752,6 +757,343 @@ fn detect_lyric_format(
     }
 }
 
+// ========== 音频播放控制命令 ==========
+
+/// 播放音频文件
+#[tauri::command(rename_all = "snake_case")]
+fn play_audio(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<(), String> {
+    let player = state.audio_player.lock().map_err(|e| e.to_string())?;
+    player.play(&file_path).map_err(|e| e.to_string())
+}
+
+/// 暂停播放
+#[tauri::command]
+fn pause_audio(state: State<AppState>) {
+    let player = state.audio_player.lock().unwrap();
+    player.pause();
+}
+
+/// 恢复播放
+#[tauri::command]
+fn resume_audio(state: State<AppState>) {
+    let player = state.audio_player.lock().unwrap();
+    player.resume();
+}
+
+/// 停止播放
+#[tauri::command]
+fn stop_audio(state: State<AppState>) {
+    let player = state.audio_player.lock().unwrap();
+    player.stop();
+}
+
+/// 跳转到指定位置（秒）
+#[tauri::command(rename_all = "snake_case")]
+fn seek_audio(
+    state: State<AppState>,
+    position: f64,
+) -> Result<(), String> {
+    let player = state.audio_player.lock().map_err(|e| e.to_string())?;
+    player.seek(position).map_err(|e| e.to_string())
+}
+
+/// 设置音量 (0.0 - 1.0)
+#[tauri::command(rename_all = "snake_case")]
+fn set_audio_volume(
+    state: State<AppState>,
+    volume: f32,
+) {
+    let player = state.audio_player.lock().unwrap();
+    player.set_volume(volume.clamp(0.0, 1.0));
+}
+
+/// 获取当前音量
+#[tauri::command]
+fn get_audio_volume(state: State<AppState>) -> f32 {
+    let player = state.audio_player.lock().unwrap();
+    player.get_volume()
+}
+
+/// 获取当前播放位置（秒）
+#[tauri::command]
+fn get_audio_position(state: State<AppState>) -> f32 {
+    let player = state.audio_player.lock().unwrap();
+    player.get_position()
+}
+
+/// 获取音频总时长（秒）
+#[tauri::command]
+fn get_audio_duration(state: State<AppState>) -> f32 {
+    let player = state.audio_player.lock().unwrap();
+    player.get_duration()
+}
+
+/// 获取播放状态
+#[tauri::command]
+fn get_audio_state(state: State<AppState>) -> String {
+    let player = state.audio_player.lock().unwrap();
+    match player.get_state() {
+        PlaybackState::Playing => "playing".to_string(),
+        PlaybackState::Paused => "paused".to_string(),
+        PlaybackState::Stopped => "stopped".to_string(),
+        PlaybackState::Preloading => "preloading".to_string(),
+        PlaybackState::Crossfading => "crossfading".to_string(),
+    }
+}
+
+/// 检查是否正在播放
+#[tauri::command(rename_all = "snake_case")]
+fn is_audio_playing(state: State<AppState>) -> bool {
+    let player = state.audio_player.lock().unwrap();
+    player.is_playing()
+}
+
+/// 预加载下一首音频
+#[tauri::command(rename_all = "snake_case")]
+fn preload_next_audio(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<(), String> {
+    let player = state.audio_player.lock().map_err(|e| e.to_string())?;
+    player.preload_next(&file_path).map_err(|e| e.to_string())
+}
+
+/// 获取下一首音频路径
+#[tauri::command]
+fn get_next_audio_path(state: State<AppState>) -> Option<String> {
+    let player = state.audio_player.lock().unwrap();
+    player.get_next_path()
+}
+
+/// 设置交叉淡化启用状态
+#[tauri::command(rename_all = "snake_case")]
+fn set_crossfade_enabled(
+    state: State<AppState>,
+    enabled: bool,
+) {
+    let player = state.audio_player.lock().unwrap();
+    player.set_crossfade_enabled(enabled);
+}
+
+/// 检查交叉淡化是否启用
+#[tauri::command]
+fn is_crossfade_enabled(state: State<AppState>) -> bool {
+    let player = state.audio_player.lock().unwrap();
+    player.is_crossfade_enabled()
+}
+
+/// 设置交叉淡化配置
+#[tauri::command(rename_all = "snake_case")]
+fn set_crossfade_config(
+    state: State<AppState>,
+    duration_secs: f32,
+    curve_type: String,
+) -> Result<(), String> {
+    use audio_engine::CrossfadeCurve;
+    
+    let curve = match curve_type.as_str() {
+        "linear" => CrossfadeCurve::Linear,
+        "logarithmic" => CrossfadeCurve::Logarithmic,
+        "s_curve" => CrossfadeCurve::SCurve,
+        _ => return Err("Invalid curve type".to_string()),
+    };
+    
+    let config = audio_engine::CrossfadeConfig {
+        duration_secs: duration_secs.max(1.0).min(30.0),
+        curve,
+    };
+    
+    let player = state.audio_player.lock().map_err(|e| e.to_string())?;
+    player.set_crossfade_config(config);
+    Ok(())
+}
+
+// ========== Phase 3: 节拍检测与BPM分析命令 ==========
+
+/// 分析音频文件的BPM和节拍
+#[tauri::command(rename_all = "snake_case")]
+fn analyze_audio_beat(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<serde_json::Value, String> {
+    let analyzer = state.audio_analyzer.lock().map_err(|e| e.to_string())?;
+    let analyzer = analyzer.lock().map_err(|e| e.to_string())?;
+    
+    let result = analyzer.analyze_file(&file_path)
+        .map_err(|e| format!("分析失败: {}", e))?;
+    
+    Ok(serde_json::json!({
+        "bpm": result.bpm,
+        "beat_positions": result.beat_positions,
+        "downbeat_position": result.downbeat_position,
+    }))
+}
+
+/// 强制重新分析音频（忽略缓存）
+#[tauri::command(rename_all = "snake_case")]
+fn reanalyze_audio_beat(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<serde_json::Value, String> {
+    let analyzer = state.audio_analyzer.lock().map_err(|e| e.to_string())?;
+    let analyzer = analyzer.lock().map_err(|e| e.to_string())?;
+    
+    let result = analyzer.analyze_file_force(&file_path)
+        .map_err(|e| format!("分析失败: {}", e))?;
+    
+    Ok(serde_json::json!({
+        "bpm": result.bpm,
+        "beat_positions": result.beat_positions,
+        "downbeat_position": result.downbeat_position,
+    }))
+}
+
+/// 获取音频的混音点建议
+#[tauri::command(rename_all = "snake_case")]
+fn get_mix_points(
+    state: State<AppState>,
+    file_path: String,
+) -> Result<serde_json::Value, String> {
+    let analyzer = state.audio_analyzer.lock().map_err(|e| e.to_string())?;
+    let analyzer = analyzer.lock().map_err(|e| e.to_string())?;
+    
+    let mix_points = analyzer.find_mix_points(&file_path)
+        .map_err(|e| format!("获取混音点失败: {}", e))?;
+    
+    Ok(serde_json::json!({
+        "bpm": mix_points.bpm,
+        "mix_in_point": mix_points.mix_in_point,
+        "mix_out_point": mix_points.mix_out_point,
+        "duration": mix_points.duration,
+    }))
+}
+
+/// 批量分析音频文件
+#[tauri::command(rename_all = "snake_case")]
+fn batch_analyze_audio(
+    state: State<AppState>,
+    file_paths: Vec<String>,
+    app_handle: AppHandle,
+) -> Result<Vec<serde_json::Value>, String> {
+    let analyzer = state.audio_analyzer.lock().map_err(|e| e.to_string())?;
+    let analyzer = analyzer.lock().map_err(|e| e.to_string())?;
+    
+    let results = analyzer.batch_analyze(file_paths, Some(app_handle));
+    
+    let json_results: Vec<serde_json::Value> = results
+        .into_iter()
+        .map(|(path, result)| {
+            match result {
+                Ok(analysis) => serde_json::json!({
+                    "file_path": path,
+                    "success": true,
+                    "bpm": analysis.bpm,
+                    "beat_count": analysis.beat_positions.len(),
+                    "downbeat": analysis.downbeat_position,
+                }),
+                Err(e) => serde_json::json!({
+                    "file_path": path,
+                    "success": false,
+                    "error": e.to_string(),
+                }),
+            }
+        })
+        .collect();
+    
+    Ok(json_results)
+}
+
+/// 获取分析缓存统计
+#[tauri::command]
+fn get_analysis_cache_stats(state: State<AppState>) -> Result<serde_json::Value, String> {
+    let analyzer = state.audio_analyzer.lock().map_err(|e| e.to_string())?;
+    let analyzer = analyzer.lock().map_err(|e| e.to_string())?;
+    
+    let stats = analyzer.get_cache_stats()
+        .map_err(|e| format!("获取统计失败: {}", e))?;
+    
+    Ok(serde_json::json!({
+        "entry_count": stats.entry_count,
+        "total_data_size": stats.total_data_size,
+    }))
+}
+
+/// 清空分析缓存
+#[tauri::command]
+fn clear_analysis_cache(state: State<AppState>) -> Result<(), String> {
+    let analyzer = state.audio_analyzer.lock().map_err(|e| e.to_string())?;
+    let analyzer = analyzer.lock().map_err(|e| e.to_string())?;
+    
+    analyzer.clear_cache()
+        .map_err(|e| format!("清空缓存失败: {}", e))?;
+    
+    Ok(())
+}
+
+// ========== Phase 4: BPM同步与时间拉伸命令 ==========
+
+/// 设置当前播放音频的BPM信息
+#[tauri::command(rename_all = "snake_case")]
+fn set_current_track_bpm(
+    state: State<AppState>,
+    bpm: f64,
+    beat_positions: Vec<f64>,
+) -> Result<(), String> {
+    let player = state.audio_player.lock().map_err(|e| e.to_string())?;
+    player.set_current_bpm(bpm, beat_positions);
+    Ok(())
+}
+
+/// 设置下一首音频的BPM信息
+#[tauri::command(rename_all = "snake_case")]
+fn set_next_track_bpm(
+    state: State<AppState>,
+    bpm: f64,
+    beat_positions: Vec<f64>,
+) -> Result<(), String> {
+    let player = state.audio_player.lock().map_err(|e| e.to_string())?;
+    player.set_next_bpm(bpm, beat_positions);
+    Ok(())
+}
+
+/// 启用/禁用BPM同步
+#[tauri::command(rename_all = "snake_case")]
+fn set_bpm_sync_enabled(
+    state: State<AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let player = state.audio_player.lock().map_err(|e| e.to_string())?;
+    player.set_bpm_sync(enabled);
+    Ok(())
+}
+
+/// 检查BPM同步是否启用
+#[tauri::command]
+fn is_bpm_sync_enabled(state: State<AppState>) -> bool {
+    let player = state.audio_player.lock().unwrap();
+    player.is_bpm_sync()
+}
+
+/// 获取当前播放速度比率
+#[tauri::command]
+fn get_playback_speed_ratio(state: State<AppState>) -> f64 {
+    let player = state.audio_player.lock().unwrap();
+    player.speed_ratio()
+}
+
+/// 设置播放速度（覆盖BPM同步）
+#[tauri::command(rename_all = "snake_case")]
+fn set_playback_speed(
+    state: State<AppState>,
+    speed_ratio: f64,
+) -> Result<(), String> {
+    let player = state.audio_player.lock().map_err(|e| e.to_string())?;
+    player.set_speed(speed_ratio).map_err(|e| e.to_string())
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -832,10 +1174,18 @@ pub fn run() {
                 std::fs::create_dir_all(&cache_path).ok();
             }
             
+            let audio_player = SharedAudioPlayer::new()
+                .map_err(|e| format!("Failed to initialize audio player: {}", e))?;
+            
+            let audio_analyzer = audio_engine::analyzer::create_shared_analyzer()
+                .map_err(|e| format!("Failed to initialize audio analyzer: {}", e))?;
+            
             let app_state = AppState {
                 source_manager: Mutex::new(SourceManager::new()),
                 cache_manager: Mutex::new(CacheManager::with_directory(cache_path)),
                 scanner: Mutex::new(MusicScanner::new()),
+                audio_player: Mutex::new(audio_player),
+                audio_analyzer: Mutex::new(audio_analyzer),
             };
             
             app.manage(app_state);
@@ -871,6 +1221,38 @@ pub fn run() {
             get_albums_by_ids,
             get_all_artists,
             get_all_albums,
+            // 音频播放控制命令
+            play_audio,
+            pause_audio,
+            resume_audio,
+            stop_audio,
+            seek_audio,
+            set_audio_volume,
+            get_audio_volume,
+            get_audio_position,
+            get_audio_duration,
+            get_audio_state,
+            is_audio_playing,
+            // Phase 2: 双缓冲与无缝切换命令
+            preload_next_audio,
+            get_next_audio_path,
+            set_crossfade_enabled,
+            is_crossfade_enabled,
+            set_crossfade_config,
+            // Phase 3: 节拍检测与BPM分析命令
+            analyze_audio_beat,
+            reanalyze_audio_beat,
+            get_mix_points,
+            batch_analyze_audio,
+            get_analysis_cache_stats,
+            clear_analysis_cache,
+            // Phase 4: BPM同步与时间拉伸命令
+            set_current_track_bpm,
+            set_next_track_bpm,
+            set_bpm_sync_enabled,
+            is_bpm_sync_enabled,
+            get_playback_speed_ratio,
+            set_playback_speed,
             // 窗口控制命令
             toggle_always_on_top,
             close_window,

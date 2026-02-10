@@ -1,0 +1,20 @@
+pub mod decoder;
+pub mod output;
+pub mod player;
+pub mod buffer;
+pub mod mixer;
+pub mod beat_detection;
+pub mod analysis_cache;
+pub mod analyzer;
+pub mod time_stretch;
+pub mod eq_filter;
+
+pub use decoder::{SymphoniaDecoder, AudioFrame};
+pub use output::{CpalOutput, AudioCallback, AudioDeviceManager};
+pub use player::{AudioPlayer, SharedAudioPlayer, PlaybackState};
+pub use buffer::{DoubleBuffer, AudioStreamManager, StreamState, AudioChunk};
+pub use mixer::{Mixer, MixerController, MixerState, Track, CrossfadeConfig, CrossfadeCurve};
+pub use beat_detection::{BeatDetector, StreamingBeatDetector, AnalysisResult};
+pub use analysis_cache::{AnalysisCache, BatchAnalysisEngine, CacheStats};
+pub use time_stretch::{TimeStretcher, BpmSyncManager, PhaseSync};
+pub use eq_filter::{BiquadFilter, FilterType, ThreeBandEQ, TransitionEQ};
