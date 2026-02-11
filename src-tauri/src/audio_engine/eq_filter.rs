@@ -147,12 +147,13 @@ impl BiquadFilter {
         }
         
         // 归一化（使a0 = 1）
+        // 注意：标准 Biquad 公式中 a0 = 1 + alpha
         let a0 = 1.0 + alpha;
         self.b0 /= a0;
         self.b1 /= a0;
         self.b2 /= a0;
-        self.a1 /= a0;
-        self.a2 /= a0;
+        self.a1 = -self.a1 / a0;  // a1 在公式中是负号
+        self.a2 = -self.a2 / a0;  // a2 在公式中是负号
     }
     
     /// 设置截止频率

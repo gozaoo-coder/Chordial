@@ -63,6 +63,88 @@
         </div>
       </div>
       
+      <!-- Automix 设置 -->
+      <div class="settings-section">
+        <h2 class="section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+          </svg>
+          Automix 智能混音
+        </h2>
+        
+        <div class="setting-item">
+          <div class="setting-info">
+            <label class="setting-label">默认启用 Automix</label>
+            <span class="setting-desc">启动播放器时自动开启智能混音功能</span>
+          </div>
+          <div class="setting-control">
+            <label class="toggle">
+              <input type="checkbox" v-model="automixDefaultEnabled" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        
+        <div class="setting-item">
+          <div class="setting-info">
+            <label class="setting-label">交叉淡化时长</label>
+            <span class="setting-desc">设置两首歌曲之间的交叉淡化时间</span>
+          </div>
+          <div class="setting-control">
+            <input 
+              type="range" 
+              min="1" 
+              max="30" 
+              v-model="crossfadeDuration"
+              class="slider"
+            />
+            <span class="setting-value">{{ crossfadeDuration }}s</span>
+          </div>
+        </div>
+        
+        <div class="setting-item">
+          <div class="setting-info">
+            <label class="setting-label">交叉淡化曲线</label>
+            <span class="setting-desc">选择音量淡入淡出的曲线类型</span>
+          </div>
+          <div class="setting-control">
+            <select v-model="crossfadeCurve" class="select">
+              <option value="linear">线性</option>
+              <option value="logarithmic">对数</option>
+              <option value="s_curve">S型（推荐）</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="setting-item">
+          <div class="setting-info">
+            <label class="setting-label">默认 BPM 同步</label>
+            <span class="setting-desc">自动匹配不同歌曲的播放速度</span>
+          </div>
+          <div class="setting-control">
+            <label class="toggle">
+              <input type="checkbox" v-model="bpmSyncDefaultEnabled" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        
+        <div class="setting-item">
+          <div class="setting-info">
+            <label class="setting-label">分析缓存管理</label>
+            <span class="setting-desc">查看和管理 BPM 分析结果的缓存</span>
+          </div>
+          <div class="setting-control">
+            <button class="cache-btn" @click="showCacheStats">
+              查看缓存
+            </button>
+            <button class="cache-btn danger" @click="clearCache">
+              清空缓存
+            </button>
+          </div>
+        </div>
+      </div>
+      
       <!-- 歌词设置 -->
       <div class="settings-section">
         <h2 class="section-title">
@@ -245,6 +327,11 @@
 
 <script>
 import { ref, watch, onMounted } from 'vue';
+import { 
+  getAnalysisCacheStats, 
+  clearAnalysisCache,
+  AnalysisCache 
+} from '@/api/automix.js';
 
 export default {
   name: 'SettingsView',
@@ -253,6 +340,12 @@ export default {
     const defaultVolume = ref(80);
     const autoPlay = ref(true);
     const defaultPlayMode = ref('sequence');
+    
+    // Automix 设置
+    const automixDefaultEnabled = ref(false);
+    const crossfadeDuration = ref(10);
+    const crossfadeCurve = ref('s_curve');
+    const bpmSyncDefaultEnabled = ref(false);
     
     // 歌词设置
     const lyricFontSize = ref(24);
@@ -266,12 +359,19 @@ export default {
     const backgroundBrightness = ref(50);
     const fps = ref('60');
     
+    // 缓存管理
+    const cacheStats = ref(null);
+    
     // 保存设置到 localStorage
     const saveSettings = () => {
       const settings = {
         defaultVolume: defaultVolume.value,
         autoPlay: autoPlay.value,
         defaultPlayMode: defaultPlayMode.value,
+        automixDefaultEnabled: automixDefaultEnabled.value,
+        crossfadeDuration: crossfadeDuration.value,
+        crossfadeCurve: crossfadeCurve.value,
+        bpmSyncDefaultEnabled: bpmSyncDefaultEnabled.value,
         lyricFontSize: lyricFontSize.value,
         lyricSpring: lyricSpring.value,
         lyricBlur: lyricBlur.value,
@@ -293,6 +393,10 @@ export default {
           defaultVolume.value = settings.defaultVolume ?? 80;
           autoPlay.value = settings.autoPlay ?? true;
           defaultPlayMode.value = settings.defaultPlayMode ?? 'sequence';
+          automixDefaultEnabled.value = settings.automixDefaultEnabled ?? false;
+          crossfadeDuration.value = settings.crossfadeDuration ?? 10;
+          crossfadeCurve.value = settings.crossfadeCurve ?? 's_curve';
+          bpmSyncDefaultEnabled.value = settings.bpmSyncDefaultEnabled ?? false;
           lyricFontSize.value = settings.lyricFontSize ?? 24;
           lyricSpring.value = settings.lyricSpring ?? true;
           lyricBlur.value = settings.lyricBlur ?? true;
@@ -307,9 +411,35 @@ export default {
       }
     };
     
+    // 查看缓存统计
+    const showCacheStats = async () => {
+      try {
+        const stats = await getAnalysisCacheStats();
+        cacheStats.value = stats;
+        alert(`分析缓存统计：\n条目数: ${stats.entry_count}\n总大小: ${AnalysisCache.formatSize(stats.total_data_size)}`);
+      } catch (error) {
+        console.error('获取缓存统计失败:', error);
+        alert('获取缓存统计失败');
+      }
+    };
+    
+    // 清空缓存
+    const clearCache = async () => {
+      if (confirm('确定要清空所有 BPM 分析缓存吗？这将导致下次播放时需要重新分析。')) {
+        try {
+          await clearAnalysisCache();
+          alert('缓存已清空');
+        } catch (error) {
+          console.error('清空缓存失败:', error);
+          alert('清空缓存失败');
+        }
+      }
+    };
+    
     // 监听设置变化并保存
     watch([
       defaultVolume, autoPlay, defaultPlayMode,
+      automixDefaultEnabled, crossfadeDuration, crossfadeCurve, bpmSyncDefaultEnabled,
       lyricFontSize, lyricSpring, lyricBlur, lyricAlign,
       backgroundIntensity, backgroundBlur, backgroundBrightness, fps
     ], saveSettings, { deep: true });
@@ -322,6 +452,10 @@ export default {
       defaultVolume,
       autoPlay,
       defaultPlayMode,
+      automixDefaultEnabled,
+      crossfadeDuration,
+      crossfadeCurve,
+      bpmSyncDefaultEnabled,
       lyricFontSize,
       lyricSpring,
       lyricBlur,
@@ -329,7 +463,9 @@ export default {
       backgroundIntensity,
       backgroundBlur,
       backgroundBrightness,
-      fps
+      fps,
+      showCacheStats,
+      clearCache
     };
   }
 };
@@ -581,6 +717,30 @@ export default {
 
 .credits li {
   margin-bottom: 4px;
+}
+
+/* 缓存按钮 */
+.cache-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary-color, #0078d7);
+  color: white;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cache-btn:hover {
+  background: var(--primary-color-dark, #005a9e);
+}
+
+.cache-btn.danger {
+  background: #dc3545;
+}
+
+.cache-btn.danger:hover {
+  background: #c82333;
 }
 
 /* 深色模式 */

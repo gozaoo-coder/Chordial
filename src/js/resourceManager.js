@@ -100,6 +100,27 @@ class ResourceManager {
     }
 
     /**
+     * 获取资源（仅增加引用计数，不创建新资源）
+     * @param {string} key - 资源标识
+     * @returns {{url: string, release: Function}|null}
+     */
+    acquire(key) {
+        if (this.cache.has(key)) {
+            this._increaseReference(key);
+            return this._createResourceObject(key);
+        }
+        return null;
+    }
+
+    /**
+     * 释放资源引用
+     * @param {string} key - 资源标识
+     */
+    release(key) {
+        this._releaseResource(key);
+    }
+
+    /**
      * 检查资源是否存在
      * @param {string} key - 资源标识
      * @returns {boolean}
@@ -157,6 +178,23 @@ class ResourceManager {
         }
         this.cache.clear();
         this.referenceCount.clear();
+    }
+
+    /**
+     * 释放指定资源的引用（公共接口）
+     * @param {string} key - 资源标识
+     */
+    releaseResource(key) {
+        this._releaseResource(key);
+    }
+
+    /**
+     * 获取缓存中的资源（不增加引用计数）
+     * @param {string} key - 资源标识
+     * @returns {Object|undefined}
+     */
+    getCachedResource(key) {
+        return this.cache.get(key);
     }
 }
 

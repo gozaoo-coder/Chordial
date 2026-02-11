@@ -174,7 +174,6 @@ impl BeatDetector {
     /// 
     /// 使用Comb Filter方法找到最佳Tempo
     fn extract_beats(&self, onset_curve: &[f32]) -> (f64, Vec<f64>) {
-        let _tempo_range = 60.0..=200.0;
         let mut best_score = f32::MIN;
         let mut best_bpm = 120.0f64;
         

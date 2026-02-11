@@ -35,10 +35,14 @@ export function useCoverImage(item, size = 'medium') {
       const resource = await item.value.getCoverResource(size);
 
       if (resource) {
-        const url = resource.url || resource.getUrl?.();
+        // 统一接口：优先使用 getUrl() 方法，否则使用 url 属性
+        const url = typeof resource.getUrl === 'function'
+          ? resource.getUrl()
+          : resource.url;
 
         if (url) {
           coverUrl.value = url;
+          // 统一释放接口
           releaseFn = typeof resource.release === 'function'
             ? () => resource.release()
             : null;

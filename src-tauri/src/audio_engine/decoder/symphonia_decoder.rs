@@ -172,9 +172,27 @@ impl SymphoniaDecoder {
     }
     
     /// 跳转到指定位置（秒）
+    /// 
+    /// # Arguments
+    /// * `position` - 目标位置（秒），必须 >= 0
     pub fn seek(&mut self, position: f64) -> anyhow::Result<()> {
         use symphonia::core::formats::SeekMode;
         use symphonia::core::formats::SeekTo;
+        
+        // 检查位置是否有效
+        if position < 0.0 {
+            return Err(anyhow::anyhow!("Seek position must be non-negative: {}", position));
+        }
+        
+        // 检查是否超出时长
+        if let Some(duration) = self.duration {
+            if position > duration {
+                return Err(anyhow::anyhow!(
+                    "Seek position {} exceeds duration {}",
+                    position, duration
+                ));
+            }
+        }
         
         let seek_to = SeekTo::Time {
             time: symphonia::core::units::Time::new(

@@ -7,9 +7,23 @@
  * - 提供播放控制方法（播放、暂停、跳转等）
  * - 管理播放列表和播放模式
  * - 自动处理音频资源生命周期
+ * - 支持 Automix 智能混音功能
  */
 
 import { reactive, readonly, computed } from 'vue';
+import {
+  analyzeAudioBeat,
+  getMixPoints,
+  setCrossfadeEnabled,
+  setCrossfadeConfig,
+  preloadNextAudio,
+  setCurrentTrackBpm,
+  setNextTrackBpm,
+  setBpmSyncEnabled,
+  setPlaybackSpeed,
+  listenAnalysisProgress,
+  AutomixConfig
+} from '@/api/automix.js';
 
 // 播放模式枚举
 export const PlayMode = {
@@ -55,7 +69,30 @@ const state = reactive({
     syncedLyrics: '',
     hasSyncedLyrics: false,
     hasPlainLyrics: false
-  }
+  },
+
+  // ========== Automix 相关状态 ==========
+  automixEnabled: false,     // Automix 开关
+  crossfadeEnabled: false,   // 交叉淡化开关
+  crossfadeDuration: 10,     // 交叉淡化时长（秒）
+  crossfadeCurve: 's_curve', // 交叉淡化曲线类型
+  bpmSyncEnabled: false,     // BPM 同步开关
+  playbackSpeed: 1.0,        // 播放速度 (0.5 - 2.0)
+  
+  // BPM 信息
+  currentBpm: null,          // 当前歌曲 BPM
+  currentBeatPositions: [],  // 当前歌曲 Beat 位置
+  nextTrackBpm: null,        // 下一首歌曲 BPM
+  nextTrackBeatPositions: [],// 下一首歌曲 Beat 位置
+  
+  // 分析状态
+  isAnalyzing: false,        // 是否正在分析
+  analysisProgress: 0,       // 分析进度 (0-100)
+  analysisCurrentFile: '',   // 当前分析的文件
+  
+  // 预加载状态
+  isPreloading: false,       // 是否正在预加载
+  preloadedTrack: null       // 已预加载的曲目
 });
 
 // 计算属性
@@ -93,7 +130,24 @@ const getters = {
   isPlaylistEmpty: computed(() => state.playlist.length === 0),
   
   // 播放列表长度
-  playlistLength: computed(() => state.playlist.length)
+  playlistLength: computed(() => state.playlist.length),
+
+  // ========== Automix 计算属性 ==========
+  // 是否显示 Automix 控制
+  showAutomixControls: computed(() => state.automixEnabled),
+  
+  // 格式化 BPM 显示
+  formattedBpm: computed(() => {
+    if (state.currentBpm) {
+      return Math.round(state.currentBpm).toString();
+    }
+    return '--';
+  }),
+  
+  // 格式化播放速度
+  formattedSpeed: computed(() => {
+    return `${Math.round(state.playbackSpeed * 100)}%`;
+  })
 };
 
 // 格式化时间
@@ -120,60 +174,135 @@ function initAudioElement() {
   setupAudioEvents();
 }
 
+// 音频事件处理函数（用于正确移除监听）
+const audioEventHandlers = {
+  timeupdate: null,
+  loadedmetadata: null,
+  canplay: null,
+  waiting: null,
+  ended: null,
+  error: null,
+  volumechange: null
+};
+
 // 设置音频事件监听
 function setupAudioEvents() {
   const audio = state.audioElement;
   if (!audio) return;
-  
+
   // 时间更新
-  audio.addEventListener('timeupdate', () => {
+  audioEventHandlers.timeupdate = () => {
     state.currentTime = audio.currentTime || 0;
-  });
-  
+
+    // Automix: 检查是否需要预加载下一首
+    if (state.automixEnabled && state.crossfadeEnabled) {
+      checkPreloadTrigger();
+    }
+  };
+  audio.addEventListener('timeupdate', audioEventHandlers.timeupdate);
+
   // 加载完成
-  audio.addEventListener('loadedmetadata', () => {
+  audioEventHandlers.loadedmetadata = () => {
     state.duration = audio.duration || 0;
     state.isLoading = false;
-  });
-  
+  };
+  audio.addEventListener('loadedmetadata', audioEventHandlers.loadedmetadata);
+
   // 可以播放
-  audio.addEventListener('canplay', () => {
+  audioEventHandlers.canplay = () => {
     state.isLoading = false;
-  });
-  
+  };
+  audio.addEventListener('canplay', audioEventHandlers.canplay);
+
   // 等待加载
-  audio.addEventListener('waiting', () => {
+  audioEventHandlers.waiting = () => {
     state.isLoading = true;
-  });
-  
+  };
+  audio.addEventListener('waiting', audioEventHandlers.waiting);
+
   // 播放结束
-  audio.addEventListener('ended', () => {
+  audioEventHandlers.ended = () => {
     handleTrackEnded();
-  });
-  
+  };
+  audio.addEventListener('ended', audioEventHandlers.ended);
+
   // 错误处理
-  audio.addEventListener('error', (e) => {
+  audioEventHandlers.error = (e) => {
     console.error('Audio playback error:', e);
     state.error = '播放出错';
     state.isLoading = false;
     state.isPlaying = false;
-  });
-  
+  };
+  audio.addEventListener('error', audioEventHandlers.error);
+
   // 音量变化
-  audio.addEventListener('volumechange', () => {
+  audioEventHandlers.volumechange = () => {
     state.volume = audio.volume;
     state.muted = audio.muted;
-  });
+  };
+  audio.addEventListener('volumechange', audioEventHandlers.volumechange);
 }
 
 // 清理音频事件监听
 function cleanupAudioEvents() {
   const audio = state.audioElement;
   if (!audio) return;
+
+  // 移除所有事件监听
+  if (audioEventHandlers.timeupdate) {
+    audio.removeEventListener('timeupdate', audioEventHandlers.timeupdate);
+  }
+  if (audioEventHandlers.loadedmetadata) {
+    audio.removeEventListener('loadedmetadata', audioEventHandlers.loadedmetadata);
+  }
+  if (audioEventHandlers.canplay) {
+    audio.removeEventListener('canplay', audioEventHandlers.canplay);
+  }
+  if (audioEventHandlers.waiting) {
+    audio.removeEventListener('waiting', audioEventHandlers.waiting);
+  }
+  if (audioEventHandlers.ended) {
+    audio.removeEventListener('ended', audioEventHandlers.ended);
+  }
+  if (audioEventHandlers.error) {
+    audio.removeEventListener('error', audioEventHandlers.error);
+  }
+  if (audioEventHandlers.volumechange) {
+    audio.removeEventListener('volumechange', audioEventHandlers.volumechange);
+  }
+}
+
+// 检查是否需要触发预加载
+function checkPreloadTrigger() {
+  if (state.isPreloading || state.preloadedTrack) return;
   
-  // 克隆音频元素以移除所有事件监听
-  const newAudio = audio.cloneNode(true);
-  audio.parentNode?.replaceChild(newAudio, audio);
+  const remainingTime = state.duration - state.currentTime;
+  const preloadThreshold = state.crossfadeDuration + 5; // 提前 crossfade + 5 秒
+  
+  if (remainingTime <= preloadThreshold && remainingTime > 0) {
+    const nextTrack = getNextTrack();
+    if (nextTrack) {
+      actions.preloadNextTrack(nextTrack);
+    }
+  }
+}
+
+// 获取下一首歌曲
+function getNextTrack() {
+  if (state.playlist.length === 0) return null;
+  
+  let nextIndex;
+  
+  if (state.playMode === PlayMode.RANDOM) {
+    nextIndex = Math.floor(Math.random() * state.playlist.length);
+  } else {
+    nextIndex = state.currentIndex + 1;
+    if (nextIndex >= state.playlist.length) {
+      nextIndex = 0;
+    }
+  }
+  
+  return state.playlist[nextIndex];
 }
 
 // 处理歌曲播放结束
@@ -185,22 +314,14 @@ function handleTrackEnded() {
       state.audioElement.play();
       break;
     case PlayMode.LOOP:
-      // 列表循环，播放下一首
-      actions.playNext();
-      break;
     case PlayMode.RANDOM:
-      // 随机播放
-      actions.playRandom();
-      break;
     case PlayMode.SEQUENCE:
     default:
-      // 顺序播放
-      if (state.currentIndex < state.playlist.length - 1) {
-        actions.playNext();
+      // Automix 模式下使用交叉淡化
+      if (state.automixEnabled && state.crossfadeEnabled && state.preloadedTrack) {
+        actions.playPreloadedTrack();
       } else {
-        // 播放列表结束
-        state.isPlaying = false;
-        state.currentTime = 0;
+        actions.playNext();
       }
       break;
   }
@@ -256,6 +377,10 @@ const actions = {
       state.currentTime = 0;
       state.duration = track.duration || 0;
       
+      // 重置预加载状态
+      state.preloadedTrack = null;
+      state.isPreloading = false;
+      
       // 获取音频 URL
       const audioUrl = await track.getAudioBlobUrl();
       if (!audioUrl) {
@@ -276,6 +401,11 @@ const actions = {
       // 播放
       await state.audioElement.play();
       state.isPlaying = true;
+      
+      // Automix: 分析当前歌曲 BPM
+      if (state.automixEnabled) {
+        actions.analyzeCurrentTrack();
+      }
       
     } catch (error) {
       console.error('播放失败:', error);
@@ -389,6 +519,50 @@ const actions = {
     const nextTrack = state.playlist[nextIndex];
     if (nextTrack) {
       actions.play(nextTrack);
+    }
+  },
+  
+  /**
+   * 播放预加载的歌曲（Automix 模式）
+   */
+  async playPreloadedTrack() {
+    if (!state.preloadedTrack) return;
+    
+    try {
+      const track = state.preloadedTrack;
+      state.preloadedTrack = null;
+      
+      // 更新索引
+      state.currentIndex = getTrackIndex(track);
+      state.currentTrack = track;
+      state.currentTime = 0;
+      state.duration = track.duration || 0;
+      
+      // 获取音频 URL
+      const audioUrl = await track.getAudioBlobUrl();
+      if (!audioUrl) {
+        throw new Error('无法获取音频文件');
+      }
+      
+      // 切换音频源
+      state.audioElement.src = audioUrl;
+      
+      // 加载歌词
+      await actions.loadLyrics(track);
+      
+      // 播放
+      await state.audioElement.play();
+      state.isPlaying = true;
+      
+      // 分析 BPM
+      if (state.automixEnabled) {
+        actions.analyzeCurrentTrack();
+      }
+      
+    } catch (error) {
+      console.error('播放预加载歌曲失败:', error);
+      // 失败时播放下一首
+      actions.playNext();
     }
   },
   
@@ -566,6 +740,171 @@ const actions = {
     state.isPlaying = false;
     state.playlist = [];
     state.currentIndex = -1;
+  },
+
+  // ========== Automix Actions ==========
+  
+  /**
+   * 启用 Automix
+   */
+  async enableAutomix() {
+    state.automixEnabled = true;
+    
+    // 启用交叉淡化
+    await setCrossfadeEnabled(true);
+    state.crossfadeEnabled = true;
+    
+    // 分析当前歌曲
+    if (state.currentTrack) {
+      actions.analyzeCurrentTrack();
+    }
+    
+    console.log('Automix 已启用');
+  },
+  
+  /**
+   * 禁用 Automix
+   */
+  async disableAutomix() {
+    state.automixEnabled = false;
+    
+    // 禁用交叉淡化
+    await setCrossfadeEnabled(false);
+    state.crossfadeEnabled = false;
+    
+    // 禁用 BPM 同步
+    await setBpmSyncEnabled(false);
+    state.bpmSyncEnabled = false;
+    
+    // 重置速度
+    await setPlaybackSpeed(1.0);
+    state.playbackSpeed = 1.0;
+    
+    console.log('Automix 已禁用');
+  },
+  
+  /**
+   * 切换 Automix 开关
+   */
+  async toggleAutomix() {
+    if (state.automixEnabled) {
+      await actions.disableAutomix();
+    } else {
+      await actions.enableAutomix();
+    }
+  },
+  
+  /**
+   * 设置交叉淡化
+   * @param {boolean} enabled - 是否启用
+   * @param {number} duration - 时长（秒）
+   * @param {string} curve - 曲线类型
+   */
+  async setCrossfade(enabled, duration = 10, curve = 's_curve') {
+    state.crossfadeEnabled = enabled;
+    state.crossfadeDuration = duration;
+    state.crossfadeCurve = curve;
+    
+    await setCrossfadeEnabled(enabled);
+    
+    if (enabled) {
+      await setCrossfadeConfig(duration, curve);
+    }
+  },
+  
+  /**
+   * 设置 BPM 同步
+   * @param {boolean} enabled - 是否启用
+   */
+  async setBpmSync(enabled) {
+    state.bpmSyncEnabled = enabled;
+    await setBpmSyncEnabled(enabled);
+    
+    if (enabled && state.currentBpm && state.nextTrackBpm) {
+      // 计算速度比率
+      const speedRatio = state.currentBpm / state.nextTrackBpm;
+      await setPlaybackSpeed(speedRatio);
+      state.playbackSpeed = speedRatio;
+    }
+  },
+  
+  /**
+   * 设置播放速度
+   * @param {number} speed - 速度比率 (0.5 - 2.0)
+   */
+  async setSpeed(speed) {
+    const clampedSpeed = Math.max(0.5, Math.min(2.0, speed));
+    state.playbackSpeed = clampedSpeed;
+    await setPlaybackSpeed(clampedSpeed);
+  },
+  
+  /**
+   * 分析当前歌曲 BPM
+   */
+  async analyzeCurrentTrack() {
+    if (!state.currentTrack || !state.currentTrack.path) return;
+    
+    try {
+      state.isAnalyzing = true;
+      
+      const result = await analyzeAudioBeat(state.currentTrack.path);
+      
+      state.currentBpm = result.bpm;
+      state.currentBeatPositions = result.beat_positions;
+      
+      // 发送到后端
+      await setCurrentTrackBpm(result.bpm, result.beat_positions);
+      
+      console.log('当前歌曲 BPM 分析完成:', result.bpm);
+    } catch (error) {
+      console.error('分析当前歌曲 BPM 失败:', error);
+    } finally {
+      state.isAnalyzing = false;
+    }
+  },
+  
+  /**
+   * 预加载下一首歌曲
+   * @param {Track} track - 下一首歌曲
+   */
+  async preloadNextTrack(track) {
+    if (!track || !track.path) return;
+    
+    try {
+      state.isPreloading = true;
+      
+      // 分析下一首歌曲 BPM
+      const result = await analyzeAudioBeat(track.path);
+      
+      state.nextTrackBpm = result.bpm;
+      state.nextTrackBeatPositions = result.beat_positions;
+      
+      // 发送到后端
+      await setNextTrackBpm(result.bpm, result.beat_positions);
+      
+      // 预加载音频
+      await preloadNextAudio(track.path);
+      
+      state.preloadedTrack = track;
+      
+      console.log('下一首歌曲预加载完成:', track.title, 'BPM:', result.bpm);
+    } catch (error) {
+      console.error('预加载下一首歌曲失败:', error);
+    } finally {
+      state.isPreloading = false;
+    }
+  },
+  
+  /**
+   * 初始化分析进度监听
+   */
+  async initAnalysisProgressListener() {
+    const unlisten = await listenAnalysisProgress((progress) => {
+      state.analysisProgress = progress.percent;
+      state.analysisCurrentFile = progress.file;
+    });
+    
+    return unlisten;
   }
 };
 
@@ -584,7 +923,10 @@ export const PlayerStore = {
   ...actions,
   
   // 播放模式枚举
-  PlayMode
+  PlayMode,
+  
+  // Automix 配置
+  AutomixConfig
 };
 
 // 默认导出

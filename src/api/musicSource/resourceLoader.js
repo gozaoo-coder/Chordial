@@ -85,9 +85,9 @@ export async function preloadMusicFile(trackId) {
  */
 export function releaseAlbumArt(albumId, size = 'medium') {
   const key = `album_art_${albumId}_${size}`;
-  const resource = resourceManager.cache.get(key);
+  const resource = resourceManager.getCachedResource(key);
   if (resource) {
-    resourceManager._releaseResource(key);
+    resourceManager.releaseResource(key);
   }
 }
 
@@ -97,9 +97,9 @@ export function releaseAlbumArt(albumId, size = 'medium') {
  */
 export function releaseMusicFile(trackId) {
   const key = `music_file_${trackId}`;
-  const resource = resourceManager.cache.get(key);
+  const resource = resourceManager.getCachedResource(key);
   if (resource) {
-    resourceManager._releaseResource(key);
+    resourceManager.releaseResource(key);
   }
 }
 

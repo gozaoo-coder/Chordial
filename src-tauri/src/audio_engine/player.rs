@@ -174,7 +174,6 @@ impl AudioPlayer {
         }
 
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<PlayerCommand>();
-        self.command_sender = Some(cmd_tx);
 
         let state = Arc::clone(&self.state);
 
@@ -182,9 +181,11 @@ impl AudioPlayer {
         let handle = thread::spawn(move || {
             if let Err(e) = Self::audio_thread_main(state, cmd_rx) {
                 eprintln!("Audio thread error: {}", e);
+                panic!("Audio thread crashed: {}", e);
             }
         });
 
+        self.command_sender = Some(cmd_tx);
         self.audio_thread = Some(handle);
         Ok(())
     }
@@ -199,7 +200,8 @@ impl AudioPlayer {
         let mixer_controller = MixerController::new(Arc::clone(&mixer));
 
         // 创建音频输出
-        let mut output = CpalOutput::new()?;
+        let mut output = CpalOutput::new()
+            .map_err(|e| anyhow::anyhow!("Failed to create audio output: {}. Please check your audio device.", e))?;
         
         // 设置音频回调
         let mc = mixer_controller.clone();
@@ -210,7 +212,8 @@ impl AudioPlayer {
             }
         }));
 
-        output.start()?;
+        output.start()
+            .map_err(|e| anyhow::anyhow!("Failed to start audio output: {}. Please check your audio device.", e))?;
 
         // 主循环
         loop {
@@ -297,10 +300,13 @@ impl AudioPlayer {
                             }
                         }
                         Ok(false) => {
-                            // 当前轨道结束
+                            // 当前轨道结束，但等待缓冲区播放完毕
                             if mixer.get_state() != MixerState::Crossfading {
-                                // 如果没有下一首，停止播放
-                                state.set_state(PlaybackState::Stopped);
+                                // 检查是否还有缓冲数据
+                                if !mixer.is_playing() {
+                                    // 如果没有下一首，停止播放
+                                    state.set_state(PlaybackState::Stopped);
+                                }
                             }
                         }
                         Err(e) => {

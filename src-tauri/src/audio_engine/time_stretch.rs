@@ -434,11 +434,12 @@ mod tests {
         
         sync.set_target_offset(100);
         
-        // 多次更新应该逐渐接近目标
-        for _ in 0..20 {
+        // 多次更新应该逐渐接近目标（sync_speed=0.1，需要约50次迭代）
+        for _ in 0..100 {
             sync.update();
         }
         
         assert!(sync.is_synced());
+        assert_eq!(sync.current_offset, 100);
     }
 }

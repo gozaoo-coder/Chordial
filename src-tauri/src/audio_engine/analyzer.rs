@@ -118,13 +118,33 @@ impl AudioAnalyzer {
         paths
             .into_par_iter()
             .map(|path| {
-                let result = {
-                    let cache_guard = cache.lock().unwrap();
-                    cache_guard.get_or_analyze(&path, || {
+                // 先尝试从缓存加载（短暂持锁）
+                let cached_result = {
+                    match cache.lock() {
+                        Ok(cache_guard) => cache_guard.load(&path).ok().flatten(),
+                        Err(_) => None,
+                    }
+                };
+                
+                // 如果缓存有效，直接返回
+                let result = if let Some(result) = cached_result {
+                    Ok(result)
+                } else {
+                    // 执行分析（无锁状态）
+                    let analysis_result = (|| {
                         let (pcm_data, sample_rate) = self.decode_to_mono(&path)?;
                         let detector = BeatDetector::new(sample_rate);
                         Ok(detector.analyze(&pcm_data))
-                    })
+                    })();
+                    
+                    // 保存到缓存（短暂持锁）
+                    if let Ok(ref result) = analysis_result {
+                        if let Ok(cache_guard) = cache.lock() {
+                            let _ = cache_guard.save(&path, result);
+                        }
+                    }
+                    
+                    analysis_result
                 };
                 
                 // 更新进度
@@ -210,14 +230,7 @@ pub struct MixPoints {
     pub duration: f64,
 }
 
-/// 分析进度信息
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct AnalysisProgress {
-    pub current: usize,
-    pub total: usize,
-    pub percent: f32,
-    pub file: String,
-}
+
 
 /// 可共享的音频分析器
 pub type SharedAudioAnalyzer = Arc<Mutex<AudioAnalyzer>>;

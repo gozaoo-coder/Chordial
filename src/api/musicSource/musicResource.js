@@ -154,14 +154,12 @@ export function parseSyncedLyrics(content) {
   const lyrics = [];
   const lines = content.split(/\r?\n/);
   // 支持 [mm:ss.xx] 或 [mm:ss.xxx] 格式，分钟可以是1位或2位
-  const timeRegex = /\[(\d{1,2}):(\d{2})\.(\d{2,3})\]/g;
+  // 注意：不使用全局标志 g，避免每次循环需要重置 lastIndex
+  const timeRegex = /\[(\d{1,2}):(\d{2})\.(\d{2,3})\]/;
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-
-    // 重置正则表达式的 lastIndex
-    timeRegex.lastIndex = 0;
 
     // 查找所有时间标签
     const timeMatches = [...trimmed.matchAll(timeRegex)];

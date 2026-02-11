@@ -25,8 +25,8 @@ export function parseLRC(lrcContent) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // 跳过元数据标签 [ti:], [ar:], [al:], [offset:]等
-    if (/^\[\w+:[^\]]+\]$/.test(trimmed)) {
+    // 跳过元数据标签 [ti:], [ar:], [al:], [offset:]等（键名必须以字母开头）
+    if (/^\[[a-zA-Z]+:[^\]]+\]$/.test(trimmed)) {
       continue;
     }
 

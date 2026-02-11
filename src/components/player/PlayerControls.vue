@@ -71,6 +71,18 @@
         <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
       </svg>
     </button>
+
+    <!-- Automix 按钮 -->
+    <button
+      class="control-btn automix-btn"
+      @click="onToggleAutomix"
+      :class="{ active: automixEnabled }"
+      title="智能混音"
+    >
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+      </svg>
+    </button>
   </div>
 </template>
 
@@ -99,9 +111,13 @@ export default {
     showLyrics: {
       type: Boolean,
       default: false
+    },
+    automixEnabled: {
+      type: Boolean,
+      default: false
     }
   },
-  emits: ['toggle-play', 'previous', 'next', 'toggle-mode', 'toggle-lyrics'],
+  emits: ['toggle-play', 'previous', 'next', 'toggle-mode', 'toggle-lyrics', 'toggle-automix'],
   setup(props, { emit }) {
     const playModeText = computed(() => {
       const modeTexts = {
@@ -118,6 +134,7 @@ export default {
     const onNext = () => emit('next');
     const onToggleMode = () => emit('toggle-mode');
     const onToggleLyrics = () => emit('toggle-lyrics');
+    const onToggleAutomix = () => emit('toggle-automix');
 
     return {
       playModeText,
@@ -125,7 +142,8 @@ export default {
       onPrevious,
       onNext,
       onToggleMode,
-      onToggleLyrics
+      onToggleLyrics,
+      onToggleAutomix
     };
   }
 };
@@ -211,6 +229,12 @@ export default {
   background: rgba(0, 120, 215, 0.15);
 }
 
+/* Automix 按钮 */
+.automix-btn.active {
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.15);
+}
+
 @media (max-width: 767px) {
   .player-controls {
     gap: clamp(10px, 3vw, 16px);
@@ -237,7 +261,8 @@ export default {
   }
 
   .mode-btn,
-  .lyrics-btn {
+  .lyrics-btn,
+  .automix-btn {
     display: none;
   }
 }

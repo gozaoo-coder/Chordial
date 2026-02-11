@@ -10,3 +10,4 @@ export { default as PlayerAlbumCard } from './PlayerAlbumCard.vue';
 export { default as PlayerProgress } from './PlayerProgress.vue';
 export { default as PlayerControls } from './PlayerControls.vue';
 export { default as PlayerVolume } from './PlayerVolume.vue';
+export { default as AutomixControls } from './AutomixControls.vue';

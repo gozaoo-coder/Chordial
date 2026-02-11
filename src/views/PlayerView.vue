@@ -52,10 +52,12 @@
                 :can-play-previous="canPlayPrevious"
                 :can-play-next="canPlayNext"
                 :show-lyrics="true"
+                :automix-enabled="automixEnabled"
                 @toggle-play="PlayerStore.togglePlay()"
                 @previous="PlayerStore.playPrevious()"
                 @next="PlayerStore.playNext()"
                 @toggle-mode="PlayerStore.togglePlayMode()"
+                @toggle-automix="PlayerStore.toggleAutomix()"
               />
 
               <PlayerVolume
@@ -64,6 +66,11 @@
                 @set-volume="PlayerStore.setVolume"
                 @toggle-mute="PlayerStore.toggleMute()"
               />
+            </div>
+
+            <!-- Automix 控制面板 -->
+            <div v-if="showAutomixPanel" class="automix-panel">
+              <AutomixControls />
             </div>
           </div>
         </div>
@@ -100,7 +107,8 @@ import {
   PlayerAlbumCard,
   PlayerProgress,
   PlayerControls,
-  PlayerVolume
+  PlayerVolume,
+  AutomixControls
 } from '@/components/player';
 import { useCoverImage } from '@/composables/useCoverImage';
 
@@ -113,7 +121,8 @@ export default {
     PlayerAlbumCard,
     PlayerProgress,
     PlayerControls,
-    PlayerVolume
+    PlayerVolume,
+    AutomixControls
   },
   setup() {
     const router = useRouter();
@@ -136,6 +145,8 @@ export default {
     const lyricsData = computed(() => PlayerStore.state.lyricsData);
     const canPlayPrevious = computed(() => PlayerStore.canPlayPrevious.value);
     const canPlayNext = computed(() => PlayerStore.canPlayNext.value);
+    const automixEnabled = computed(() => PlayerStore.state.automixEnabled);
+    const showAutomixPanel = computed(() => PlayerStore.state.automixEnabled);
 
     // 使用 useCoverImage 加载封面
     const { coverUrl: currentCoverUrl } = useCoverImage(currentTrack, 'large');
@@ -234,6 +245,8 @@ export default {
       canPlayPrevious,
       canPlayNext,
       hasLyrics,
+      automixEnabled,
+      showAutomixPanel,
       currentTrackTitle,
       currentTrackArtist,
       currentTrackAlbum,

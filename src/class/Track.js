@@ -12,8 +12,19 @@ import { ArtistSummary } from './ArtistSummary';
 import { AlbumSummary } from './AlbumSummary';
 import { BlobResource, BlobResourcePool } from './BlobResource';
 
-// Track 专用的资源池（用于管理封面图片等）
-const trackResourcePool = new BlobResourcePool();
+// Track 专用的资源池（懒加载单例模式）
+let trackResourcePool = null;
+
+/**
+ * 获取 Track 资源池实例
+ * @returns {BlobResourcePool}
+ */
+function getTrackResourcePool() {
+  if (!trackResourcePool) {
+    trackResourcePool = new BlobResourcePool();
+  }
+  return trackResourcePool;
+}
 
 export class Track {
   /**
@@ -185,7 +196,8 @@ export class Track {
    * @private
    */
   async _createCoverFromDataUrl(key) {
-    let resource = trackResourcePool.get(key);
+    const pool = getTrackResourcePool();
+    let resource = pool.get(key);
     if (resource) {
       this._coverResource = resource;
       return resource;
@@ -194,7 +206,7 @@ export class Track {
     try {
       const res = await fetch(this.albumCoverData);
       const blob = await res.blob();
-      resource = trackResourcePool.add(key, blob);
+      resource = pool.add(key, blob);
       this._coverResource = resource;
       return resource;
     } catch (err) {
@@ -227,7 +239,8 @@ export class Track {
    */
   async _getCoverFromApi(size) {
     const key = `album-cover-${this.albumId}-${size}`;
-    let resource = trackResourcePool.get(key);
+    const pool = getTrackResourcePool();
+    let resource = pool.get(key);
 
     if (resource) {
       return resource;
@@ -245,7 +258,7 @@ export class Track {
       }
 
       const blob = new Blob([imageData], { type: 'image/jpeg' });
-      resource = trackResourcePool.add(key, blob);
+      resource = pool.add(key, blob);
       return resource;
     } catch (err) {
       console.warn('Failed to get cover from album_id:', err);
@@ -340,9 +353,10 @@ export class Track {
 
     try {
       const key = `track_audio_${this.id}`;
-      
+      const pool = getTrackResourcePool();
+
       // 检查资源池是否已有
-      let resource = trackResourcePool.get(key);
+      let resource = pool.get(key);
       if (resource) {
         this._audioResource = resource;
         return resource;
@@ -350,7 +364,7 @@ export class Track {
 
       // 从后端获取音乐文件数据
       const result = await invoke('get_music_file', { track_id: this.id });
-      
+
       // 处理 Tauri Response 返回的数据
       let audioData = null;
       if (result && result.data) {
@@ -371,14 +385,14 @@ export class Track {
         // 根据格式确定 MIME 类型
         const mimeType = this._getMimeType();
         const blob = new Blob([audioData], { type: mimeType });
-        resource = trackResourcePool.add(key, blob);
+        resource = pool.add(key, blob);
         this._audioResource = resource;
         return resource;
       }
     } catch (error) {
       console.error('Failed to get audio resource:', error);
     }
-    
+
     return null;
   }
 
@@ -638,11 +652,11 @@ export class Track {
    * 清理所有资源（静态方法，清理资源池）
    */
   static clearAllResources() {
-    trackResourcePool.clear();
+    getTrackResourcePool().clear();
   }
 }
 
-// 导出资源池（供外部使用）
-export { trackResourcePool };
+// 导出资源池获取函数（供外部使用）
+export { getTrackResourcePool };
 
 export default Track;

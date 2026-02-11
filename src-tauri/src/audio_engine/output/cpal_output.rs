@@ -170,43 +170,21 @@ impl CpalOutput {
         volume: Arc<AtomicU32>,
         callback: Arc<Mutex<Option<AudioCallback>>>,
     ) -> anyhow::Result<Stream> {
-        let config = self.config.clone();
-
-        let stream = self.device.build_output_stream(
-            &config,
-            move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                if !is_playing.load(Ordering::Relaxed) {
-                    for sample in data.iter_mut() {
-                        *sample = 0;
-                    }
-                    return;
-                }
-
-                let vol = f32::from_bits(volume.load(Ordering::Relaxed));
-
-                // 临时缓冲区用于 f32 数据
-                let mut f32_buffer = vec![0.0f32; data.len()];
-
-                if let Ok(mut cb) = callback.lock() {
-                    if let Some(ref mut callback_fn) = *cb {
-                        callback_fn(&mut f32_buffer);
-                        // 转换为 i16 并应用音量
-                        for (i, sample) in data.iter_mut().enumerate() {
-                            let scaled = f32_buffer[i] * vol * i16::MAX as f32;
-                            *sample = scaled.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
-                        }
-                    } else {
-                        for sample in data.iter_mut() {
-                            *sample = 0;
-                        }
-                    }
+        Self::build_stream_with_conversion(
+            &self.device,
+            &self.config,
+            is_playing,
+            volume,
+            callback,
+            |f32_buffer, data, vol| {
+                // 转换为 i16 并应用音量
+                for (i, sample) in data.iter_mut().enumerate() {
+                    let scaled = f32_buffer[i] * vol * i16::MAX as f32;
+                    *sample = scaled.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
                 }
             },
-            |err| eprintln!("Audio stream error: {}", err),
-            None,
-        )?;
-
-        Ok(stream)
+            0i16, // 静音值
+        )
     }
 
     /// 构建 u16 格式的音频流
@@ -216,32 +194,61 @@ impl CpalOutput {
         volume: Arc<AtomicU32>,
         callback: Arc<Mutex<Option<AudioCallback>>>,
     ) -> anyhow::Result<Stream> {
-        let config = self.config.clone();
+        Self::build_stream_with_conversion(
+            &self.device,
+            &self.config,
+            is_playing,
+            volume,
+            callback,
+            |f32_buffer, data, vol| {
+                // 转换为 u16 并应用音量
+                for (i, sample) in data.iter_mut().enumerate() {
+                    let scaled = f32_buffer[i] * vol * i16::MAX as f32;
+                    let biased = scaled + (u16::MAX / 2) as f32;
+                    *sample = biased.clamp(0.0, u16::MAX as f32) as u16;
+                }
+            },
+            u16::MAX / 2, // 静音值（中点）
+        )
+    }
 
-        let stream = self.device.build_output_stream(
-            &config,
-            move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
+    /// 通用音频流构建函数（使用泛型减少重复代码）
+    fn build_stream_with_conversion<T: cpal::SizedSample + Send + 'static>(
+        device: &cpal::Device,
+        config: &StreamConfig,
+        is_playing: Arc<AtomicBool>,
+        volume: Arc<AtomicU32>,
+        callback: Arc<Mutex<Option<AudioCallback>>>,
+        converter: impl Fn(&[f32], &mut [T], f32) + Send + 'static,
+        silence_value: T,
+    ) -> anyhow::Result<Stream> {
+        let stream = device.build_output_stream(
+            config,
+            move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+                // 如果未播放，输出静音
                 if !is_playing.load(Ordering::Relaxed) {
                     for sample in data.iter_mut() {
-                        *sample = u16::MAX / 2;
+                        *sample = silence_value;
                     }
                     return;
                 }
 
+                // 获取音量
                 let vol = f32::from_bits(volume.load(Ordering::Relaxed));
+
+                // 临时缓冲区用于 f32 数据
                 let mut f32_buffer = vec![0.0f32; data.len()];
 
+                // 调用回调获取音频数据
                 if let Ok(mut cb) = callback.lock() {
                     if let Some(ref mut callback_fn) = *cb {
                         callback_fn(&mut f32_buffer);
-                        for (i, sample) in data.iter_mut().enumerate() {
-                            let scaled = f32_buffer[i] * vol * i16::MAX as f32;
-                            let biased = scaled + (u16::MAX / 2) as f32;
-                            *sample = biased.clamp(0.0, u16::MAX as f32) as u16;
-                        }
+                        // 应用转换和音量
+                        converter(&f32_buffer, data, vol);
                     } else {
+                        // 没有回调，输出静音
                         for sample in data.iter_mut() {
-                            *sample = u16::MAX / 2;
+                            *sample = silence_value;
                         }
                     }
                 }

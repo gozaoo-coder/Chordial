@@ -92,6 +92,15 @@ impl Track {
         let sample_rate = decoder.sample_rate();
         let channels = decoder.channels();
 
+        // 时间拉伸器初始化失败不应该阻止轨道加载
+        let time_stretcher = match TimeStretcher::new(sample_rate, channels as usize) {
+            Ok(stretcher) => Some(stretcher),
+            Err(e) => {
+                eprintln!("Warning: Failed to create time stretcher for {}: {}", path_str, e);
+                None
+            }
+        };
+
         Ok(Self {
             decoder: Some(decoder),
             path: path_str,
@@ -100,7 +109,7 @@ impl Track {
             is_preloaded: AtomicBool::new(false),
             bpm: None,
             beat_positions: Vec::new(),
-            time_stretcher: TimeStretcher::new(sample_rate, channels as usize).ok(),
+            time_stretcher,
         })
     }
 
@@ -207,24 +216,33 @@ pub enum MixerState {
 
 /// 音频混音器
 /// 管理双轨道播放和交叉淡化
+/// 
+/// # 锁顺序规则
+/// 当需要同时获取多个锁时，必须按以下顺序：
+/// 1. current_track
+/// 2. next_track
+/// 3. crossfade_config
+/// 4. bpm_sync / phase_sync
+/// 
+/// 违反此顺序可能导致死锁！
 pub struct Mixer {
-    /// 当前播放轨道
+    /// 当前播放轨道（锁顺序：第1）
     current_track: Arc<Mutex<Option<Track>>>,
-    /// 下一首预加载轨道
+    /// 下一首预加载轨道（锁顺序：第2）
     next_track: Arc<Mutex<Option<Track>>>,
     /// 双缓冲区
     double_buffer: Arc<DoubleBuffer>,
     /// 当前状态
     state: AtomicU32,
-    /// 交叉淡化配置
+    /// 交叉淡化配置（锁顺序：第3）
     crossfade_config: Mutex<CrossfadeConfig>,
     /// 音量 (0.0 - 1.0)
     volume: AtomicU32,
     /// 预加载触发阈值（秒）
     preload_threshold: AtomicU32, // 默认10秒
-    /// BPM同步管理器
+    /// BPM同步管理器（锁顺序：第4）
     bpm_sync: Mutex<BpmSyncManager>,
-    /// 相位同步器
+    /// 相位同步器（锁顺序：第4）
     phase_sync: Mutex<PhaseSync>,
     /// 是否启用BPM同步
     bpm_sync_enabled: AtomicBool,
@@ -322,22 +340,30 @@ impl Mixer {
     }
 
     /// 加载并播放轨道
+    /// 
+    /// # 锁顺序
+    /// 遵循 Mixer 结构体文档中的锁顺序规则：current_track -> next_track
     pub fn load_track<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
         let track = Track::new(path)?;
         
         // 清空缓冲区
         self.double_buffer.clear();
         
-        // 设置当前轨道
-        let mut current = self.current_track.lock().unwrap();
+        // 设置当前轨道（按锁顺序获取）
+        let mut current = self.current_track.lock()
+            .map_err(|e| anyhow::anyhow!("Failed to lock current_track: {}", e))?;
         *current = Some(track);
         
         // 清除下一首
-        let mut next = self.next_track.lock().unwrap();
+        let mut next = self.next_track.lock()
+            .map_err(|e| anyhow::anyhow!("Failed to lock next_track: {}", e))?;
         *next = None;
         
         // 设置状态为播放中
         self.set_state(MixerState::Playing);
+        
+        // 重置位置
+        self.state.store(MIXER_STATE_PLAYING, Ordering::Relaxed);
         
         Ok(())
     }
@@ -346,7 +372,8 @@ impl Mixer {
     pub fn preload_next<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
         let track = Track::new(path)?;
         
-        let mut next = self.next_track.lock().unwrap();
+        let mut next = self.next_track.lock()
+            .map_err(|e| anyhow::anyhow!("Failed to lock next_track: {}", e))?;
         *next = Some(track);
         
         self.set_state(MixerState::Preloading);
@@ -361,10 +388,25 @@ impl Mixer {
     }
 
     /// 完成交叉淡化（切换到下一首）
+    /// 
+    /// # 锁顺序
+    /// 遵循 Mixer 结构体文档中的锁顺序规则：current_track -> next_track
     pub fn complete_crossfade(&self) {
-        // 交换轨道
-        let mut current = self.current_track.lock().unwrap();
-        let mut next = self.next_track.lock().unwrap();
+        // 交换轨道（按锁顺序获取：current -> next）
+        let mut current = match self.current_track.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                eprintln!("Failed to lock current_track: {}", e);
+                return;
+            }
+        };
+        let mut next = match self.next_track.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                eprintln!("Failed to lock next_track: {}", e);
+                return;
+            }
+        };
         
         *current = next.take();
         
@@ -381,46 +423,72 @@ impl Mixer {
 
     /// 检查是否需要预加载
     pub fn should_preload(&self) -> bool {
-        if let Ok(current) = self.current_track.lock() {
+        // 先获取当前轨道信息
+        let remaining = if let Ok(current) = self.current_track.lock() {
             if let Some(ref track) = *current {
-                let remaining = track.remaining();
-                let threshold = self.get_preload_threshold();
-                
-                // 当剩余时间小于阈值且下一首未加载时，需要预加载
-                if remaining <= threshold && self.next_track.lock().unwrap().is_none() {
-                    return true;
-                }
+                track.remaining()
+            } else {
+                return false;
             }
-        }
-        false
+        } else {
+            return false;
+        };
+        
+        let threshold = self.get_preload_threshold();
+        
+        // 检查下一首是否已加载
+        let next_is_none = match self.next_track.lock() {
+            Ok(next) => next.is_none(),
+            Err(_) => return false,
+        };
+        
+        // 当剩余时间小于阈值且下一首未加载时，需要预加载
+        remaining <= threshold && next_is_none
     }
 
     /// 检查是否应该开始交叉淡化
     pub fn should_start_crossfade(&self) -> bool {
-        if let Ok(current) = self.current_track.lock() {
+        // 先获取当前轨道信息
+        let remaining = if let Ok(current) = self.current_track.lock() {
             if let Some(ref track) = *current {
-                let remaining = track.remaining();
-                let config = self.crossfade_config.lock().unwrap();
-                
-                // 当剩余时间小于交叉淡化持续时间时，开始交叉淡化
-                // 且下一首已预加载完成
-                if remaining <= config.duration_secs && 
-                   self.next_track.lock().unwrap().is_some() &&
-                   !self.double_buffer.is_crossfading() {
-                    return true;
-                }
+                track.remaining()
+            } else {
+                return false;
             }
-        }
-        false
+        } else {
+            return false;
+        };
+        
+        // 获取交叉淡化配置
+        let duration_secs = match self.crossfade_config.lock() {
+            Ok(config) => config.duration_secs,
+            Err(_) => return false,
+        };
+        
+        // 检查下一首是否已加载
+        let next_is_some = match self.next_track.lock() {
+            Ok(next) => next.is_some(),
+            Err(_) => return false,
+        };
+        
+        // 当剩余时间小于交叉淡化持续时间时，开始交叉淡化
+        // 且下一首已预加载完成
+        remaining <= duration_secs && next_is_some && !self.double_buffer.is_crossfading()
     }
 
     /// 解码当前轨道的一帧到缓冲区
     pub fn decode_current_frame(&self) -> anyhow::Result<bool> {
-        let mut current = self.current_track.lock().unwrap();
+        let mut current = match self.current_track.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                eprintln!("Failed to lock current_track: {}", e);
+                return Ok(false);
+            }
+        };
         
         if let Some(ref mut track) = *current {
-            match track.next_frame()? {
-                Some(frame) => {
+            match track.next_frame() {
+                Ok(Some(frame)) => {
                     // 将帧数据转换为交错格式并推入缓冲区
                     let chunk = frame.samples;
                     match self.double_buffer.push_active(chunk) {
@@ -431,8 +499,12 @@ impl Mixer {
                         }
                     }
                 }
-                None => {
+                Ok(None) => {
                     // 当前轨道结束
+                    Ok(false)
+                }
+                Err(e) => {
+                    eprintln!("Decode error for current track: {}", e);
                     Ok(false)
                 }
             }
@@ -443,19 +515,29 @@ impl Mixer {
 
     /// 解码下一首轨道的一帧到预加载缓冲区
     pub fn decode_next_frame(&self) -> anyhow::Result<bool> {
-        let mut next = self.next_track.lock().unwrap();
+        let mut next = match self.next_track.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                eprintln!("Failed to lock next_track: {}", e);
+                return Ok(false);
+            }
+        };
         
         if let Some(ref mut track) = *next {
-            match track.next_frame()? {
-                Some(frame) => {
+            match track.next_frame() {
+                Ok(Some(frame)) => {
                     let chunk = frame.samples;
                     match self.double_buffer.push_preload(chunk) {
                         Ok(_) => Ok(true),
                         Err(_) => Ok(true), // 缓冲区满
                     }
                 }
-                None => {
+                Ok(None) => {
                     track.mark_preloaded();
+                    Ok(false)
+                }
+                Err(e) => {
+                    eprintln!("Decode error for next track: {}", e);
                     Ok(false)
                 }
             }
@@ -466,6 +548,12 @@ impl Mixer {
 
     /// 获取混合输出
     pub fn get_output(&self, requested_samples: usize) -> Vec<f32> {
+        // 检查当前状态，如果不是播放状态则返回静音
+        let state = self.get_state();
+        if state == MixerState::Idle || state == MixerState::Paused {
+            return vec![0.0f32; requested_samples];
+        }
+        
         let samples = self.double_buffer.mix_output(requested_samples);
         
         // 应用音量
@@ -509,10 +597,14 @@ impl Mixer {
     /// 停止
     pub fn stop(&self) {
         self.double_buffer.clear();
-        let mut current = self.current_track.lock().unwrap();
-        let mut next = self.next_track.lock().unwrap();
-        *current = None;
-        *next = None;
+        
+        // 按锁顺序获取锁
+        if let Ok(mut current) = self.current_track.lock() {
+            *current = None;
+        }
+        if let Ok(mut next) = self.next_track.lock() {
+            *next = None;
+        }
         self.set_state(MixerState::Idle);
     }
 
@@ -538,43 +630,37 @@ impl Mixer {
 
     /// 设置交叉淡化配置
     pub fn set_crossfade_config(&self, config: CrossfadeConfig) {
-        let mut cfg = self.crossfade_config.lock().unwrap();
-        *cfg = config;
+        if let Ok(mut cfg) = self.crossfade_config.lock() {
+            *cfg = config;
+        }
     }
 
     /// 获取交叉淡化配置
-    pub fn get_crossfade_config(&self) -> CrossfadeConfig {
-        self.crossfade_config.lock().unwrap().clone()
+    pub fn get_crossfade_config(&self) -> Option<CrossfadeConfig> {
+        self.crossfade_config.lock().ok().map(|cfg| cfg.clone())
     }
 
     /// 获取当前轨道位置
     pub fn current_position(&self) -> f32 {
-        if let Ok(current) = self.current_track.lock() {
-            if let Some(ref track) = *current {
-                return track.position();
-            }
-        }
-        0.0
+        self.current_track.lock()
+            .ok()
+            .and_then(|current| current.as_ref().map(|track| track.position()))
+            .unwrap_or(0.0)
     }
 
     /// 获取当前轨道时长
     pub fn current_duration(&self) -> f32 {
-        if let Ok(current) = self.current_track.lock() {
-            if let Some(ref track) = *current {
-                return track.duration();
-            }
-        }
-        0.0
+        self.current_track.lock()
+            .ok()
+            .and_then(|current| current.as_ref().map(|track| track.duration()))
+            .unwrap_or(0.0)
     }
 
     /// 获取当前轨道路径
     pub fn current_path(&self) -> Option<String> {
-        if let Ok(current) = self.current_track.lock() {
-            if let Some(ref track) = *current {
-                return Some(track.path().to_string());
-            }
-        }
-        None
+        self.current_track.lock()
+            .ok()
+            .and_then(|current| current.as_ref().map(|track| track.path().to_string()))
     }
 
     /// 检查是否正在播放
