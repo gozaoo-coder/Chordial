@@ -3,7 +3,7 @@
 //! 支持标准 WAV 文件和带有 INFO 列表的扩展元数据
 
 use crate::audio_metadata::{
-    core::{AudioFormat, AudioMetadata, Picture, PictureType, LyricLine},
+    core::{AudioFormat, AudioMetadata},
     utils::encoding::auto_decode_text,
 };
 use crate::audio_metadata::MetadataError;

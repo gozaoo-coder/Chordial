@@ -1,4 +1,4 @@
-use crate::audio_engine::buffer::{DoubleBuffer, StreamState};
+use crate::audio_engine::buffer::DoubleBuffer;
 use crate::audio_engine::decoder::{SymphoniaDecoder, AudioFrame};
 use crate::audio_engine::time_stretch::{TimeStretcher, BpmSyncManager, PhaseSync};
 use std::path::Path;
@@ -278,25 +278,33 @@ impl Mixer {
 
     /// 设置当前轨道BPM信息
     pub fn set_current_track_bpm(&self, bpm: f64, beat_positions: Vec<f64>) {
-        let mut current = self.current_track.lock().unwrap();
+        let Ok(mut current) = self.current_track.lock() else {
+            eprintln!("Failed to lock current_track for BPM update");
+            return;
+        };
         if let Some(ref mut track) = *current {
             track.set_bpm_info(bpm, beat_positions);
             
             // 更新BPM同步管理器
-            let mut bpm_sync = self.bpm_sync.lock().unwrap();
-            bpm_sync.set_master_bpm(bpm);
+            if let Ok(mut bpm_sync) = self.bpm_sync.lock() {
+                bpm_sync.set_master_bpm(bpm);
+            }
         }
     }
 
     /// 设置下一首轨道BPM信息
     pub fn set_next_track_bpm(&self, bpm: f64, beat_positions: Vec<f64>) {
-        let mut next = self.next_track.lock().unwrap();
+        let Ok(mut next) = self.next_track.lock() else {
+            eprintln!("Failed to lock next_track for BPM update");
+            return;
+        };
         if let Some(ref mut track) = *next {
             track.set_bpm_info(bpm, beat_positions);
             
             // 更新BPM同步管理器
-            let mut bpm_sync = self.bpm_sync.lock().unwrap();
-            bpm_sync.set_slave_bpm(bpm);
+            if let Ok(mut bpm_sync) = self.bpm_sync.lock() {
+                bpm_sync.set_slave_bpm(bpm);
+            }
         }
     }
 
@@ -304,7 +312,10 @@ impl Mixer {
     pub fn set_bpm_sync_enabled(&self, enabled: bool) {
         self.bpm_sync_enabled.store(enabled, Ordering::Relaxed);
         
-        let mut bpm_sync = self.bpm_sync.lock().unwrap();
+        let Ok(mut bpm_sync) = self.bpm_sync.lock() else {
+            eprintln!("Failed to lock bpm_sync");
+            return;
+        };
         bpm_sync.set_sync_enabled(enabled);
         
         // 应用速度调整
@@ -312,9 +323,10 @@ impl Mixer {
             let speed_ratio = bpm_sync.get_speed_ratio();
             drop(bpm_sync); // 释放锁
             
-            let mut next = self.next_track.lock().unwrap();
-            if let Some(ref mut track) = *next {
-                let _ = track.set_speed(speed_ratio);
+            if let Ok(mut next) = self.next_track.lock() {
+                if let Some(ref mut track) = *next {
+                    let _ = track.set_speed(speed_ratio);
+                }
             }
         }
     }

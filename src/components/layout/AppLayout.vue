@@ -35,7 +35,7 @@ import { PlayerControlBar } from '@/components/player';
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg-primary, #F3F3F3);
+  background: var(--bg-primary);
 }
 
 .layout-body {
@@ -63,7 +63,7 @@ import { PlayerControlBar } from '@/components/player';
 }
 
 .content-wrapper {
-  padding: 24px;
+  padding: 28px 32px;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -87,23 +87,23 @@ import { PlayerControlBar } from '@/components/player';
   .main-content {
     margin-left: 0;
     /* 移动端需要同时考虑底栏和播放器的高度 */
-    padding-bottom: calc(var(--bottom-nav-height, 60px) + var(--player-bar-height, 100px));
+    padding-bottom: calc(var(--bottom-nav-height) + var(--player-bar-height));
   }
 
   .content-wrapper {
-    padding: 16px;
+    padding: 20px 24px;
   }
 }
 
 @media (max-width: 767px) {
   .content-wrapper {
-    padding: 12px;
+    padding: 16px 20px;
   }
 }
 
 @media (prefers-color-scheme: dark) {
   .app-layout {
-    --bg-primary: #2f2f2f;
+    background: var(--bg-primary);
   }
 }
 </style>

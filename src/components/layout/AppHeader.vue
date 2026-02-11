@@ -61,17 +61,17 @@ const goToSettings = () => {
 <style scoped>
 .app-header {
   height: var(--header-height);
-  background: var(--bg-secondary);
+  background: var(--bg-glass);
   border-bottom: 1px solid var(--border-light);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px 0 24px;
+  padding: 0 20px 0 24px;
   position: sticky;
   top: 0;
   z-index: 100;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 /* 窗口拖动区域 */
@@ -94,15 +94,20 @@ const goToSettings = () => {
 }
 
 .app-title {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
-  color: #0078d7;
+  background: var(--primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   margin: 0;
   -webkit-app-region: no-drag;
+  letter-spacing: -0.5px;
 }
 
 .page-title {
   font-size: 14px;
+  font-weight: 500;
   color: var(--text-secondary);
   padding-left: 16px;
   border-left: 1px solid var(--border-light);
@@ -132,22 +137,23 @@ const goToSettings = () => {
 
 .search-box input {
   width: 100%;
-  height: 36px;
-  padding: 0 12px 0 36px;
+  height: 38px;
+  padding: 0 16px 0 40px;
   border: 1px solid var(--border-light);
-  border-radius: 18px;
-  background: rgba(15, 15, 15, 0.05);
+  border-radius: 19px;
+  background: var(--bg-tertiary);
   color: var(--text-primary);
-  font-size: 13px;
-  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 400;
+  transition: all var(--transition-normal);
   -webkit-app-region: no-drag;
 }
 
 .search-box input:focus {
   outline: none;
-  border-color: #0078d7;
+  border-color: var(--primary-color);
   background: var(--bg-secondary);
-  box-shadow: 0 0 0 3px rgba(0, 120, 215, 0.1);
+  box-shadow: 0 0 0 4px var(--primary-light);
 }
 
 .search-box input::placeholder {
@@ -167,23 +173,24 @@ const goToSettings = () => {
   height: 36px;
   border: none;
   border-radius: 50%;
-  background: rgba(15, 15, 15, 0.05);
+  background: transparent;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
   -webkit-app-region: no-drag;
 }
 
 .icon-btn:hover {
-  background: rgba(15, 15, 15, 0.08);
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
 .icon-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.92);
+  background: var(--bg-active);
 }
 
 .icon-btn i {
@@ -266,27 +273,30 @@ const goToSettings = () => {
 
 @media (prefers-color-scheme: dark) {
   .app-title {
-    color: #4da3ff;
+    background: var(--primary-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
   .search-box input {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-tertiary);
     border-color: var(--border-light);
   }
 
   .search-box input:focus {
     background: var(--bg-secondary);
-    border-color: #4da3ff;
-    box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.15);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 4px var(--primary-light);
   }
 
   .icon-btn {
-    background: rgba(255, 255, 255, 0.1);
+    background: transparent;
     color: var(--text-secondary);
   }
 
   .icon-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--bg-hover);
     color: var(--text-primary);
   }
 }

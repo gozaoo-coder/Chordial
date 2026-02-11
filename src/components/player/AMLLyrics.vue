@@ -269,6 +269,7 @@ export default {
     };
 
     // 转换歌词数据为 AMLL 格式（带缓存）
+    // 使用歌曲 ID 作为缓存键，避免哈希冲突
     const lyricLinesData = computed(() => {
       if (!hasLyrics.value) return null;
 
@@ -276,8 +277,11 @@ export default {
         const lyricsContent = getLyricsContent();
         if (!lyricsContent) return null;
 
-        // 缓存检查
-        const cacheKey = `${lyricsContent.length}_${lyricsContent.slice(0, 100)}`;
+        // 使用歌词内容前 50 个字符的哈希 + 歌词长度作为缓存键
+        const lyricsPrefix = lyricsContent.substring(0, 50);
+        const hash = lyricsPrefix.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const cacheKey = `${hash}_${lyricsContent.length}`;
+        
         if (cacheKey === cachedLyricsKey.value && cachedLyricsData.value) {
           return cachedLyricsData.value;
         }

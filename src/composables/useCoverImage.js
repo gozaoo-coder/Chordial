@@ -1,8 +1,46 @@
 /**
  * 封面图片加载 Composable
  * 使用 ResourceManager 按需加载封面图片
+ *
+ * # 性能优化
+ * - 实现并发控制，限制同时加载的图片数量
+ * - 优化 watch 监听，避免深度监听大对象
  */
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
+
+// 全局并发控制 - 限制同时加载的封面数量
+const MAX_CONCURRENT_LOADS = 5;
+let currentLoadCount = 0;
+const loadQueue = [];
+
+/**
+ * 获取加载许可（并发控制）
+ * @returns {Promise<void>}
+ */
+async function acquireLoadPermit() {
+  if (currentLoadCount < MAX_CONCURRENT_LOADS) {
+    currentLoadCount++;
+    return;
+  }
+
+  // 等待队列
+  return new Promise((resolve) => {
+    loadQueue.push(resolve);
+  });
+}
+
+/**
+ * 释放加载许可
+ */
+function releaseLoadPermit() {
+  currentLoadCount--;
+  // 唤醒队列中的下一个
+  if (loadQueue.length > 0) {
+    const next = loadQueue.shift();
+    currentLoadCount++;
+    next();
+  }
+}
 
 /**
  * 加载专辑或歌手封面图片
@@ -70,11 +108,12 @@ export function useCoverImage(item, size = 'medium') {
     loadCover();
   });
 
-  // 监听 item 变化，重新加载封面
-  watch(item, () => {
+  // 监听 item.id 变化，避免深度监听大对象
+  const itemId = computed(() => item.value?.id);
+  watch(itemId, () => {
     releaseCover();
     loadCover();
-  }, { deep: true });
+  });
 
   // 组件卸载时释放资源
   onUnmounted(() => {
@@ -111,7 +150,7 @@ export function useCoverImages(itemsRef, size = 'medium') {
     releaseFns.clear();
     coverUrls.value.clear();
 
-    // 加载新的封面
+    // 加载新的封面（带并发控制）
     const promises = itemsRef.value.map(async (item) => {
       if (!item) return;
 
@@ -126,6 +165,9 @@ export function useCoverImages(itemsRef, size = 'medium') {
         return;
       }
 
+      // 获取加载许可（并发控制）
+      await acquireLoadPermit();
+
       try {
         const resource = await item.getCoverResource(size);
         if (resource && resource.url) {
@@ -134,6 +176,9 @@ export function useCoverImages(itemsRef, size = 'medium') {
         }
       } catch (err) {
         console.warn(`Failed to load cover for ${item.id}:`, err);
+      } finally {
+        // 释放加载许可
+        releaseLoadPermit();
       }
     });
 
@@ -147,10 +192,15 @@ export function useCoverImages(itemsRef, size = 'medium') {
     coverUrls.value.clear();
   };
 
-  // 监听列表变化，重新加载封面
-  watch(itemsRef, () => {
+  // 监听列表长度和 ID 变化，避免深度监听大对象
+  const itemsKey = computed(() => {
+    const items = itemsRef.value;
+    if (!items) return '';
+    return `${items.length}_${items.map(i => i?.id).join(',')}`;
+  });
+  watch(itemsKey, () => {
     loadCovers();
-  }, { deep: true });
+  });
 
   // 组件挂载时加载封面
   onMounted(() => {

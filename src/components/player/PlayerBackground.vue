@@ -3,9 +3,8 @@
     <!-- AMLL 流体背景 -->
     <div v-if="hasCover && !webglFailed" class="amll-background-wrapper">
       <BackgroundRender
-        :key="renderKey"
         :album="stableCoverUrl"
-        :playing="!isPlaying"
+        :playing="isPlaying"
         :flow-speed="flowSpeed"
         :fps="fps"
         :has-lyric="hasLyric"
@@ -76,8 +75,6 @@ export default {
   setup(props) {
     // 使用 ref 存储稳定的封面 URL，避免频繁更新
     const stableCoverUrl = ref('');
-    // 用于强制重新渲染 BackgroundRender 的 key
-    const renderKey = ref(0);
     // WebGL 是否失败
     const webglFailed = ref(false);
 
@@ -94,8 +91,6 @@ export default {
           // 只在 URL 真正变化时才更新
           if (newUrl !== oldUrl) {
             stableCoverUrl.value = newUrl;
-            // 增加 key 强制重新渲染 BackgroundRender
-            renderKey.value++;
             // 重置 WebGL 失败状态
             webglFailed.value = false;
           }
@@ -136,7 +131,6 @@ export default {
     return {
       hasCover,
       stableCoverUrl,
-      renderKey,
       webglFailed,
       coverBgStyle,
       onBackgroundError

@@ -3,14 +3,13 @@
 //! 支持 OGG 容器的 Vorbis 评论和 Opus 标签
 
 use crate::audio_metadata::{
-    core::{AudioFormat, AudioMetadata, Picture, PictureType, LyricLine},
+    core::{AudioFormat, AudioMetadata, Picture, PictureType},
     utils::encoding::auto_decode_text,
 };
 use crate::audio_metadata::MetadataError;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
-use std::time::Duration;
 
 /// OGG 元数据读取器
 pub struct OggReader;

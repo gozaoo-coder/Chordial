@@ -68,7 +68,7 @@ pub mod commands;
 
 use std::path::PathBuf;
 use tauri::Manager;
-use audio_engine::{SharedAudioPlayer, analyzer::SharedAudioAnalyzer};
+use audio_engine::SharedAudioPlayer;
 
 /// 示例问候函数
 #[tauri::command]

@@ -4,7 +4,7 @@ use tauri::State;
 use crate::state::AppState;
 use crate::lock_state;
 use crate::lock_state_unwrap;
-use crate::audio_engine::{SharedAudioPlayer, PlaybackState, CrossfadeCurve, CrossfadeConfig};
+use crate::audio_engine::{PlaybackState, CrossfadeCurve, CrossfadeConfig};
 
 /// 播放音频文件
 #[tauri::command(rename_all = "snake_case")]

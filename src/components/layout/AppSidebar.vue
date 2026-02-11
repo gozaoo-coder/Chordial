@@ -72,14 +72,14 @@ const isActive = (path) => {
   border-right: 1px solid var(--border-light);
   display: flex;
   flex-direction: column;
-  padding: 16px 12px;
+  padding: 20px 16px;
 }
 
 .sidebar-nav {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .nav-item {
@@ -87,21 +87,24 @@ const isActive = (path) => {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   text-decoration: none;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
   cursor: pointer;
+  font-weight: 500;
 }
 
 .nav-item:hover {
-  background: rgba(15, 15, 15, 0.05);
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
 .nav-item.active {
-  background: #0078d7;
+  background: var(--primary-color);
   color: #ffffff;
+  box-shadow: var(--shadow-primary);
+  font-weight: 600;
 }
 
 .nav-icon {
@@ -111,7 +114,6 @@ const isActive = (path) => {
 
 .nav-text {
   font-size: 14px;
-  font-weight: 500;
 }
 
 .sidebar-footer {
@@ -122,11 +124,11 @@ const isActive = (path) => {
 
 @media (prefers-color-scheme: dark) {
   .nav-item:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-hover);
   }
 
   .nav-item.active {
-    background: #0078d7;
+    background: var(--primary-color);
   }
 }
 </style>

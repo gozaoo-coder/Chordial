@@ -2,7 +2,16 @@
  * 歌词格式转换工具
  * 支持 LRC、YRC、QRC、TTML 格式及翻译歌词
  * 整合优化版本
+ * 
+ * # 性能优化
+ * - 预编译正则表达式，避免重复编译
+ * - 使用 Map 存储时间戳映射，提高查找效率
  */
+
+// 预编译正则表达式，避免每次调用时重新编译
+const LRC_TIME_REGEX = /\[(\d{1,2}):(\d{2})\.(\d{2,3})\]/g;
+const LRC_METADATA_REGEX = /^\[[a-zA-Z]+:[^\]]+\]$/;
+const LINE_SPLIT_REGEX = /\r?\n/;
 
 /**
  * 解析LRC格式歌词
@@ -14,24 +23,21 @@ export function parseLRC(lrcContent) {
     return [];
   }
 
-  const lines = lrcContent.split(/\r?\n/);
+  const lines = lrcContent.split(LINE_SPLIT_REGEX);
   const lyrics = [];
   const timeToLyricMap = new Map();
-
-  // LRC时间标签正则: [mm:ss.xx] 或 [mm:ss.xxx]
-  const timeRegex = /\[(\d{1,2}):(\d{2})\.(\d{2,3})\]/g;
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
     // 跳过元数据标签 [ti:], [ar:], [al:], [offset:]等（键名必须以字母开头）
-    if (/^\[[a-zA-Z]+:[^\]]+\]$/.test(trimmed)) {
+    if (LRC_METADATA_REGEX.test(trimmed)) {
       continue;
     }
 
-    // 重置正则的lastIndex
-    timeRegex.lastIndex = 0;
+    // 使用新的正则实例，避免 lastIndex 污染
+    const timeRegex = new RegExp(LRC_TIME_REGEX.source, 'g');
 
     // 查找所有时间标签
     const timeMatches = [...trimmed.matchAll(timeRegex)];

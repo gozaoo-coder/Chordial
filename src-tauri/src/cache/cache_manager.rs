@@ -1,12 +1,18 @@
 //! 缓存管理器
 //!
 //! 管理音乐库数据的本地缓存，包括读写和序列化
+//!
+//! # 性能优化
+//! - 使用 moka 实现 LRU 内存缓存，减少磁盘 I/O
+//! - 缓存大小限制防止内存无限增长
+//! - 异步 I/O 支持（可选）
 
 use crate::music_source::{MusicLibrary, SourceConfig, SourceManager, TrackMetadata};
-use serde::{Deserialize, Serialize};
+use moka::sync::Cache;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// 缓存错误类型
 #[derive(Debug, Clone, PartialEq)]
@@ -62,10 +68,22 @@ impl From<serde_json::Error> for CacheError {
 /// - 音乐库主数据 (library.json)
 /// - 源配置列表 (sources.json)
 /// - 各源的曲目缓存 (sources/{source_id}.json)
+///
+/// # 内存缓存
+/// 使用 moka 实现 LRU 内存缓存，缓存热点数据以减少磁盘 I/O：
+/// - 音乐库数据（最大 1 条，约 10MB）
+/// - 源配置列表（最大 1 条，约 1MB）
+/// - 各源曲目数据（最大 100 条，约 100MB）
 #[derive(Debug, Clone)]
 pub struct CacheManager {
     /// 缓存目录路径
     cache_dir: PathBuf,
+    /// 内存缓存：音乐库数据
+    library_mem_cache: Arc<Cache<String, MusicLibrary>>,
+    /// 内存缓存：源配置列表
+    sources_mem_cache: Arc<Cache<String, Vec<SourceConfig>>>,
+    /// 内存缓存：各源曲目数据
+    tracks_mem_cache: Arc<Cache<String, Vec<TrackMetadata>>>,
 }
 
 impl CacheManager {
@@ -95,7 +113,31 @@ impl CacheManager {
             let _ = fs::create_dir_all(&sources_dir);
         }
 
-        Self { cache_dir: path }
+        // 创建内存缓存
+        // 音乐库缓存：最大 1 条，TTL 1 小时
+        let library_mem_cache = Cache::builder()
+            .max_capacity(1)
+            .time_to_live(std::time::Duration::from_secs(3600))
+            .build();
+
+        // 源配置缓存：最大 1 条，TTL 30 分钟
+        let sources_mem_cache = Cache::builder()
+            .max_capacity(1)
+            .time_to_live(std::time::Duration::from_secs(1800))
+            .build();
+
+        // 曲目缓存：最大 100 条，TTL 30 分钟
+        let tracks_mem_cache = Cache::builder()
+            .max_capacity(100)
+            .time_to_live(std::time::Duration::from_secs(1800))
+            .build();
+
+        Self {
+            cache_dir: path,
+            library_mem_cache: Arc::new(library_mem_cache),
+            sources_mem_cache: Arc::new(sources_mem_cache),
+            tracks_mem_cache: Arc::new(tracks_mem_cache),
+        }
     }
 
     /// 获取缓存目录路径
@@ -126,18 +168,30 @@ impl CacheManager {
     /// 保存音乐库到缓存
     ///
     /// 将 MusicLibrary 序列化为 JSON 并保存到 library.json
+    /// 同时更新内存缓存
     pub fn save_library(&self, library: &MusicLibrary) -> Result<(), CacheError> {
         let path = self.library_path();
-        let json = serde_json::to_string_pretty(library)
+        // 使用 to_string 替代 to_string_pretty 减少文件大小
+        let json = serde_json::to_string(library)
             .map_err(|e| CacheError::SerializationError(e.to_string()))?;
         fs::write(&path, json)?;
+        
+        // 更新内存缓存
+        self.library_mem_cache.insert("library".to_string(), library.clone());
+        
         Ok(())
     }
 
     /// 从缓存加载音乐库
     ///
-    /// 从 library.json 反序列化 MusicLibrary
+    /// 优先从内存缓存读取，未命中则从 library.json 加载
     pub fn load_library(&self) -> Result<MusicLibrary, CacheError> {
+        // 首先尝试从内存缓存读取
+        if let Some(library) = self.library_mem_cache.get("library") {
+            return Ok(library);
+        }
+        
+        // 内存缓存未命中，从磁盘加载
         let path = self.library_path();
         if !path.exists() {
             return Err(CacheError::FileNotFound(path.to_string_lossy().to_string()));
@@ -146,25 +200,41 @@ impl CacheManager {
         let content = fs::read_to_string(&path)?;
         let library: MusicLibrary = serde_json::from_str(&content)
             .map_err(|e| CacheError::DeserializationError(e.to_string()))?;
+        
+        // 存入内存缓存
+        self.library_mem_cache.insert("library".to_string(), library.clone());
+        
         Ok(library)
     }
 
     /// 保存源配置列表到缓存
     ///
     /// 将 SourceManager 中的所有源配置序列化为 JSON 并保存到 sources.json
+    /// 同时更新内存缓存
     pub fn save_sources(&self, source_manager: &SourceManager) -> Result<(), CacheError> {
         let path = self.sources_path();
         let sources = source_manager.get_all_sources();
-        let json = serde_json::to_string_pretty(sources)
+        // 使用 to_string 替代 to_string_pretty 减少文件大小
+        let json = serde_json::to_string(sources)
             .map_err(|e| CacheError::SerializationError(e.to_string()))?;
         fs::write(&path, json)?;
+        
+        // 更新内存缓存
+        self.sources_mem_cache.insert("sources".to_string(), sources.to_vec());
+        
         Ok(())
     }
 
     /// 从缓存加载源配置列表
     ///
-    /// 从 sources.json 反序列化 SourceConfig 列表
+    /// 优先从内存缓存读取，未命中则从 sources.json 加载
     pub fn load_sources(&self) -> Result<Vec<SourceConfig>, CacheError> {
+        // 首先尝试从内存缓存读取
+        if let Some(sources) = self.sources_mem_cache.get("sources") {
+            return Ok(sources);
+        }
+        
+        // 内存缓存未命中，从磁盘加载
         let path = self.sources_path();
         if !path.exists() {
             return Ok(Vec::new());
@@ -173,24 +243,43 @@ impl CacheManager {
         let content = fs::read_to_string(&path)?;
         let sources: Vec<SourceConfig> = serde_json::from_str(&content)
             .map_err(|e| CacheError::DeserializationError(e.to_string()))?;
+        
+        // 存入内存缓存
+        self.sources_mem_cache.insert("sources".to_string(), sources.clone());
+        
         Ok(sources)
     }
 
     /// 保存指定源的曲目缓存
     ///
     /// 将曲目列表序列化为 JSON 并保存到 sources/{source_id}.json
+    /// 同时更新内存缓存
     pub fn save_source_cache(&self, source_id: &str, tracks: &[TrackMetadata]) -> Result<(), CacheError> {
         let path = self.source_cache_path(source_id);
-        let json = serde_json::to_string_pretty(tracks)
+        // 使用 to_string 替代 to_string_pretty 减少文件大小
+        let json = serde_json::to_string(tracks)
             .map_err(|e| CacheError::SerializationError(e.to_string()))?;
         fs::write(&path, json)?;
+        
+        // 更新内存缓存
+        let cache_key = format!("tracks:{}", source_id);
+        self.tracks_mem_cache.insert(cache_key, tracks.to_vec());
+        
         Ok(())
     }
 
     /// 从缓存加载指定源的曲目
     ///
-    /// 从 sources/{source_id}.json 反序列化 TrackMetadata 列表
+    /// 优先从内存缓存读取，未命中则从 sources/{source_id}.json 加载
     pub fn load_source_cache(&self, source_id: &str) -> Result<Vec<TrackMetadata>, CacheError> {
+        let cache_key = format!("tracks:{}", source_id);
+        
+        // 首先尝试从内存缓存读取
+        if let Some(tracks) = self.tracks_mem_cache.get(&cache_key) {
+            return Ok(tracks);
+        }
+        
+        // 内存缓存未命中，从磁盘加载
         let path = self.source_cache_path(source_id);
         if !path.exists() {
             return Ok(Vec::new());
@@ -199,6 +288,10 @@ impl CacheManager {
         let content = fs::read_to_string(&path)?;
         let tracks: Vec<TrackMetadata> = serde_json::from_str(&content)
             .map_err(|e| CacheError::DeserializationError(e.to_string()))?;
+        
+        // 存入内存缓存
+        self.tracks_mem_cache.insert(cache_key, tracks.clone());
+        
         Ok(tracks)
     }
 
@@ -215,8 +308,13 @@ impl CacheManager {
 
     /// 清除所有缓存
     ///
-    /// 删除缓存目录中的所有文件和子目录
+    /// 删除缓存目录中的所有文件和子目录，同时清除内存缓存
     pub fn clear_all_cache(&self) -> Result<(), CacheError> {
+        // 清除内存缓存
+        self.library_mem_cache.invalidate_all();
+        self.sources_mem_cache.invalidate_all();
+        self.tracks_mem_cache.invalidate_all();
+
         // 删除 library.json
         let library_path = self.library_path();
         if library_path.exists() {
@@ -286,7 +384,7 @@ impl CacheManager {
 
 impl Default for CacheManager {
     fn default() -> Self {
-        Self::with_directory(PathBuf::from("./cache"))
+        Self::new()
     }
 }
 

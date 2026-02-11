@@ -1,4 +1,4 @@
-use ringbuf::traits::{Consumer, Producer, Observer};
+use ringbuf::traits::{Consumer, Producer};
 use ringbuf::HeapRb;
 use std::sync::{Arc, Mutex};
 
@@ -157,13 +157,28 @@ impl DoubleBuffer {
 
     /// 获取混合后的音频数据（用于交叉淡化期间）
     /// 返回的样本数是 requested_samples 和可用样本数的最小值
+    /// 
+    /// # 性能优化
+    /// - 预分配输出向量容量，避免动态扩容
+    /// - 使用索引循环替代迭代器，减少边界检查
+    /// - 使用 resize 替代 extend + repeat 填充零值
     pub fn mix_output(&self, requested_samples: usize) -> Vec<f32> {
         if !self.is_crossfading() {
             // 非交叉淡化状态，只从活跃缓冲区读取
             if let Some(chunk) = self.pop_active() {
                 let samples_to_take = requested_samples.min(chunk.len());
-                chunk.into_iter().take(samples_to_take).collect()
+                if samples_to_take == chunk.len() {
+                    chunk
+                } else {
+                    // 预分配容量并复制数据
+                    let mut result = Vec::with_capacity(requested_samples);
+                    result.extend_from_slice(&chunk[..samples_to_take]);
+                    // 使用 resize 填充剩余部分
+                    result.resize(requested_samples, 0.0);
+                    result
+                }
             } else {
+                // 直接创建零值向量
                 vec![0.0f32; requested_samples]
             }
         } else {
@@ -174,15 +189,16 @@ impl DoubleBuffer {
             let progress = self.crossfade_progress();
             let samples_to_take = requested_samples.min(chunk_a.len()).min(chunk_b.len());
 
-            let mixed: Vec<f32> = chunk_a.iter()
-                .zip(chunk_b.iter())
-                .take(samples_to_take)
-                .map(|(a, b)| {
-                    let fade_out = 1.0 - progress;
-                    let fade_in = progress;
-                    a * fade_out + b * fade_in
-                })
-                .collect();
+            // 预分配输出向量
+            let mut result = Vec::with_capacity(requested_samples);
+            let fade_out = 1.0 - progress;
+            let fade_in = progress;
+
+            // 使用索引循环混合音频（比迭代器更高效）
+            for i in 0..samples_to_take {
+                let mixed = chunk_a[i] * fade_out + chunk_b[i] * fade_in;
+                result.push(mixed);
+            }
 
             // 更新交叉淡化进度
             let crossfade_duration_samples = self.sample_rate as f32 * DEFAULT_CROSSFADE_DURATION_SECS;
@@ -199,12 +215,8 @@ impl DoubleBuffer {
                 let _ = self.push_preload(remaining_b);
             }
 
-            // 填充到请求的样本数
-            let mut result = mixed;
-            if result.len() < requested_samples {
-                result.extend(std::iter::repeat(0.0f32).take(requested_samples - result.len()));
-            }
-
+            // 使用 resize 填充剩余部分（比 extend + repeat 更高效）
+            result.resize(requested_samples, 0.0);
             result
         }
     }

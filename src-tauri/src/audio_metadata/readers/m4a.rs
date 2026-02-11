@@ -3,7 +3,7 @@
 //! 支持 iTunes 风格的元数据（moov/udta/meta 原子）
 
 use crate::audio_metadata::{
-    core::{AudioFormat, AudioMetadata, Picture, PictureType, LyricLine},
+    core::{AudioFormat, AudioMetadata, Picture, PictureType},
     utils::encoding::auto_decode_text,
 };
 use crate::audio_metadata::MetadataError;

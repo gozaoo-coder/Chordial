@@ -34,18 +34,25 @@ impl AppState {
     }
 }
 
-/// 简化锁获取的宏
+/// 简化锁获取的宏 - 返回 Result<String, String> 类型，用于 Tauri 命令
 #[macro_export]
 macro_rules! lock_state {
     ($state:expr, $field:ident) => {
-        $state.$field.lock().map_err(|e| e.to_string())
+        $state.$field.lock().map_err(|e| format!("锁被污染: {}", e))
     };
 }
 
-/// 简化锁获取（使用 unwrap，适用于不返回 Result 的命令）
+/// 简化锁获取（用于不返回 Result 的命令）
+/// 如果锁被污染，会打印错误并 panic（这是不可恢复的错误）
 #[macro_export]
 macro_rules! lock_state_unwrap {
     ($state:expr, $field:ident) => {
-        $state.$field.lock().unwrap()
+        match $state.$field.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                eprintln!("严重错误: 锁被污染 - {}", e);
+                panic!("锁被污染，应用状态不一致: {}", e)
+            }
+        }
     };
 }

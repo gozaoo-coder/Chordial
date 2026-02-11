@@ -4,18 +4,18 @@
 
 use super::super::music_source::{SourceConfig, SourceType, TrackMetadata, MusicSource};
 use super::super::music_source::{Artist, Album, ArtistParser, AlbumIdGenerator};
-use super::super::audio_metadata::{read_metadata, MetadataError};
-use super::super::lyric_enhancer::{find_lyric_file, enhance_metadata_with_lyrics};
+use super::super::audio_metadata::MetadataError;
 use super::super::cache::CacheManager;
+use super::track_builder::{TrackBuilder, WebDevTrack};
 use rayon::prelude::*;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::HashMap;
 use std::time::Duration;
-use uuid::Uuid;
 use thiserror::Error;
 use std::fs;
+use uuid::Uuid;
 
 /// 掃描錯誤類型
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -44,24 +44,6 @@ pub enum ScanError {
     /// 掃描被取消
     #[error("掃描被取消")]
     ScanCancelled,
-}
-
-/// WebDev API 曲目數據結構
-#[derive(Debug, serde::Deserialize)]
-struct WebDevTrack {
-    id: String,
-    title: String,
-    artist: Option<String>,
-    album: Option<String>,
-    duration: Option<u64>,
-    file_url: String,
-    file_size: Option<u64>,
-    bitrate: Option<u32>,
-    sample_rate: Option<u32>,
-    channels: Option<u16>,
-    year: Option<u32>,
-    genre: Option<String>,
-    cover_url: Option<String>,
 }
 
 /// WebDev API 響應數據結構
@@ -230,110 +212,123 @@ impl MusicScanner {
 
     /// 构建歌手和专辑数据
     /// 从曲目列表中提取并构建 Artist 和 Album 信息
+    /// 
+    /// # 性能优化
+    /// - 使用并行迭代器处理 tracks（多核加速）
+    /// - 预分配 HashMap 容量（减少重新哈希）
+    /// - 使用 DashMap 实现无锁并发（减少锁竞争）
     pub fn build_artist_album_data(&self, tracks: &[TrackMetadata]) -> (Vec<Artist>, Vec<Album>, Vec<TrackMetadata>) {
-        let mut artists_map: HashMap<String, Artist> = HashMap::new();
-        let mut albums_map: HashMap<String, Album> = HashMap::new();
-        let mut enriched_tracks = Vec::new();
+        use dashmap::DashMap;
+        use rayon::prelude::*;
+        
+        // 预分配容量：根据经验，artist 数量约为 track 数量的 1/2，album 约为 1/4
+        let artists_map: DashMap<String, Artist> = DashMap::with_capacity(tracks.len() / 2);
+        let albums_map: DashMap<String, Album> = DashMap::with_capacity(tracks.len() / 4);
+        
+        // 并行处理 tracks，构建 artist 和 album 信息
+        let enriched_tracks: Vec<TrackMetadata> = tracks
+            .par_iter()
+            .map(|track| {
+                let mut track = track.clone();
+                let artist_names = track.parsed_artists();
+                let primary_artist_name = artist_names.first()
+                    .cloned()
+                    .unwrap_or_else(|| "未知歌手".to_string());
 
-        for track in tracks {
-            let mut track = track.clone();
-            // 解析歌手信息
-            let artist_names = track.parsed_artists();
-            let primary_artist_name = artist_names.first().cloned().unwrap_or_else(|| "未知歌手".to_string());
+                // 为每个歌手创建/更新信息
+                let mut artist_summaries = Vec::with_capacity(artist_names.len());
+                let mut combined_artist_id = String::with_capacity(artist_names.len() * 32);
 
-            // 为每个歌手创建/更新信息
-            let mut artist_summaries = Vec::new();
-            let mut combined_artist_id = String::new();
-
-            for artist_name in &artist_names {
-                let artist_id = ArtistParser::generate_id(artist_name);
-                
-                // 创建或更新歌手信息
-                let artist = artists_map.entry(artist_id.clone()).or_insert_with(|| {
-                    Artist::new(artist_id.clone(), artist_name.clone())
-                });
-
-                // 添加歌曲到歌手
-                artist.add_track(track.id.clone());
-
-                // 创建歌手摘要并添加到列表
-                artist_summaries.push(artist.to_summary());
-
-                // 构建组合ID
-                if !combined_artist_id.is_empty() {
-                    combined_artist_id.push('_');
-                }
-                combined_artist_id.push_str(&artist_id);
-            }
-
-            // 如果只有一个歌手，使用单个ID；否则使用组合ID
-            let final_artist_id = if artist_names.len() == 1 {
-                ArtistParser::generate_id(&primary_artist_name)
-            } else {
-                ArtistParser::generate_combined_id(&artist_names)
-            };
-
-            // 处理专辑信息
-            if let Some(album_title) = &track.album {
-                let album_id = AlbumIdGenerator::generate_id(album_title, &primary_artist_name);
-
-                // 创建或更新专辑信息
-                let album = albums_map.entry(album_id.clone()).or_insert_with(|| {
-                    Album::new(
-                        album_id.clone(),
-                        album_title.clone(),
-                        final_artist_id.clone(),
-                        primary_artist_name.clone(),
-                    )
-                });
-
-                // 添加歌曲到专辑
-                album.add_track(track.id.clone());
-
-                // 更新专辑年份（使用歌曲年份）
-                if let Some(year) = track.year {
-                    if album.year.is_none() {
-                        album.year = Some(year);
-                    }
-                }
-
-                // 更新专辑封面（使用第一首有封面的歌曲）
-                if album.cover_data.is_none() && track.album_cover_data.is_some() {
-                    album.cover_data = track.album_cover_data.clone();
-                }
-
-                // 更新专辑总时长
-                if let Some(duration) = track.duration {
-                    album.total_duration += duration;
-                }
-
-                // 添加专辑到所有歌手（不只是主歌手）
                 for artist_name in &artist_names {
                     let artist_id = ArtistParser::generate_id(artist_name);
-                    if let Some(artist) = artists_map.get_mut(&artist_id) {
-                        artist.add_album(album_id.clone());
+                    
+                    // 使用 DashMap 实现无锁并发插入
+                    artists_map.entry(artist_id.clone()).or_insert_with(|| {
+                        Artist::new(artist_id.clone(), artist_name.clone())
+                    });
+                    
+                    // 获取歌手引用并添加曲目
+                    if let Some(mut artist) = artists_map.get_mut(&artist_id) {
+                        artist.add_track(track.id.clone());
+                        artist_summaries.push(artist.to_summary());
                     }
+
+                    // 构建组合ID
+                    if !combined_artist_id.is_empty() {
+                        combined_artist_id.push('_');
+                    }
+                    combined_artist_id.push_str(&artist_id);
                 }
 
-                // 创建专辑摘要
-                let album_summary = album.to_summary();
-                track.set_album_summary(album_summary);
+                // 确定最终歌手ID
+                let final_artist_id = if artist_names.len() == 1 {
+                    ArtistParser::generate_id(&primary_artist_name)
+                } else {
+                    ArtistParser::generate_combined_id(&artist_names)
+                };
 
-                // 更新 track 的 album_id
-                track.album_id = Some(album_id);
-            }
+                // 处理专辑信息
+                if let Some(album_title) = &track.album {
+                    let album_id = AlbumIdGenerator::generate_id(album_title, &primary_artist_name);
 
-            // 设置歌手摘要数组
-            track.set_artist_summaries(artist_summaries);
+                    // 使用 DashMap 并发创建或更新专辑
+                    albums_map.entry(album_id.clone()).or_insert_with(|| {
+                        Album::new(
+                            album_id.clone(),
+                            album_title.clone(),
+                            final_artist_id.clone(),
+                            primary_artist_name.clone(),
+                        )
+                    });
 
-            // 更新 track 的 artist_id
-            track.artist_id = Some(final_artist_id);
+                    // 更新专辑信息
+                    if let Some(mut album) = albums_map.get_mut(&album_id) {
+                        album.add_track(track.id.clone());
+                        
+                        // 更新专辑年份
+                        if let Some(year) = track.year {
+                            if album.year.is_none() {
+                                album.year = Some(year);
+                            }
+                        }
+                        
+                        // 更新专辑封面
+                        if album.cover_data.is_none() && track.album_cover_data.is_some() {
+                            album.cover_data = track.album_cover_data.clone();
+                        }
+                        
+                        // 更新专辑总时长
+                        if let Some(duration) = track.duration {
+                            album.total_duration += duration;
+                        }
+                        
+                        // 创建专辑摘要
+                        let album_summary = album.to_summary();
+                        track.set_album_summary(album_summary);
+                    }
 
-            enriched_tracks.push(track);
-        }
+                    // 添加专辑到所有歌手
+                    for artist_name in &artist_names {
+                        let artist_id = ArtistParser::generate_id(artist_name);
+                        if let Some(mut artist) = artists_map.get_mut(&artist_id) {
+                            artist.add_album(album_id.clone());
+                        }
+                    }
 
-        let artists: Vec<Artist> = artists_map.into_values().collect();
-        let albums: Vec<Album> = albums_map.into_values().collect();
+                    track.album_id = Some(album_id);
+                }
+
+                // 设置歌手摘要数组
+                track.set_artist_summaries(artist_summaries);
+                track.artist_id = Some(final_artist_id);
+
+                track
+            })
+            .collect();
+
+        // 将 DashMap 转换为 Vec（并行收集）
+        let artists: Vec<Artist> = artists_map.into_iter().map(|(_, v)| v).collect();
+        let albums: Vec<Album> = albums_map.into_iter().map(|(_, v)| v).collect();
 
         (artists, albums, enriched_tracks)
     }
@@ -713,35 +708,7 @@ impl MusicScanner {
         track: &WebDevTrack,
         source: &SourceConfig
     ) -> Result<TrackMetadata, ScanError> {
-        let track_metadata = TrackMetadata {
-            id: track.id.clone(),
-            source_id: source.id().to_string(),
-            path: PathBuf::from(&track.file_url),
-            file_name: format!("{}.mp3", track.title),
-            title: Some(track.title.clone()),
-            artist: track.artist.clone(),
-            artist_id: None,
-            artist_summaries: Vec::new(),
-            album: track.album.clone(),
-            album_id: None,
-            album_summary: None,
-            album_cover_data: None,
-            duration: track.duration,
-            format: "MP3".to_string(),
-            file_size: track.file_size.unwrap_or(0),
-            bitrate: track.bitrate,
-            sample_rate: track.sample_rate,
-            channels: track.channels,
-            year: track.year,
-            genre: track.genre.clone(),
-            composer: None,
-            comment: None,
-            lyrics: None,
-            synced_lyrics: None,
-            added_at: chrono::Utc::now(),
-        };
-
-        Ok(track_metadata)
+        TrackBuilder::build_from_webdev(track, source)
     }
 
     /// 遞歸收集文件
@@ -804,85 +771,7 @@ impl MusicScanner {
 
     /// 處理單個文件
     fn process_file(&self, file_path: &PathBuf, source: &SourceConfig) -> Result<Option<TrackMetadata>, ScanError> {
-        // 檢查文件是否存在
-        if !file_path.exists() {
-            return Err(ScanError::FileNotFound(
-                file_path.to_string_lossy().to_string()
-            ));
-        }
-
-        let metadata = match fs::metadata(file_path) {
-            Ok(m) => m,
-            Err(e) => return Err(ScanError::IoError(format!(
-                "無法讀取文件元數據: {}",
-                e
-            ))),
-        };
-
-        // 檢查是否為文件
-        if !metadata.is_file() {
-            return Err(ScanError::InvalidFileFormat(
-                file_path.to_string_lossy().to_string()
-            ));
-        }
-
-        let file_name = file_path.file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "未知".to_string());
-
-        let mut audio_metadata = match read_metadata(file_path) {
-            Ok(meta) => meta,
-            Err(e) => return Err(ScanError::from(e)),
-        };
-
-        // 尝试查找并解析外部歌词文件
-        if let Some(lyric_content) = find_lyric_file(file_path) {
-            enhance_metadata_with_lyrics(&mut audio_metadata, Some(lyric_content));
-        }
-
-        let track = TrackMetadata {
-            id: Uuid::new_v4().to_string(),
-            source_id: source.id().to_string(),
-            path: file_path.clone(),
-            file_name,
-            title: audio_metadata.title.or(Some(file_path.file_stem()
-                .and_then(|s| Some(s.to_string_lossy().to_string()))
-                .unwrap_or_else(|| "未知標題".to_string()))),
-            artist: audio_metadata.artist,
-            artist_id: None,
-            artist_summaries: Vec::new(), // 将在 build_artist_album_data 中填充
-            album: audio_metadata.album,
-            album_id: None,
-            album_summary: None, // 将在 build_artist_album_data 中填充
-            // 专辑封面数据不再存储到缓存，改为按需从音乐文件读取
-            // 这样可以减少内存占用，避免在低性能电脑上处理大量 base64 数据
-            album_cover_data: None,
-            duration: audio_metadata.duration.map(|d| d.as_secs()),
-            format: audio_metadata.format.to_string(),
-            file_size: metadata.len(),
-            bitrate: audio_metadata.bitrate.map(|b| b as u32),
-            sample_rate: audio_metadata.sample_rate.map(|s| s as u32),
-            channels: audio_metadata.channels.map(|c| c as u16),
-            year: None,
-            genre: audio_metadata.genre,
-            composer: audio_metadata.composer,
-            comment: None,
-            // 提取歌词
-            lyrics: audio_metadata.lyrics,
-            synced_lyrics: audio_metadata.synced_lyrics.map(|lines| {
-                // 将 LyricLine 序列化为 JSON 字符串
-                let lyric_data: Vec<serde_json::Value> = lines.iter()
-                    .map(|line| serde_json::json!({
-                        "timestamp": line.timestamp.as_millis() as u64,
-                        "text": line.text
-                    }))
-                    .collect();
-                serde_json::to_string(&lyric_data).unwrap_or_default()
-            }),
-            added_at: chrono::Utc::now(),
-        };
-
-        Ok(Some(track))
+        TrackBuilder::build_from_file(file_path, source)
     }
 
     /// 從緩存加載源的掃描結果

@@ -16,7 +16,8 @@ pub async fn analyze_audio_beat(
     
     // 在线程池中执行CPU密集型分析任务
     let result = tokio::task::spawn_blocking(move || {
-        let analyzer = analyzer_arc.lock().map_err(|e| e.to_string())?;
+        // parking_lot::RwLock 使用 read() 而不是 lock()
+        let analyzer = analyzer_arc.read();
         
         analyzer.analyze_file(&file_path)
             .map_err(|e| format!("分析失败: {}", e))
@@ -45,7 +46,7 @@ pub async fn reanalyze_audio_beat(
     
     // 在线程池中执行CPU密集型分析任务
     let result = tokio::task::spawn_blocking(move || {
-        let analyzer = analyzer_arc.lock().map_err(|e| e.to_string())?;
+        let analyzer = analyzer_arc.read();
         
         analyzer.analyze_file_force(&file_path)
             .map_err(|e| format!("分析失败: {}", e))
@@ -74,7 +75,7 @@ pub async fn get_mix_points(
     
     // 在线程池中执行CPU密集型任务
     let result = tokio::task::spawn_blocking(move || {
-        let analyzer = analyzer_arc.lock().map_err(|e| e.to_string())?;
+        let analyzer = analyzer_arc.read();
         
         analyzer.find_mix_points(&file_path)
             .map_err(|e| format!("获取混音点失败: {}", e))
@@ -105,7 +106,7 @@ pub async fn batch_analyze_audio(
     
     // 在线程池中执行CPU密集型批量分析任务
     let json_results = tokio::task::spawn_blocking(move || {
-        let analyzer = analyzer_arc.lock().map_err(|e| e.to_string())?;
+        let analyzer = analyzer_arc.read();
         
         let results = analyzer.batch_analyze(file_paths, Some(app_handle));
         
@@ -141,7 +142,8 @@ pub async fn batch_analyze_audio(
 #[tauri::command]
 pub fn get_analysis_cache_stats(state: State<AppState>) -> Result<serde_json::Value, String> {
     let analyzer = lock_state!(state, audio_analyzer)?;
-    let analyzer = analyzer.lock().map_err(|e| e.to_string())?;
+    // parking_lot::RwLock 使用 read() 而不是 lock()
+    let analyzer = analyzer.read();
     
     let stats = analyzer.get_cache_stats()
         .map_err(|e| format!("获取统计失败: {}", e))?;
@@ -156,7 +158,8 @@ pub fn get_analysis_cache_stats(state: State<AppState>) -> Result<serde_json::Va
 #[tauri::command]
 pub fn clear_analysis_cache(state: State<AppState>) -> Result<(), String> {
     let analyzer = lock_state!(state, audio_analyzer)?;
-    let analyzer = analyzer.lock().map_err(|e| e.to_string())?;
+    // parking_lot::RwLock 使用 write() 而不是 lock()
+    let analyzer = analyzer.write();
     
     analyzer.clear_cache()
         .map_err(|e| format!("清空缓存失败: {}", e))?;

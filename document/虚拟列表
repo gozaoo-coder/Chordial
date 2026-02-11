@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>响应式音乐歌单虚拟列表</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --item-height: 64px;
+            --item-height-mobile: 56px;
+            --primary: #1db954;
+            --bg: #121212;
+            --surface: #181818;
+            --text: #fff;
+            --text-secondary: #b3b3b3;
+        }
+        
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        #app {
+            display: flex;
+            height: 100vh;
+            height: 100dvh; /* 适配刘海屏 */
+        }
+        
+        /* 侧边栏 - 桌面端显示，移动端隐藏 */
+        .sidebar {
+            width: 200px;
+            background: #000;
+            padding: 20px;
+            border-right: 1px solid #282828;
+            flex-shrink: 0;
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+        }
+        
+        /* 主区域 */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0; /* 关键：防止flex子项溢出 */
+            background: var(--bg);
+        }
+        
+        .header {
+            padding: 20px 24px;
+            background: linear-gradient(to bottom, #2a2a2a 0%, var(--bg) 100%);
+            flex-shrink: 0;
+        }
+        
+        @media (max-width: 768px) {
+            .header { padding: 16px; }
+            .header h1 { font-size: 20px; }
+        }
+        
+        .header h1 { 
+            font-size: 24px; 
+            margin-bottom: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .header p { 
+            color: var(--text-secondary); 
+            font-size: 14px; 
+        }
+        
+        /* 列表容器 */
+        .playlist-container {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            position: relative;
+            padding: 0 24px;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        @media (max-width: 768px) {
+            .playlist-container { padding: 0 12px; }
+        }
+        
+        /* 幽灵层 */
+        .phantom {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1px;
+            z-index: -1;
+            pointer-events: none;
+        }
+        
+        .viewport {
+            position: relative;
+            width: 100%;
+        }
+        
+        /* 歌曲项 - 响应式关键 */
+        .track-item {
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: var(--item-height);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            border-radius: 8px;
+            transition: background 0.2s;
+            contain: layout style paint;
+            /* 确保宽度计算正确 */
+            width: 100%;
+        }
+        
+        @media (max-width: 768px) {
+            .track-item {
+                height: var(--item-height-mobile);
+                padding: 0 12px;
+            }
+        }
+        
+        .track-item:active {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .track-item.active {
+            background: rgba(29, 185, 84, 0.15);
+        }
+        
+        /* 序号 - 新增，移动端可隐藏 */
+        .track-number {
+            width: 32px;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+        
+        @media (max-width: 480px) {
+            .track-number { width: 24px; font-size: 12px; }
+        }
+        
+        /* 封面图 - 固定比例 */
+        .cover {
+            width: 48px;
+            height: 48px;
+            border-radius: 6px;
+            background: #282828;
+            margin-right: 16px;
+            position: relative;
+            overflow: hidden;
+            flex-shrink: 0; /* 关键：不收缩 */
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        
+        @media (max-width: 768px) {
+            .cover {
+                width: 44px;
+                height: 44px;
+                margin-right: 12px;
+            }
+        }
+        
+        .cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .cover img.loaded { opacity: 1; }
+        
+        .cover .placeholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #282828 25%, #3a3a3a 50%, #282828 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        
+        /* 信息区 - 关键修复 */
+        .info {
+            flex: 1;
+            min-width: 0; /* 关键：允许flex item收缩到比内容小 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 4px;
+            margin-right: 16px;
+        }
+        
+        .title {
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.3;
+        }
+        
+        .artist {
+            font-size: 13px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        @media (max-width: 768px) {
+            .title { font-size: 14px; }
+            .artist { font-size: 12px; }
+        }
+        
+        /* 操作按钮区 - 响应式修复 */
+        .actions {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0; /* 不收缩 */
+        }
+        
+        /* 桌面端：hover显示，移动端：常驻 */
+        @media (min-width: 769px) {
+            .actions {
+                opacity: 0;
+                transition: opacity 0.2s;
+            }
+            .track-item:hover .actions { opacity: 1; }
+        }
+        
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+        
+        @media (max-width: 768px) {
+            .btn-icon {
+                width: 32px;
+                height: 32px;
+                font-size: 16px;
+            }
+        }
+        
+        .btn-icon:active {
+            transform: scale(0.9);
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .btn-icon.liked { color: var(--primary); }
+        
+        /* 时长 */
+        .duration {
+            color: var(--text-secondary);
+            font-size: 14px;
+            width: 50px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            flex-shrink: 0; /* 不收缩 */
+        }
+        
+        @media (max-width: 768px) {
+            .duration { 
+                font-size: 12px; 
+                width: 40px;
+            }
+        }
+        
+        /* 右键菜单/长按菜单 */
+        .context-menu {
+            position: fixed;
+            background: #282828;
+            border-radius: 8px;
+            padding: 8px 0;
+            min-width: 180px;
+            box-shadow: 0 16px 24px rgba(0,0,0,0.5);
+            z-index: 1000;
+            display: none;
+            border: 1px solid #3a3a3a;
+        }
+        
+        .context-menu.show { display: block; }
+        
+        @media (max-width: 768px) {
+            .context-menu {
+                /* 移动端从底部弹出 */
+                top: auto !important;
+                bottom: 0;
+                left: 0 !important;
+                right: 0;
+                width: 100%;
+                border-radius: 16px 16px 0 0;
+                animation: slideUp 0.3s;
+            }
+        }
+        
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        
+        .menu-item {
+            padding: 12px 20px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.1s;
+            color: #e0e0e0;
+        }
+        
+        .menu-item:hover { background: #3a3a3a; }
+        .menu-item.danger { color: #ff4444; }
+        
+        @media (max-width: 768px) {
+            .menu-item {
+                padding: 16px 24px;
+                font-size: 16px;
+                text-align: center;
+            }
+        }
+        
+        /* 性能面板 */
+        .perf-hud {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.85);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            border: 1px solid #333;
+            backdrop-filter: blur(10px);
+            color: var(--text-secondary);
+        }
+        
+        @media (max-width: 768px) {
+            .perf-hud {
+                bottom: 10px;
+                right: 10px;
+                font-size: 11px;
+                padding: 8px 12px;
+            }
+        }
+        
+        .perf-value { color: var(--primary); margin-left: 8px; }
+        
+        /* 遮罩层 - 移动端菜单背景 */
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+            display: none;
+        }
+        
+        .overlay.show { display: block; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div class="sidebar">
+        <div style="color:#b3b3b3;font-size:14px;">响应式虚拟列表</div>
+    </div>
+    
+    <div class="main">
+        <div class="header">
+            <h1>我喜欢的音乐</h1>
+            <p>共 {{ total }} 首 · DOM节点仅 {{ poolSize }} 个</p>
+        </div>
+        
+        <div class="playlist-container" ref="container" @scroll="onScroll">
+            <div class="phantom" :style="{ height: totalHeight + 'px' }"></div>
+            
+            <div class="viewport">
+                <div 
+                    v-for="(item, index) in visibleItems" 
+                    :key="item.poolId"
+                    class="track-item"
+                    :class="{ active: currentId === item.id }"
+                    :style="{ 
+                        transform: `translateY(${item.offsetY}px)`,
+                        height: item.height + 'px'
+                    }"
+                    @click="play(item)"
+                    @contextmenu.prevent="showContextMenu($event, item)"
+                    @touchstart="touchStart($event, item)"
+                    @touchend="touchEnd"
+                >
+                    <!-- 序号 -->
+                    <div class="track-number">{{ item.actualIndex + 1 }}</div>
+                    
+                    <!-- 封面 -->
+                    <div class="cover">
+                        <div v-if="!item.imageLoaded" class="placeholder"></div>
+                        <img 
+                            :src="item.cover" 
+                            :class="{ loaded: item.imageLoaded }"
+                            @load="item.imageLoaded = true"
+                            loading="lazy"
+                        >
+                    </div>
+                    
+                    <!-- 信息 - 关键修复：min-width:0 -->
+                    <div class="info">
+                        <div class="title">{{ item.title }}</div>
+                        <div class="artist">{{ item.artist }} · {{ item.album }}</div>
+                    </div>
+                    
+                    <!-- 操作按钮 -->
+                    <div class="actions">
+                        <button 
+                            class="btn-icon" 
+                            :class="{ liked: item.liked }"
+                            @click.stop="toggleLike(item)"
+                        >
+                            <span v-if="item.liked">♥</span>
+                            <span v-else>♡</span>
+                        </button>
+                        <button class="btn-icon" @click.stop="showMore(item)">
+                            ⋮
+                        </button>
+                    </div>
+                    
+                    <!-- 时长 -->
+                    <div class="duration">{{ item.duration }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 遮罩层 -->
+    <div class="overlay" :class="{ show: contextMenu.show }" @click="contextMenu.show = false"></div>
+    
+    <!-- 菜单 -->
+    <div 
+        class="context-menu" 
+        :class="{ show: contextMenu.show }"
+        :style="{ 
+            left: contextMenu.x + 'px', 
+            top: contextMenu.y + 'px' 
+        }"
+    >
+        <div class="menu-item" @click="play(contextMenu.target); contextMenu.show = false">播放</div>
+        <div class="menu-item" @click="nextPlay(contextMenu.target); contextMenu.show = false">下一首播放</div>
+        <div class="menu-item" @click="addToPlaylist(contextMenu.target); contextMenu.show = false">添加到歌单</div>
+        <div class="menu-item danger" @click="deleteItem(contextMenu.target); contextMenu.show = false">从列表删除</div>
+    </div>
+    
+    <!-- 性能面板 -->
+    <div class="perf-hud">
+        <div>计算:<span class="perf-value">{{ calcTime }}ms</span></div>
+        <div>渲染:<span class="perf-value">{{ visibleItems.length }}项</span></div>
+    </div>
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted } = Vue;
+
+createApp({
+    setup() {
+        const total = 2000;
+        const container = ref(null);
+        const containerHeight = ref(600);
+        const scrollTop = ref(0);
+        const calcTime = ref(0);
+        const currentId = ref(null);
+        
+        // 动态高度支持
+        const heights = [64, 72, 64, 64]; // 大部分64px，部分72px
+        
+        // 生成数据
+        const generateData = () => {
+            return Array.from({ length: total }, (_, i) => {
+                const h = heights[i % heights.length];
+                return {
+                    id: i,
+                    title: `歌曲 ${i + 1} ${['晴天', '七里香', '夜曲', '稻香'][i % 4]} ${Math.random() > 0.7 ? '(Live版)' : ''}`,
+                    artist: ['周杰伦', '陈奕迅', 'Taylor Swift', 'Ed Sheeran', '林俊杰'][i % 5],
+                    album: `专辑 ${Math.floor(i / 10) + 1} ${['范特西', '叶惠美', '跨时代'][i % 3]}`,
+                    duration: `${Math.floor(Math.random() * 4 + 2)}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`,
+                    cover: `https://picsum.photos/200/200?random=${i}`,
+                    liked: Math.random() > 0.8,
+                    height: h,
+                    imageLoaded: false,
+                };
+            });
+        };
+        
+        const allData = ref(generateData());
+        
+        // 前缀和计算
+        const prefixSum = computed(() => {
+            const sums = new Float64Array(total);
+            let sum = 0;
+            for (let i = 0; i < total; i++) {
+                sum += allData.value[i].height;
+                sums[i] = sum;
+            }
+            return sums;
+        });
+        
+        const totalHeight = computed(() => prefixSum.value[total - 1] || 0);
+        
+        // 缓冲计算
+        const poolSize = computed(() => {
+            const avgHeight = 64;
+            return Math.ceil(containerHeight.value / avgHeight) * 3;
+        });
+        
+        // 二分查找 O(log n)
+        const findIndex = (scrollPos) => {
+            let left = 0, right = total - 1;
+            let ans = 0;
+            while (left <= right) {
+                const mid = (left + right) >> 1;
+                if (prefixSum.value[mid] <= scrollPos) {
+                    ans = mid;
+                    left = mid + 1;
+                } else {
+                    right = mid - 1;
+                }
+            }
+            return ans;
+        };
+        
+        // 可见项计算
+        const visibleItems = computed(() => {
+            const t0 = performance.now();
+            if (!prefixSum.value.length) return [];
+            
+            const startIdx = Math.max(0, findIndex(scrollTop.value) - 2);
+            const endIdx = Math.min(
+                total, 
+                findIndex(scrollTop.value + containerHeight.value * 2) + 2
+            );
+            
+            const items = [];
+            for (let i = startIdx; i < endIdx; i++) {
+                const prevHeight = i > 0 ? prefixSum.value[i - 1] : 0;
+                items.push({
+                    ...allData.value[i],
+                    offsetY: prevHeight,
+                    poolId: i % poolSize.value,
+                    actualIndex: i
+                });
+            }
+            
+            calcTime.value = (performance.now() - t0).toFixed(2);
+            return items;
+        });
+        
+        // 滚动处理
+        let rafId = null;
+        const onScroll = (e) => {
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => {
+                scrollTop.value = e.target.scrollTop;
+            });
+        };
+        
+        // 交互
+        const play = (item) => { currentId.value = item.id; };
+        const toggleLike = (item) => { item.liked = !item.liked; };
+        
+        // 右键菜单/长按菜单
+        const contextMenu = ref({ show: false, x: 0, y: 0, target: null });
+        let longPressTimer = null;
+        
+        const showContextMenu = (e, item) => {
+            // 移动端适配：如果X坐标太靠右，调整为左对齐
+            let x = e.clientX;
+            let y = e.clientY;
+            
+            if (window.innerWidth < 768) {
+                // 移动端从底部弹出，忽略坐标
+                x = 0;
+                y = 0;
+            } else if (x + 180 > window.innerWidth) {
+                x = window.innerWidth - 190;
+            }
+            
+            contextMenu.value = { show: true, x, y, target: item };
+        };
+        
+        // 移动端长按支持
+        const touchStart = (e, item) => {
+            longPressTimer = setTimeout(() => {
+                showContextMenu(e.touches[0], item);
+            }, 500);
+        };
+        
+        const touchEnd = () => {
+            clearTimeout(longPressTimer);
+        };
+        
+        const nextPlay = (item) => console.log('下一首:', item.title);
+        const addToPlaylist = (item) => console.log('添加到歌单:', item.title);
+        const deleteItem = (item) => {
+            allData.value.splice(item.actualIndex, 1);
+        };
+        const showMore = (item) => {
+            // 移动端点击更多按钮
+            const rect = event.target.getBoundingClientRect();
+            showContextMenu({ clientX: rect.left, clientY: rect.bottom }, item);
+        };
+        
+        onMounted(() => {
+            containerHeight.value = container.value?.clientHeight || window.innerHeight;
+        });
+        
+        return {
+            container,
+            total,
+            totalHeight,
+            visibleItems,
+            poolSize: poolSize.value,
+            calcTime,
+            currentId,
+            onScroll,
+            play,
+            toggleLike,
+            contextMenu,
+            showContextMenu,
+            touchStart,
+            touchEnd,
+            nextPlay,
+            addToPlaylist,
+            deleteItem,
+            showMore
+        };
+    }
+}).mount('#app');
+</script>
+
+</body>
+</html>

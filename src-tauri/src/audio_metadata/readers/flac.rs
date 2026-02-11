@@ -3,7 +3,7 @@
 //! 支持 FLAC 文件的 Vorbis Comment 和 Picture 元数据解析
 
 use crate::audio_metadata::{
-    core::{AudioFormat, AudioMetadata, Picture, PictureType, LyricLine},
+    core::{AudioFormat, AudioMetadata, Picture, PictureType},
     utils::encoding::auto_decode_text,
 };
 use crate::audio_metadata::MetadataError;

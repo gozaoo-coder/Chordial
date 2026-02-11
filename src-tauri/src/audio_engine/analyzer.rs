@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::RwLock;
 use tauri::{AppHandle, Emitter};
 
 use super::decoder::SymphoniaDecoder;
@@ -6,15 +7,20 @@ use super::beat_detection::{BeatDetector, AnalysisResult};
 use super::analysis_cache::AnalysisCache;
 
 /// 音频分析器 - 整合解码和节拍检测
+/// 
+/// # 性能优化
+/// - 使用 RwLock 替代 Mutex，支持并发读取
+/// - 向量预分配减少内存重新分配
+/// - 缓存检查和分析分离，减少锁持有时间
 pub struct AudioAnalyzer {
-    cache: Arc<Mutex<AnalysisCache>>,
+    cache: Arc<RwLock<AnalysisCache>>,
 }
 
 impl AudioAnalyzer {
     /// 创建新的音频分析器
     pub fn new(cache: AnalysisCache) -> Self {
         Self {
-            cache: Arc::new(Mutex::new(cache)),
+            cache: Arc::new(RwLock::new(cache)),
         }
     }
     
@@ -25,26 +31,38 @@ impl AudioAnalyzer {
     }
     
     /// 分析音频文件（带缓存）
+    /// 
+    /// # 性能优化
+    /// - 使用读锁检查缓存，无锁执行分析
+    /// - 分析完成后使用写锁保存结果
     pub fn analyze_file(&self, file_path: &str) -> anyhow::Result<AnalysisResult> {
-        let cache = self.cache.lock().unwrap();
+        // 首先尝试从缓存读取（读锁，支持并发）
+        {
+            let cache = self.cache.read();
+            if let Some(result) = cache.load(file_path).ok().flatten() {
+                return Ok(result);
+            }
+        } // 读锁在这里释放
         
-        cache.get_or_analyze(file_path, || {
-            // 解码音频文件
-            let (pcm_data, sample_rate) = self.decode_to_mono(file_path)?;
-            
-            // 执行节拍检测
-            let detector = BeatDetector::new(sample_rate);
-            let result = detector.analyze(&pcm_data);
-            
-            Ok(result)
-        })
+        // 执行分析（无锁状态，允许并发分析不同文件）
+        let (pcm_data, sample_rate) = self.decode_to_mono(file_path)?;
+        let detector = BeatDetector::new(sample_rate);
+        let result = detector.analyze(&pcm_data);
+        
+        // 保存到缓存（写锁）
+        {
+            let cache = self.cache.write();
+            let _ = cache.save(file_path, &result);
+        }
+        
+        Ok(result)
     }
     
     /// 强制重新分析（忽略缓存）
     pub fn analyze_file_force(&self, file_path: &str) -> anyhow::Result<AnalysisResult> {
         // 使缓存失效
         {
-            let cache = self.cache.lock().unwrap();
+            let cache = self.cache.write();
             let _ = cache.invalidate(file_path);
         }
         
@@ -54,20 +72,35 @@ impl AudioAnalyzer {
     
     /// 解码音频文件为单声道f32 PCM
     /// 返回 (PCM数据, 采样率)
+    /// 
+    /// # 性能优化
+    /// - 根据文件大小预分配向量容量
+    /// - 避免频繁的内存重新分配
     fn decode_to_mono(&self, file_path: &str) -> anyhow::Result<(Vec<f32>, u32)> {
         let mut decoder = SymphoniaDecoder::new(file_path)
             .map_err(|e| anyhow::anyhow!("解码器创建失败: {}", e))?;
         
         let sample_rate = decoder.sample_rate();
+        let channels = decoder.channels() as usize;
         
-        let mut mono_samples = Vec::new();
+        // 根据文件大小估算样本数并预分配容量
+        let estimated_samples = if let Ok(metadata) = std::fs::metadata(file_path) {
+            // 粗略估算：假设平均比特率为 128kbps
+            let file_size = metadata.len() as usize;
+            let estimated_duration_secs = file_size / (128 * 1024 / 8);
+            estimated_duration_secs * sample_rate as usize
+        } else {
+            // 默认预分配：5分钟音频
+            sample_rate as usize * 60 * 5
+        };
+        
+        let mut mono_samples = Vec::with_capacity(estimated_samples);
         
         // 解码所有帧
         loop {
             match decoder.next_frame() {
                 Ok(Some(frame)) => {
                     // 转换为单声道（如果是立体声则取平均）
-                    let channels = decoder.channels() as usize;
                     if channels == 1 {
                         mono_samples.extend_from_slice(&frame.samples);
                     } else {
@@ -87,22 +120,29 @@ impl AudioAnalyzer {
             return Err(anyhow::anyhow!("未能解码任何音频数据"));
         }
         
+        // 释放未使用的容量
+        mono_samples.shrink_to_fit();
+        
         Ok((mono_samples, sample_rate))
     }
     
     /// 获取缓存统计
     pub fn get_cache_stats(&self) -> anyhow::Result<super::analysis_cache::CacheStats> {
-        let cache = self.cache.lock().unwrap();
+        let cache = self.cache.read();
         cache.get_stats()
     }
     
     /// 清空缓存
     pub fn clear_cache(&self) -> anyhow::Result<()> {
-        let cache = self.cache.lock().unwrap();
+        let cache = self.cache.write();
         cache.clear_all()
     }
     
     /// 批量分析文件
+    /// 
+    /// # 性能优化
+    /// - 使用读锁检查缓存，写锁保存结果
+    /// - 分析过程无锁，支持并发
     pub fn batch_analyze(
         &self,
         paths: Vec<String>,
@@ -118,12 +158,10 @@ impl AudioAnalyzer {
         paths
             .into_par_iter()
             .map(|path| {
-                // 先尝试从缓存加载（短暂持锁）
+                // 先尝试从缓存加载（读锁，支持并发）
                 let cached_result = {
-                    match cache.lock() {
-                        Ok(cache_guard) => cache_guard.load(&path).ok().flatten(),
-                        Err(_) => None,
-                    }
+                    let cache_guard = cache.read();
+                    cache_guard.load(&path).ok().flatten()
                 };
                 
                 // 如果缓存有效，直接返回
@@ -137,11 +175,10 @@ impl AudioAnalyzer {
                         Ok(detector.analyze(&pcm_data))
                     })();
                     
-                    // 保存到缓存（短暂持锁）
+                    // 保存到缓存（写锁）
                     if let Ok(ref result) = analysis_result {
-                        if let Ok(cache_guard) = cache.lock() {
-                            let _ = cache_guard.save(&path, result);
-                        }
+                        let cache_guard = cache.write();
+                        let _ = cache_guard.save(&path, result);
                     }
                     
                     analysis_result
@@ -233,12 +270,12 @@ pub struct MixPoints {
 
 
 /// 可共享的音频分析器
-pub type SharedAudioAnalyzer = Arc<Mutex<AudioAnalyzer>>;
+pub type SharedAudioAnalyzer = Arc<RwLock<AudioAnalyzer>>;
 
 /// 创建共享分析器
 pub fn create_shared_analyzer() -> anyhow::Result<SharedAudioAnalyzer> {
     let analyzer = AudioAnalyzer::with_app_data()?;
-    Ok(Arc::new(Mutex::new(analyzer)))
+    Ok(Arc::new(RwLock::new(analyzer)))
 }
 
 #[cfg(test)]

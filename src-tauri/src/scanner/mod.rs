@@ -4,6 +4,8 @@
 
 pub mod music_scanner;
 pub mod webdav;
+pub mod track_builder;
 
 pub use music_scanner::{MusicScanner, ScanProgress, ScanOptions, ScanResult, ScanError};
 pub use webdav::{WebDavClient, WebDavError, DavItem};
+pub use track_builder::{TrackBuilder, WebDevTrack};

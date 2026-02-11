@@ -1,8 +1,12 @@
 //! 专辑类型定义
 //!
 //! 定义专辑完整信息和摘要信息类型
+//!
+//! # 性能优化
+//! - 封面数据使用 Arc<String> 共享，避免大体积二进制数据克隆
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// 专辑完整信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,9 +24,10 @@ pub struct Album {
     /// 流派列表
     pub genres: Vec<String>,
     /// 封面图片数据 (Base64 Data URL)
+    /// 使用 Arc 共享大体积二进制数据，避免克隆开销
     /// 不序列化到缓存，按需从音乐文件读取
     #[serde(skip)]
-    pub cover_data: Option<String>,
+    pub cover_data: Option<Arc<String>>,
     /// 歌曲ID列表 (按曲目顺序)
     pub track_ids: Vec<String>,
     /// 总时长（秒）
@@ -84,7 +89,8 @@ pub struct AlbumSummary {
     /// 歌手名稱
     pub artist_name: String,
     /// 封面图片数据 (Base64 Data URL)
-    pub cover_data: Option<String>,
+    /// 使用 Arc 共享大体积二进制数据
+    pub cover_data: Option<Arc<String>>,
     /// 发行年份
     pub year: Option<u32>,
     /// 歌曲数量
@@ -184,7 +190,7 @@ mod tests {
             artist_name: "周杰伦".to_string(),
             year: Some(2001),
             genres: vec!["流行".to_string()],
-            cover_data: Some("data:image/jpeg;base64,...".to_string()),
+            cover_data: Some(Arc::new("data:image/jpeg;base64,...".to_string())),
             track_ids: vec!["track_1".to_string(), "track_2".to_string()],
             total_duration: 3600,
         };
@@ -196,7 +202,7 @@ mod tests {
         assert_eq!(summary.artist_name, "周杰伦");
         assert_eq!(summary.year, Some(2001));
         assert_eq!(summary.track_count, 2);
-        assert_eq!(summary.cover_data, Some("data:image/jpeg;base64,...".to_string()));
+        assert_eq!(summary.cover_data, Some(Arc::new("data:image/jpeg;base64,...".to_string())));
     }
 
     #[test]

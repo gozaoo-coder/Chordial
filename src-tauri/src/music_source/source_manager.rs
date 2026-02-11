@@ -1,11 +1,15 @@
 //! 音樂源管理器
 //!
 //! 管理所有音樂源的列表，提供添加、刪除、查詢等功能
+//!
+//! # 性能优化
+//! - 封面数据使用 Arc<String> 共享，避免大体积二进制数据克隆
 
 use super::{MusicSource, SourceConfig, SourceType, WebDevAuth};
 use super::{Artist, Album, ArtistSummary, AlbumSummary};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// 音樂庫結構，包含所有音樂源和掃描結果
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -96,9 +100,10 @@ pub struct TrackMetadata {
     /// 专辑摘要信息（用於快速展示）
     pub album_summary: Option<AlbumSummary>,
     /// 專輯封面數據 (Base64 編碼)
+    /// 使用 Arc 共享大体积二进制数据，避免克隆开销
     /// 不序列化到缓存，按需从音乐文件读取
     #[serde(skip)]
-    pub album_cover_data: Option<String>,
+    pub album_cover_data: Option<Arc<String>>,
     /// 時長（秒）
     pub duration: Option<u64>,
     /// 格式

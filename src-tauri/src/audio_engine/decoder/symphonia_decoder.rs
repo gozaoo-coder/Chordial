@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::path::Path;
-use symphonia::core::audio::{AudioBufferRef, SampleBuffer};
+use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, FormatReader};
@@ -63,7 +63,7 @@ impl SymphoniaDecoder {
             .format(&hint, mss, &format_opts, &metadata_opts)
             .map_err(|e| anyhow::anyhow!("Failed to probe format: {}", e))?;
         
-        let mut format = probe_result.format;
+        let format = probe_result.format;
         
         // 找到第一个音频轨道
         let track = format.tracks()

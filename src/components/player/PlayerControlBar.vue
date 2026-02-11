@@ -337,22 +337,23 @@ export default {
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
-  padding: 8px 16px;
+  background: var(--bg-glass);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-top: 1px solid var(--border-light);
+  padding: 10px 20px;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* 进度条区域 */
 .progress-section {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 8px;
+  gap: 16px;
+  padding: 0 4px;
 }
 
 .progress-bar {
@@ -366,36 +367,36 @@ export default {
 
 .progress-track {
   width: 100%;
-  height: 4px;
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 2px;
+  height: 3px;
+  background: var(--border-color);
+  border-radius: 1.5px;
   position: relative;
   overflow: visible;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0078d7, #00b4d8);
-  border-radius: 2px;
+  background: var(--primary-color);
+  border-radius: 1.5px;
   transition: width 0.1s linear;
 }
 
 .progress-handle {
   position: absolute;
   top: 50%;
-  width: 12px;
-  height: 12px;
-  background: #0078d7;
+  width: 14px;
+  height: 14px;
+  background: var(--primary-color);
   border-radius: 50%;
-  transform: translate(-50%, -50%);
-  opacity: 0;
-  transition: opacity 0.2s, transform 0.2s;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  box-shadow: var(--shadow-sm);
 }
 
 .progress-bar:hover .progress-handle,
 .progress-handle.dragging {
-  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  box-shadow: var(--shadow-primary);
 }
 
 .time-display {
@@ -403,9 +404,11 @@ export default {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #666;
+  font-weight: 500;
+  color: var(--text-secondary);
   min-width: 90px;
   justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
 }
 
 .time-separator {
@@ -417,33 +420,34 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
 }
 
 /* 歌曲信息 */
 .track-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   flex: 1;
   min-width: 0;
   cursor: pointer;
-  padding: 4px;
-  border-radius: 8px;
-  transition: background 0.2s;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast);
 }
 
 .track-info:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--bg-hover);
 }
 
 .track-cover {
-  width: 48px;
-  height: 48px;
-  border-radius: 6px;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   flex-shrink: 0;
-  background: #f0f0f0;
+  background: var(--bg-tertiary);
+  box-shadow: var(--shadow-sm);
 }
 
 .track-cover img {
@@ -458,7 +462,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #999;
+  color: var(--text-tertiary);
 }
 
 .cover-placeholder svg {
@@ -474,16 +478,18 @@ export default {
 .track-title {
   font-size: 14px;
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.4;
+  letter-spacing: -0.2px;
 }
 
 .track-artist {
   font-size: 12px;
-  color: #666;
+  font-weight: 500;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -494,12 +500,12 @@ export default {
 .playback-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .control-btn {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border: none;
   background: transparent;
   border-radius: 50%;
@@ -507,12 +513,17 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #333;
-  transition: all 0.2s;
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
 }
 
 .control-btn:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--bg-hover);
+  transform: scale(1.05);
+}
+
+.control-btn:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 .control-btn:disabled {
@@ -526,20 +537,26 @@ export default {
 }
 
 .play-btn {
-  width: 44px;
-  height: 44px;
-  background: #0078d7;
+  width: 48px;
+  height: 48px;
+  background: var(--primary-color);
   color: white;
+  box-shadow: var(--shadow-primary);
 }
 
 .play-btn:hover:not(:disabled) {
-  background: #006cbd;
-  transform: scale(1.05);
+  background: var(--primary-hover);
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(0, 122, 255, 0.35);
+}
+
+.play-btn:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .play-btn svg {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
 }
 
 .mode-btn svg,
@@ -549,15 +566,15 @@ export default {
 }
 
 .lyrics-btn.active {
-  color: #0078d7;
-  background: rgba(0, 120, 215, 0.1);
+  color: var(--primary-color);
+  background: var(--primary-light);
 }
 
 /* 音量控制 */
 .volume-section {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex: 1;
   justify-content: flex-end;
 }
@@ -568,7 +585,7 @@ export default {
 }
 
 .volume-slider {
-  width: 80px;
+  width: 90px;
   height: 20px;
   display: flex;
   align-items: center;
@@ -577,16 +594,16 @@ export default {
 
 .volume-track {
   width: 100%;
-  height: 4px;
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 2px;
+  height: 3px;
+  background: var(--border-color);
+  border-radius: 1.5px;
   overflow: hidden;
 }
 
 .volume-fill {
   height: 100%;
-  background: #0078d7;
-  border-radius: 2px;
+  background: var(--primary-color);
+  border-radius: 1.5px;
   transition: width 0.1s;
 }
 
@@ -703,45 +720,45 @@ export default {
 /* 深色模式 */
 @media (prefers-color-scheme: dark) {
   .player-control-bar {
-    background: rgba(40, 40, 40, 0.95);
-    border-top-color: rgba(255, 255, 255, 0.1);
+    background: var(--bg-glass);
+    border-top-color: var(--border-light);
   }
-  
+
   .progress-track,
   .volume-track {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--border-color);
   }
-  
+
   .time-display {
-    color: #aaa;
+    color: var(--text-secondary);
   }
-  
+
   .track-title {
-    color: #f0f0f0;
+    color: var(--text-primary);
   }
-  
+
   .track-artist {
-    color: #aaa;
+    color: var(--text-secondary);
   }
-  
+
   .control-btn {
-    color: #f0f0f0;
+    color: var(--text-primary);
   }
-  
+
   .control-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-hover);
   }
-  
+
   .track-info:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--bg-hover);
   }
-  
+
   .track-cover {
-    background: #3a3a3a;
+    background: var(--bg-tertiary);
   }
-  
+
   .cover-placeholder {
-    color: #666;
+    color: var(--text-tertiary);
   }
 }
 </style>

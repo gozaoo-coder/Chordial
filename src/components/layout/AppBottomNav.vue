@@ -65,14 +65,16 @@ const isActive = (path) => {
   left: 0;
   right: 0;
   height: var(--bottom-nav-height);
-  background: var(--bg-secondary);
+  background: var(--bg-glass);
   border-top: 1px solid var(--border-light);
   display: flex;
   justify-content: space-around;
   align-items: center;
   z-index: 100;
-  padding: 0 8px;
-  transition: bottom 0.3s ease;
+  padding: 0 16px;
+  transition: bottom var(--transition-slow);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 /* 当播放器显示时，底部导航向上移动 */
@@ -86,30 +88,33 @@ const isActive = (path) => {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 8px 12px;
+  padding: 8px 16px;
   color: var(--text-secondary);
   text-decoration: none;
-  transition: all 0.2s ease;
-  border-radius: 8px;
+  transition: all var(--transition-fast);
+  border-radius: var(--radius-md);
   flex: 1;
   max-width: 80px;
+  font-weight: 500;
 }
 
 .bottom-nav-item:hover {
   color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .bottom-nav-item.active {
-  color: #0078d7;
+  color: var(--primary-color);
+  background: var(--primary-light);
 }
 
 .bottom-nav-icon {
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .bottom-nav-text {
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 @media (min-width: 1024px) {
@@ -120,7 +125,8 @@ const isActive = (path) => {
 
 @media (prefers-color-scheme: dark) {
   .bottom-nav-item.active {
-    color: #4da3ff;
+    color: var(--primary-color);
+    background: var(--primary-light);
   }
 }
 </style>

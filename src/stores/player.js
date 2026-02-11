@@ -190,8 +190,15 @@ function setupAudioEvents() {
   const audio = state.audioElement;
   if (!audio) return;
 
-  // 时间更新
+  // 时间更新（节流处理，每 100ms 更新一次）
+  let lastTimeUpdate = 0;
+  const TIME_UPDATE_THROTTLE = 100; // 100ms
+  
   audioEventHandlers.timeupdate = () => {
+    const now = Date.now();
+    if (now - lastTimeUpdate < TIME_UPDATE_THROTTLE) return;
+    lastTimeUpdate = now;
+    
     state.currentTime = audio.currentTime || 0;
 
     // Automix: 检查是否需要预加载下一首
@@ -365,8 +372,13 @@ const actions = {
         return;
       }
       
-      // 停止当前播放
+      // 停止当前播放并释放旧的 Blob URL
       if (state.audioElement) {
+        // 释放旧的 Blob URL 防止内存泄漏
+        const oldSrc = state.audioElement.src;
+        if (oldSrc && oldSrc.startsWith('blob:')) {
+          URL.revokeObjectURL(oldSrc);
+        }
         state.audioElement.pause();
         state.audioElement.currentTime = 0;
       }

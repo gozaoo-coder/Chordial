@@ -562,15 +562,42 @@ export class Track {
   }
 
   /**
+   * 检测歌词内容是否包含 LRC 时间戳格式
+   * @param {string} lyrics - 歌词内容
+   * @returns {boolean}
+   * @private
+   */
+  _containsLrcTimestamp(lyrics) {
+    if (!lyrics || typeof lyrics !== 'string') return false;
+    // LRC 时间戳格式: [mm:ss.xx] 或 [mm:ss.xxx]
+    const lrcTimeRegex = /\[\d{1,2}:\d{2}\.\d{2,3}\]/;
+    return lrcTimeRegex.test(lyrics);
+  }
+
+  /**
    * 获取歌词信息对象
    * @returns {Object}
    */
   getLyricsInfo() {
+    const hasPlain = this.hasPlainLyrics();
+    const hasSynced = this.hasSyncedLyrics();
+    const plainContainsLrc = hasPlain && this._containsLrcTimestamp(this.lyrics);
+
+    // 如果 plainLyrics 包含 LRC 时间戳，将其视为同步歌词
+    if (plainContainsLrc && !hasSynced) {
+      return {
+        plainLyrics: this.lyrics || '',
+        syncedLyrics: this.lyrics || '',
+        hasSyncedLyrics: true,
+        hasPlainLyrics: true
+      };
+    }
+
     return {
       plainLyrics: this.lyrics || '',
       syncedLyrics: this.syncedLyrics || '',
-      hasSyncedLyrics: this.hasSyncedLyrics(),
-      hasPlainLyrics: this.hasPlainLyrics()
+      hasSyncedLyrics: hasSynced,
+      hasPlainLyrics: hasPlain
     };
   }
 
