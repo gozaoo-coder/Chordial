@@ -17,7 +17,7 @@ export {
   // sources.js
   addLocalFolder,
   addWebDisk,
-  remove,
+  remove as removeSource,
   getAll,
   setEnabled,
   // library.js

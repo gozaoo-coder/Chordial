@@ -116,9 +116,16 @@ export class ArtistSummary {
    */
   async getCoverImage(size = 'medium') {
     try {
-      const resource = await this.getCoverResource(size);
-      const cacheEntry = resourceManager.cache.get(`artist-cover-${this.id}-${size}`);
-      return cacheEntry?.blob || null;
+      const key = `artist-cover-${this.id}-${size}`;
+      // 先检查缓存中是否已有该资源
+      const cachedResource = resourceManager.getCachedResource(key);
+      if (cachedResource) {
+        return cachedResource.blob || null;
+      }
+      // 如果没有缓存，获取资源并返回 blob
+      await this.getCoverResource(size);
+      const newResource = resourceManager.getCachedResource(key);
+      return newResource?.blob || null;
     } catch (error) {
       return null;
     }
@@ -148,9 +155,8 @@ export class ArtistSummary {
    */
   releaseCoverResource(size = 'medium') {
     const key = `artist-cover-${this.id}-${size}`;
-    const resource = resourceManager.cache.get(key);
-    if (resource) {
-      resourceManager._releaseResource(key);
+    if (resourceManager.has(key)) {
+      resourceManager.releaseResource(key);
     }
   }
 
