@@ -5,14 +5,15 @@
  * 特性：
  * - 支持多歌手（artists 为 ArtistSummary 数组）
  * - album 为 AlbumSummary 类型
- * - 集成 BlobResource 资源管理
+ * - 集成 ResourceManager 资源管理
  */
 import { invoke } from '@tauri-apps/api/core';
 import { ArtistSummary } from './ArtistSummary';
 import { AlbumSummary } from './AlbumSummary';
+import { resourceManager } from '@/js/resourceManager';
 import { BlobResource, BlobResourcePool } from './BlobResource';
 
-// Track 专用的资源池（懒加载单例模式）
+// Track 专用的资源池（懒加载单例模式）- 用于音频资源
 let trackResourcePool = null;
 
 /**
@@ -192,27 +193,18 @@ export class Track {
   /**
    * 从 Data URL 创建封面资源
    * @param {string} key - 资源键
-   * @returns {Promise<BlobResource|null>}
+   * @returns {Promise<{url: string, release: Function}|null>}
    * @private
    */
   async _createCoverFromDataUrl(key) {
-    const pool = getTrackResourcePool();
-    let resource = pool.get(key);
-    if (resource) {
-      this._coverResource = resource;
-      return resource;
+    // 如果已有 coverData，直接返回包装后的资源对象
+    if (this.albumCoverData) {
+      return {
+        url: this.albumCoverData,
+        release: () => {} // Data URL 不需要释放
+      };
     }
-
-    try {
-      const res = await fetch(this.albumCoverData);
-      const blob = await res.blob();
-      resource = pool.add(key, blob);
-      this._coverResource = resource;
-      return resource;
-    } catch (err) {
-      console.warn('Failed to create cover resource:', err);
-      return null;
-    }
+    return null;
   }
 
   /**
@@ -232,21 +224,15 @@ export class Track {
   }
 
   /**
-   * 从后端 API 获取封面资源
+   * 从后端 API 获取封面资源（使用 ResourceManager 统一管理）
    * @param {string} size - 图片尺寸
-   * @returns {Promise<BlobResource|null>}
+   * @returns {Promise<{url: string, release: Function}|null>}
    * @private
    */
   async _getCoverFromApi(size) {
-    const key = `album-cover-${this.albumId}-${size}`;
-    const pool = getTrackResourcePool();
-    let resource = pool.get(key);
-
-    if (resource) {
-      return resource;
-    }
-
-    try {
+    const key = `track-album-cover-${this.albumId}-${size}`;
+    
+    return resourceManager.getResource(key, async () => {
       const result = await invoke('get_album_art', {
         album_id: this.albumId,
         size
@@ -254,16 +240,11 @@ export class Track {
 
       const imageData = this._extractImageData(result);
       if (!imageData) {
-        return null;
+        throw new Error('Invalid image data');
       }
 
-      const blob = new Blob([imageData], { type: 'image/jpeg' });
-      resource = pool.add(key, blob);
-      return resource;
-    } catch (err) {
-      console.warn('Failed to get cover from album_id:', err);
-      return null;
-    }
+      return imageData;
+    });
   }
 
   /**
@@ -291,15 +272,11 @@ export class Track {
   }
 
   /**
-   * 获取封面 BlobResource（用于资源管理）
+   * 获取封面资源（用于资源管理）
    * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
-   * @returns {Promise<BlobResource|null>}
+   * @returns {Promise<{url: string, release: Function}|null>} 资源对象
    */
   async getCoverResource(size = 'medium') {
-    if (this._coverResource) {
-      return this._coverResource;
-    }
-
     // 优先级1: 从 Data URL 创建
     if (this.albumCoverData?.startsWith('data:image/')) {
       const key = `track_cover_${this.id}`;
@@ -321,21 +298,28 @@ export class Track {
   }
 
   /**
+   * 获取封面 URL（兼容旧接口）
+   * @deprecated 请使用 getCoverResource() 方法替代
+   * @returns {string|null}
+   */
+  getCoverUrl() {
+    return this.albumCoverData || this._albumSummary?.getCoverUrl() || null;
+  }
+
+  /**
    * 使用封面资源（自动管理生命周期）
-   * @returns {Promise<string|null>} Blob URL 或 Data URL
+   * @returns {Promise<{url: string, release: Function}|null>} 资源对象
    */
   async useCover() {
-    const resource = await this.getCoverResource();
-    if (resource) {
-      return resource.use();
-    }
-    return this.getCoverUrl();
+    return this.getCoverResource();
   }
 
   /**
    * 释放封面资源
+   * @deprecated 资源释放现在由调用方负责，通过 resource.release() 调用
    */
   releaseCover() {
+    // 兼容旧代码，实际上资源现在由 ResourceManager 管理
     if (this._coverResource) {
       this._coverResource.release();
     }

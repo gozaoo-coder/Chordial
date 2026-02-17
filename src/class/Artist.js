@@ -3,6 +3,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { ArtistSummary } from './ArtistSummary';
+import { resourceManager } from '@/js/resourceManager';
 
 export class Artist {
   /**
@@ -106,6 +107,61 @@ export class Artist {
    */
   getCoverUrl() {
     return this.coverData || null;
+  }
+
+  /**
+   * 获取歌手封面资源（使用 ResourceManager 管理）
+   * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
+   * @returns {Promise<{url: string, release: Function}>} 资源对象，使用完后调用 release()
+   */
+  async getCoverResource(size = 'medium') {
+    const key = `artist-cover-${this.id}-${size}`;
+    return resourceManager.getResource(key, async () => {
+      const result = await invoke('get_artist_image', {
+        artist_id: this.id
+      });
+
+      // Tauri v2 返回的是 Uint8Array 数组
+      if (Array.isArray(result)) {
+        return new Uint8Array(result);
+      }
+
+      // 如果已经是 Uint8Array 或 ArrayBuffer，直接返回
+      if (result instanceof Uint8Array || result instanceof ArrayBuffer) {
+        return result;
+      }
+
+      // 如果 result 有 data 属性（某些 Tauri 版本）
+      if (result && result.data) {
+        if (Array.isArray(result.data)) {
+          return new Uint8Array(result.data);
+        }
+        if (result.data instanceof Uint8Array || result.data instanceof ArrayBuffer) {
+          return result.data;
+        }
+      }
+
+      throw new Error('Invalid cover data format');
+    });
+  }
+
+  /**
+   * 获取歌手封面资源（统一接口，兼容 acquireCoverResource）
+   * 如果已有 coverData，返回包装后的资源对象；否则从 ResourceManager 获取
+   * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
+   * @returns {Promise<{url: string, release: Function}>} 资源对象
+   */
+  async acquireCoverResource(size = 'medium') {
+    // 如果已有 coverData，返回包装后的资源对象
+    if (this.coverData) {
+      return {
+        url: this.coverData,
+        release: () => {} // Data URL 不需要释放
+      };
+    }
+
+    // 否则使用 ResourceManager 获取资源
+    return this.getCoverResource(size);
   }
 
   /**

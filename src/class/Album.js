@@ -156,6 +156,7 @@ export class Album {
 
   /**
    * 获取专辑封面图片 URL（可用于 img 标签 src）
+   * @deprecated 请使用 getCoverResource() 方法替代，该方法返回带释放函数的资源对象
    * @returns {Promise<string>} 封面图片 URL（Data URL 或 Blob URL）
    */
   async getCoverImageUrl() {
@@ -172,6 +173,25 @@ export class Album {
 
     // 返回默认占位图或空字符串
     return '';
+  }
+
+  /**
+   * 获取专辑封面资源（统一接口，兼容 getCoverResource）
+   * 如果已有 coverData，返回包装后的资源对象；否则从 ResourceManager 获取
+   * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
+   * @returns {Promise<{url: string, release: Function}>} 资源对象
+   */
+  async acquireCoverResource(size = 'medium') {
+    // 如果已有 coverData，返回包装后的资源对象
+    if (this.coverData) {
+      return {
+        url: this.coverData,
+        release: () => {} // Data URL 不需要释放
+      };
+    }
+
+    // 否则使用 ResourceManager 获取资源
+    return this.getCoverResource(size);
   }
 
   /**

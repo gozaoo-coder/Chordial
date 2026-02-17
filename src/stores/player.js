@@ -705,15 +705,33 @@ const actions = {
   async loadLyrics(track) {
     try {
       const lyricsInfo = track.getLyricsInfo();
-      state.lyricsData = lyricsInfo;
+      
+      // 比较是否有变化，避免不必要的更新
+      const hasChanged = 
+        state.lyricsData.plainLyrics !== lyricsInfo.plainLyrics ||
+        state.lyricsData.syncedLyrics !== lyricsInfo.syncedLyrics ||
+        state.lyricsData.hasSyncedLyrics !== lyricsInfo.hasSyncedLyrics ||
+        state.lyricsData.hasPlainLyrics !== lyricsInfo.hasPlainLyrics;
+      
+      if (hasChanged) {
+        console.log('[PlayerStore] lyricsData changed, updating');
+        // 逐个更新字段，而不是替换整个对象
+        state.lyricsData.plainLyrics = lyricsInfo.plainLyrics;
+        state.lyricsData.syncedLyrics = lyricsInfo.syncedLyrics;
+        state.lyricsData.hasSyncedLyrics = lyricsInfo.hasSyncedLyrics;
+        state.lyricsData.hasPlainLyrics = lyricsInfo.hasPlainLyrics;
+      } else {
+        console.log('[PlayerStore] lyricsData unchanged, skipping update');
+      }
     } catch (error) {
       console.warn('加载歌词失败:', error);
-      state.lyricsData = {
-        plainLyrics: '',
-        syncedLyrics: '',
-        hasSyncedLyrics: false,
-        hasPlainLyrics: false
-      };
+      // 只有当当前有内容时才清空
+      if (state.lyricsData.plainLyrics || state.lyricsData.syncedLyrics) {
+        state.lyricsData.plainLyrics = '';
+        state.lyricsData.syncedLyrics = '';
+        state.lyricsData.hasSyncedLyrics = false;
+        state.lyricsData.hasPlainLyrics = false;
+      }
     }
   },
   

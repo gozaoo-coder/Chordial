@@ -1,0 +1,329 @@
+/* AMLL Player 样式 - 从 @applemusic-like-lyrics/player 复制 */
+
+:root {
+  --amll-font-family:
+    "SF Pro Display", "PingFang SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  font-family: var(--amll-font-family);
+  font-size: 12px;
+
+  color: white;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+
+  background-color: var(--color-background, transparent);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  overflow: hidden;
+  padding-bottom: 5em;
+
+  &[data-amll-lyrics-open] {
+    overflow: hidden !important;
+    overscroll-behavior: contain;
+    position: relative !important;
+    padding-left: 0px;
+    padding-top: 0px;
+    padding-right: 0px;
+    margin-left: 0;
+    margin-top: 0;
+    margin-right: 17px !important;
+  }
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+
+  &:hover {
+    background: transparent;
+  }
+}
+
+::-webkit-scrollbar {
+  background-color: transparent;
+  width: 20px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: solid 6px transparent;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.0509803922),
+    inset 0 0 0 6px rgba(255, 255, 255, 0.1137254902);
+  border-radius: 10px;
+  background: transparent;
+  min-height: max(5%, 5vh, 5vw);
+
+  &:hover {
+    background: transparent;
+  }
+}
+
+.img-border {
+  box-shadow: 0 0 0 1px var(--base-card-classic-border-color);
+}
+
+/* AMLL 歌词页面样式 */
+.amll-lyric-page {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  isolation: isolate;
+  transform-style: flat;
+  pointer-events: none;
+  background-color: #222;
+  transition:
+    border-radius 0.25s ease,
+    transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+  transform: translateY(100%);
+  border-radius: 1em 1em 0 0;
+  overflow: hidden;
+  color: white;
+
+  &.opened {
+    pointer-events: auto;
+    transition:
+      border-radius 0.25s 0.25s ease,
+      transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+    transform: translateY(0%);
+    border-radius: 0 0 0 0;
+  }
+}
+
+/* AMLL 歌词播放器容器样式 */
+.amll-lyric-container {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+/* AMLL 歌词行样式 */
+.amll-lyric-container .lyric-line {
+  transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+              opacity 0.3s ease;
+}
+
+/* AMLL 控制按钮样式 */
+.amll-controls {
+  display: flex;
+  justify-content: space-evenly;
+  align-items: center;
+}
+
+.amll-controls .control-button {
+  width: 18%;
+  aspect-ratio: 1 / 1;
+  transition: transform 0.3s ease;
+}
+
+.amll-controls .control-button svg {
+  scale: 3;
+  transition: scale 0.3s;
+}
+
+@media screen and (max-height: 1080px) {
+  .amll-controls .control-button svg {
+    scale: 2;
+  }
+}
+
+@media screen and (max-height: 768px) {
+  .amll-controls .control-button svg {
+    scale: 1.5;
+  }
+}
+
+@media screen and (max-height: 512px) {
+  .amll-controls .control-button svg {
+    scale: 1;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .amll-controls .control-button svg {
+    scale: 0.5;
+  }
+}
+
+/* 播放按钮 */
+.amll-controls .play-button svg {
+  scale: 2;
+}
+
+@media screen and (max-height: 1080px) {
+  .amll-controls .play-button svg {
+    scale: 1.1;
+  }
+}
+
+@media screen and (max-height: 768px) {
+  .amll-controls .play-button svg {
+    scale: 0.8;
+  }
+}
+
+@media screen and (max-height: 512px) {
+  .amll-controls .play-button svg {
+    scale: 0.5;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .amll-controls .play-button svg {
+    scale: 0.5;
+  }
+}
+
+/* 音乐信息样式 */
+.amll-music-info {
+  transition: transform 0.3s cubic-bezier(0.5, 0, 0.75, 0),
+              opacity 0.3s cubic-bezier(0.5, 0, 0.75, 0);
+  transform: translateY(-25vh);
+  opacity: 0;
+  overflow-x: hidden;
+  min-width: 0;
+  padding: 2em 0;
+}
+
+.amll-music-info.visible {
+  transition: transform 0.5s 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+              opacity 0.5s 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  transform: translateY(0);
+  opacity: 1;
+}
+
+@media screen and (max-height: 768px) {
+  .amll-music-info {
+    padding: 1em 0;
+  }
+}
+
+@media screen and (max-height: 512px) {
+  .amll-music-info {
+    padding: 0.25em 0;
+  }
+}
+
+/* 进度条标签样式 */
+.amll-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 500;
+  font-size: max(1.2vh, 0.8em);
+  opacity: 0.5;
+  margin-top: -4px;
+}
+
+.amll-progress-labels > * {
+  flex: 1;
+}
+
+.amll-progress-labels > *:nth-child(2) {
+  flex: 0;
+}
+
+.amll-progress-labels > *:last-child {
+  text-align: right;
+}
+
+@media screen and (max-height: 768px) {
+  .amll-progress-labels {
+    margin-top: 0;
+  }
+}
+
+/* 音量控制样式 */
+.amll-volume-control {
+  padding-bottom: 4em;
+}
+
+@media screen and (max-height: 768px) {
+  .amll-volume-control {
+    padding-bottom: 2em;
+  }
+}
+
+@media screen and (max-height: 512px) {
+  .amll-volume-control {
+    padding-bottom: 1em;
+  }
+}
+
+/* 封面按钮样式 */
+.amll-cover-button {
+  --cover-button-size: 75px;
+  flex: 0;
+  width: var(--cover-button-size);
+  height: var(--cover-button-size);
+  min-width: var(--cover-button-size);
+  min-height: var(--cover-button-size);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: none;
+  background-position: center;
+  background-size: cover;
+  padding: 0;
+  display: block;
+  position: relative;
+}
+
+.amll-cover-button::before {
+  pointer-events: none;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px #504e4e25;
+  content: "";
+  display: block;
+  position: absolute;
+  width: var(--cover-button-size);
+  height: var(--cover-button-size);
+  top: 0;
+  left: 0;
+  transition: background-color 0.2s ease, backdrop-filter 0.2s ease;
+  background: rgba(100, 100, 100, 0.1);
+}
+
+.amll-cover-button:hover::before {
+  background-color: #0004;
+  backdrop-filter: blur(4px);
+}
+
+.amll-cover-button:active::before {
+  background-color: #0006;
+}
+
+/* 自动布局样式 */
+.amll-auto-layout {
+  --info-timing-func-in: cubic-bezier(0.5, 0, 0.75, 0);
+  --info-timing-func-out: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* 水平控制区样式 */
+.amll-horizontal-controls {
+  min-width: 0;
+  overflow: hidden;
+}
+
+@media screen and (max-height: 1000px) {
+  .amll-horizontal-controls {
+    padding: 0vh 0 !important;
+  }
+}
+
+@media screen and (min-height: 1000px) {
+  .amll-horizontal-controls {
+    padding-top: 2vh;
+    padding-bottom: 1vh;
+  }
+}

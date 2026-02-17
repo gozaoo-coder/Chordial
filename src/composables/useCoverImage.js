@@ -5,6 +5,7 @@
  * # 性能优化
  * - 实现并发控制，限制同时加载的图片数量
  * - 优化 watch 监听，避免深度监听大对象
+ * - 自动管理资源生命周期，组件卸载时释放资源
  */
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 
@@ -43,54 +44,86 @@ function releaseLoadPermit() {
 }
 
 /**
+ * 从对象获取封面资源
+ * 优先使用 getCoverResource 或 acquireCoverResource 方法，其次使用 coverData
+ * @param {Object} item - 专辑/曲目/歌手对象
+ * @param {string} size - 图片尺寸
+ * @returns {Promise<{url: string, release: Function}|null>}
+ */
+async function acquireCoverResource(item, size = 'medium') {
+  if (!item) return null;
+
+  // 优先级1: 使用 acquireCoverResource 方法（统一接口）
+  if (typeof item.acquireCoverResource === 'function') {
+    return await item.acquireCoverResource(size);
+  }
+
+  // 优先级2: 使用 getCoverResource 方法
+  if (typeof item.getCoverResource === 'function') {
+    return await item.getCoverResource(size);
+  }
+
+  // 优先级3: 使用 coverData（Data URL，不需要释放）
+  if (item.coverData) {
+    return {
+      url: item.coverData,
+      release: () => {} // Data URL 不需要释放
+    };
+  }
+
+  // 优先级4: 使用 albumCoverData（Track 对象）
+  if (item.albumCoverData) {
+    return {
+      url: item.albumCoverData,
+      release: () => {} // Data URL 不需要释放
+    };
+  }
+
+  return null;
+}
+
+/**
  * 加载专辑或歌手封面图片
  * @param {Object} item - 专辑或歌手对象 (AlbumSummary, Album, ArtistSummary, Artist)
  * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
- * @returns {Object} { coverUrl, isLoading, error }
+ * @returns {Object} { coverUrl, isLoading, error, release }
  */
 export function useCoverImage(item, size = 'medium') {
   const coverUrl = ref('');
   const isLoading = ref(false);
   const error = ref(null);
   let releaseFn = null;
+  let isLoadingCover = false;
 
   const loadCover = async () => {
     if (!item.value) return;
-
-    // 如果对象已经有 coverData（旧数据兼容），直接使用
-    if (item.value.coverData) {
-      coverUrl.value = item.value.coverData;
+    if (isLoadingCover) {
       return;
     }
 
-    // 检查是否有 getCoverResource 方法
-    if (typeof item.value.getCoverResource !== 'function') return;
-
+    isLoadingCover = true;
     isLoading.value = true;
     error.value = null;
 
     try {
-      const resource = await item.value.getCoverResource(size);
+      const resource = await acquireCoverResource(item.value, size);
 
-      if (resource) {
-        // 统一接口：优先使用 getUrl() 方法，否则使用 url 属性
-        const url = typeof resource.getUrl === 'function'
-          ? resource.getUrl()
-          : resource.url;
-
-        if (url) {
-          coverUrl.value = url;
-          // 统一释放接口
-          releaseFn = typeof resource.release === 'function'
-            ? () => resource.release()
-            : null;
+      if (resource && resource.url) {
+        if (releaseFn) {
+          releaseFn();
+          releaseFn = null;
         }
+
+        coverUrl.value = resource.url;
+        releaseFn = typeof resource.release === 'function'
+          ? () => resource.release()
+          : null;
       }
     } catch (err) {
       console.warn('Failed to load cover:', err);
       error.value = err;
-      coverUrl.value = '';
     } finally {
+      isLoadingCover = false;
       isLoading.value = false;
     }
   };
@@ -100,22 +133,22 @@ export function useCoverImage(item, size = 'medium') {
       releaseFn();
       releaseFn = null;
     }
-    coverUrl.value = '';
   };
 
-  // 组件挂载时加载封面
+  let lastItemId = null;
+
   onMounted(() => {
+    lastItemId = item.value?.id;
     loadCover();
   });
 
-  // 监听 item.id 变化，避免深度监听大对象
-  const itemId = computed(() => item.value?.id);
-  watch(itemId, () => {
-    releaseCover();
-    loadCover();
-  });
+  watch(() => item.value?.id, (newId, oldId) => {
+    if (newId !== lastItemId) {
+      lastItemId = newId;
+      loadCover();
+    }
+  }, { immediate: false });
 
-  // 组件卸载时释放资源
   onUnmounted(() => {
     releaseCover();
   });
@@ -154,22 +187,12 @@ export function useCoverImages(itemsRef, size = 'medium') {
     const promises = itemsRef.value.map(async (item) => {
       if (!item) return;
 
-      // 如果对象已经有 coverData，直接使用
-      if (item.coverData) {
-        coverUrls.value.set(item.id, item.coverData);
-        return;
-      }
-
-      // 检查是否有 getCoverResource 方法
-      if (typeof item.getCoverResource !== 'function') {
-        return;
-      }
-
       // 获取加载许可（并发控制）
       await acquireLoadPermit();
 
       try {
-        const resource = await item.getCoverResource(size);
+        // 使用统一的资源获取函数
+        const resource = await acquireCoverResource(item, size);
         if (resource && resource.url) {
           coverUrls.value.set(item.id, resource.url);
           releaseFns.set(item.id, resource.release);
