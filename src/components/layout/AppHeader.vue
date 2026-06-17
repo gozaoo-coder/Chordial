@@ -29,7 +29,7 @@ const goToSettings = () => {
     <div class="drag-region"></div>
 
     <div class="header-left">
-      <h1 class="app-title">Chordial</h1>
+      <!-- <h1 class="app-title">Chordial</h1> -->
       <span class="page-title">{{ pageTitle }}</span>
     </div>
 
@@ -61,8 +61,6 @@ const goToSettings = () => {
 <style scoped>
 .app-header {
   height: var(--header-height);
-  background: var(--bg-glass);
-  border-bottom: 1px solid var(--border-light);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -70,8 +68,10 @@ const goToSettings = () => {
   position: sticky;
   top: 0;
   z-index: 100;
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  /* backdrop-filter: saturate(180%) blur(20px); */
+  /* background: var(--bg-glass); */
+  /* border-bottom: 1px solid var(--border-light); */
+  /* -webkit-backdrop-filter: saturate(180%) blur(20px); */
 }
 
 /* 窗口拖动区域 */
@@ -106,11 +106,8 @@ const goToSettings = () => {
 }
 
 .page-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  padding-left: 16px;
-  border-left: 1px solid var(--border-light);
+  font-size: 26px;
+  font-weight: 900;
 }
 
 .header-center {
@@ -125,6 +122,7 @@ const goToSettings = () => {
   position: relative;
   display: flex;
   align-items: center;
+
 }
 
 .search-icon {
@@ -147,6 +145,10 @@ const goToSettings = () => {
   font-weight: 400;
   transition: all var(--transition-normal);
   -webkit-app-region: no-drag;
+    backdrop-filter: saturate(180%) blur(20px);
+  background: var(--bg-glass);
+  border-bottom: 1px solid var(--border-light);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 .search-box input:focus {
@@ -179,6 +181,10 @@ const goToSettings = () => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  backdrop-filter: saturate(180%) blur(20px);
+  background: var(--bg-glass);
+  border-bottom: 1px solid var(--border-light);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
   transition: all var(--transition-fast);
   -webkit-app-region: no-drag;
 }

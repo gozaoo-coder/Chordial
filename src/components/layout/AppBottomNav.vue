@@ -65,8 +65,9 @@ const isActive = (path) => {
   left: 2rem;
   /* right: 0; */
   height: var(--bottom-nav-height);
+  border-radius: calc(var(--bottom-nav-height) * 0.5);
   background: var(--bg-glass);
-  border-top: 1px solid var(--border-light);
+  border: 1px solid var(--border-light);
   display: flex;
   justify-content: space-around;
   align-items: center;
@@ -87,25 +88,24 @@ const isActive = (path) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 8px 16px;
+  padding: 0 14px;
   color: var(--text-secondary);
   text-decoration: none;
   transition: all var(--transition-fast);
   border-radius: var(--radius-md);
   flex: 1;
-  max-width: 80px;
   font-weight: 500;
+  min-width: 0;
 }
 
 .bottom-nav-item:hover {
   color: var(--text-primary);
-  background: var(--bg-hover);
 }
 
 .bottom-nav-item.active {
   color: var(--primary-color);
-  background: var(--primary-light);
+  text-shadow: var(--primary-color)  0 0 3em;
+  /* background: var(--primary-light); */
 }
 
 .bottom-nav-icon {
@@ -115,6 +115,9 @@ const isActive = (path) => {
 .bottom-nav-text {
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (min-width: 1024px) {

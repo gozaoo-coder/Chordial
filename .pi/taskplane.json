@@ -1,0 +1,9 @@
+{
+  "migrations": {
+    "applied": {
+      "add-supervisor-local-template-v1": {
+        "appliedAt": "2026-06-17T01:19:22.653Z"
+      }
+    }
+  }
+}

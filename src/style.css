@@ -134,12 +134,7 @@ a:hover {
   margin-bottom: 24px;
 }
 
-.page-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--text-primary, #333);
-  margin: 0 0 8px 0;
-}
+
 
 .page-subtitle {
   font-size: 14px;
@@ -148,9 +143,7 @@ a:hover {
 }
 
 @media (max-width: 767px) {
-  .page-title {
-    font-size: 24px;
-  }
+
 }
 
 /* 卡片样式 */

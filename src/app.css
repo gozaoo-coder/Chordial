@@ -12,7 +12,7 @@
   --bg-tertiary: rgba(120, 120, 128, 0.12);
   --bg-hover: rgba(120, 120, 128, 0.08);
   --bg-active: rgba(120, 120, 128, 0.16);
-  --bg-glass: rgba(255, 255, 255, 0.72);
+  --bg-glass: rgba(255, 255, 255, 0.45);
   
   /* 文字色 - Apple 风格 */
   --text-primary: #1D1D1F;

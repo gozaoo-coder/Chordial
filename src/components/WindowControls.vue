@@ -40,7 +40,7 @@ onMounted(async () => {
 <template>
   <div class="window-controls">
     <!-- 置顶按钮 -->
-    <button
+    <!-- <button
       class="window-btn"
       :class="{ active: isAlwaysOnTop }"
       aria-label="切换窗口置顶"
@@ -48,7 +48,7 @@ onMounted(async () => {
       @click="handleToggleAlwaysOnTop"
     >
       <i :class="isAlwaysOnTop ? 'bi bi-pin-fill' : 'bi bi-pin'"></i>
-    </button>
+    </button> -->
 
     <!-- 分隔线 -->
     <div class="divider"></div>
@@ -105,14 +105,18 @@ onMounted(async () => {
   height: 36px;
   border: none;
   border-radius: 50%;
-  background-color: rgba(15, 15, 15, 0.05);
+  /* background-color: rgba(15, 15, 15, 0.05); */
   color: var(--text-secondary);
+  border: 1px solid var(--border-light);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: no-drag;  backdrop-filter: saturate(180%) blur(20px);
+  background: var(--bg-glass);
+  border-bottom: 1px solid var(--border-light);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 .window-btn:hover {
