@@ -52,7 +52,7 @@ watch(() => artist.value?.id, (newId) => {
 
 const getCoverUrl = () => {
   // 优先使用从 ResourceManager 加载的封面
-  return coverUrl.value || artist.value?.coverData || '';
+  return coverUrl.value || '';
 };
 
 const handleTrackSelect = (track) => {

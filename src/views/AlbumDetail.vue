@@ -61,7 +61,7 @@ watch(() => album.value?.id, (newId) => {
 
 const getCoverUrl = () => {
   // 优先使用从 ResourceManager 加载的封面
-  return coverUrl.value || album.value?.coverData || '';
+  return coverUrl.value || album.value?.coverUrl || '';
 };
 
 const formatYear = (year) => {

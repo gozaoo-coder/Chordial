@@ -704,7 +704,7 @@ const actions = {
    */
   async loadLyrics(track) {
     try {
-      const lyricsInfo = track.getLyricsInfo();
+      const lyricsInfo = await track.getLyricsInfo();
       
       // 比较是否有变化，避免不必要的更新
       const hasChanged = 

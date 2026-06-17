@@ -1,4 +1,5 @@
 use super::{albums, artists, lyrics, models::*, relations, songs};
+use crate::module::music_source::registrar::SourceCleanup;
 use crate::module::music_source::types::{EntityType, SourceId};
 use crate::module::storage::persistent::PersistentStore;
 use std::collections::HashMap;
@@ -284,6 +285,197 @@ impl MusicLibrary {
         relations::get_source_ids_of_song(&self.store, song_id)
     }
 
+    /// 从所有实体中移除指定来源的 `SourceId`。
+    ///
+    /// 对每类实体（Song / Artist / Album / Lyric）：
+    /// - 过滤掉 `source_name` 匹配的 `SourceId`
+    /// - 若某实体的 `source_ids` 全部被移除，则删除该实体
+    ///
+    /// 此方法由 [`SourceCleanup`] 回调调用，参见
+    /// [`SourceRegistrar::unregister`](crate::module::music_source::registrar::SourceRegistrar::unregister)。
+    pub fn remove_source_from_all_entities(&self, source_name: &str) -> Result<(), String> {
+        // ── Songs ──
+        {
+            let mut all_songs = songs::get_all(&self.store);
+            let mut to_remove: Vec<String> = Vec::new();
+            for (id, song) in all_songs.iter_mut() {
+                let before = song.source_ids.len();
+                song.source_ids.retain(|sid| sid.source_name != source_name);
+                if song.source_ids.len() < before {
+                    if song.source_ids.is_empty() {
+                        to_remove.push(id.clone());
+                    } else {
+                        songs::update(&self.store, song)?;
+                    }
+                }
+            }
+            for id in &to_remove {
+                let _ = songs::remove(&self.store, id);
+            }
+        }
+
+        // ── Artists ──
+        {
+            let mut all_artists = artists::get_all(&self.store);
+            let mut to_remove: Vec<String> = Vec::new();
+            for (id, artist) in all_artists.iter_mut() {
+                let before = artist.source_ids.len();
+                artist.source_ids.retain(|sid| sid.source_name != source_name);
+                if artist.source_ids.len() < before {
+                    if artist.source_ids.is_empty() {
+                        to_remove.push(id.clone());
+                    } else {
+                        artists::update(&self.store, artist)?;
+                    }
+                }
+            }
+            for id in &to_remove {
+                let _ = artists::remove(&self.store, id);
+            }
+        }
+
+        // ── Albums ──
+        {
+            let mut all_albums = albums::get_all(&self.store);
+            let mut to_remove: Vec<String> = Vec::new();
+            for (id, album) in all_albums.iter_mut() {
+                let before = album.source_ids.len();
+                album.source_ids.retain(|sid| sid.source_name != source_name);
+                if album.source_ids.len() < before {
+                    if album.source_ids.is_empty() {
+                        to_remove.push(id.clone());
+                    } else {
+                        albums::update(&self.store, album)?;
+                    }
+                }
+            }
+            for id in &to_remove {
+                let _ = albums::remove(&self.store, id);
+            }
+        }
+
+        // ── Lyrics ──
+        {
+            let all_lyrics = lyrics::get_all(&self.store);
+            let mut to_remove: Vec<String> = Vec::new();
+            for (id, lyric) in all_lyrics.iter() {
+                if lyric.source_id.source_name == source_name {
+                    to_remove.push(id.clone());
+                }
+            }
+            for id in &to_remove {
+                let _ = lyrics::remove(&self.store, id);
+            }
+        }
+
+        self.save()
+    }
+
+    /// 精准移除：从歌曲中删除匹配的 SourceId，并清理因此变为空的实体。
+    ///
+    /// 对每首歌曲，若其 `source_ids` 中有 `(source_name, entity_id)` 匹配项，
+    /// 则移除该 SourceId；若歌曲的 `source_ids` 因此变空，则删除该歌曲。
+    ///
+    /// 随后调用 [`cleanup_empty_entities`](Self::cleanup_empty_entities)
+    /// 清理所有失去全部来源引用的艺人、专辑、歌词。
+    ///
+    /// 适用场景：本地来源的某个文件被删除，仅移除该文件的引用，
+    /// 而不影响同一来源的其他文件。
+    pub fn remove_specific_song_source_ids(
+        &self,
+        source_name: &str,
+        entity_ids: &std::collections::HashSet<String>,
+    ) -> Result<(), String> {
+        if entity_ids.is_empty() {
+            return Ok(());
+        }
+
+        let all_songs = songs::get_all(&self.store);
+        let mut to_update: Vec<Song> = Vec::new();
+        let mut to_remove: Vec<String> = Vec::new();
+
+        for (id, mut song) in all_songs {
+            let before = song.source_ids.len();
+            song.source_ids.retain(|sid| {
+                !(sid.source_name == source_name && entity_ids.contains(&sid.entity_id))
+            });
+            if song.source_ids.len() < before {
+                if song.source_ids.is_empty() {
+                    to_remove.push(id);
+                } else {
+                    to_update.push(song);
+                }
+            }
+        }
+
+        for song in &to_update {
+            songs::update(&self.store, song)?;
+        }
+        for id in &to_remove {
+            let _ = songs::remove(&self.store, id);
+        }
+
+        // 清理级联空实体
+        self.cleanup_empty_entities()?;
+        self.save()
+    }
+
+    /// 清理所有 `source_ids` 为空的实体（Song / Artist / Album / Lyric）。
+    ///
+    /// 遍历全部四类实体，删除所有失去全部来源引用的条目。
+    /// 适用于：文件删除、文件夹移除后确保库中无悬挂数据。
+    pub fn cleanup_empty_entities(&self) -> Result<(), String> {
+        // Songs
+        {
+            let all_songs = songs::get_all(&self.store);
+            let empty_ids: Vec<String> = all_songs
+                .iter()
+                .filter(|(_, s)| s.source_ids.is_empty())
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in &empty_ids {
+                let _ = songs::remove(&self.store, id);
+            }
+        }
+        // Artists
+        {
+            let all_artists = artists::get_all(&self.store);
+            let empty_ids: Vec<String> = all_artists
+                .iter()
+                .filter(|(_, a)| a.source_ids.is_empty())
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in &empty_ids {
+                let _ = artists::remove(&self.store, id);
+            }
+        }
+        // Albums
+        {
+            let all_albums = albums::get_all(&self.store);
+            let empty_ids: Vec<String> = all_albums
+                .iter()
+                .filter(|(_, a)| a.source_ids.is_empty())
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in &empty_ids {
+                let _ = albums::remove(&self.store, id);
+            }
+        }
+        // Lyrics
+        {
+            let all_lyrics = lyrics::get_all(&self.store);
+            let empty_ids: Vec<String> = all_lyrics
+                .iter()
+                .filter(|(_, l)| l.source_id.source_name.is_empty())
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in &empty_ids {
+                let _ = lyrics::remove(&self.store, id);
+            }
+        }
+        Ok(())
+    }
+
     // ── 私有辅助 ─────────────────────────────────────
 
     /// 合并或初始化一组艺人：按 ID 查找 → 按名称查找 → 新建。
@@ -372,5 +564,13 @@ fn merge_source_ids(existing: &mut Vec<SourceId>, incoming: &[SourceId]) {
         if !existing.contains(sid) {
             existing.push(sid.clone());
         }
+    }
+}
+
+// ── SourceCleanup 实现 ────────────────────────────
+
+impl SourceCleanup for MusicLibrary {
+    fn remove_source_from_all_entities(&self, source_name: &str) -> Result<(), String> {
+        MusicLibrary::remove_source_from_all_entities(self, source_name)
     }
 }

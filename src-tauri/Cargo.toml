@@ -38,7 +38,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 
 
 # 音频播放引擎依赖
-symphonia = { version = "0.6" }
+symphonia = { version = "0.6", features = ["mpa", "isomp4", "aac"] }
+
+# 文件系统监听
+notify = "8"
 
 # 分析结果缓存
 blake3 = "1.5"

@@ -1,41 +1,72 @@
 /**
  * Tauri 后端 API 统一入口
- * 
- * 推荐使用方式:
- * import { addLocalFolder, scanAll } from '@/api/musicSource';
- * 或
- * import * as musicApi from '@/api/musicSource';
- * 
- * 新增类型化 API:
- * import { getArtist, getAlbum } from '@/api/artist';
- * import { getAlbum, getAllAlbums } from '@/api/album';
- * import { Artist, Album, Track } from '@/class';
+ *
+ * @example
+ * import { addLocalFolder, removeLocalFolder, getFolders } from '@/api/tauri';
+ * import { getSong, searchSongs, getArtist, getAlbum } from '@/api/tauri';
+ * import { getMusicFile, getAlbumPicture, getLyricText } from '@/api/tauri';
+ * import { configGet, configSet, storageGet, storageSet } from '@/api/tauri';
+ * import { Song, Artist, Album, Lyric, SourceId } from '@/api/tauri';
  */
 
-// 音乐源相关 API（排除与 artist.js/album.js 冲突的函数）
+// ── Music Source: 文件夹管理 ────────────────────────
 export {
-  // sources.js
   addLocalFolder,
-  addWebDisk,
+  removeLocalFolder,
   remove as removeSource,
-  getAll,
-  setEnabled,
-  // library.js
-  scanAll,
-  getCached,
-  refreshSource,
-  getSourceFromCache,
-  // cache.js
-  clearAll,
-  getSize,
-  // musicResource.js（排除 getAlbumArt 和 getArtistImage）
-  getTrackInfo,
+  getFolders,
+  getLocalStats,
+  rescanAll,
+} from './musicSource/sources.js';
+
+// ── Music Library: CRUD + 搜索 + 关系查询 ──────────
+export {
+  // persistence
+  save as librarySave,
+  cleanupEmptyEntities as libraryCleanup,
+  // song
+  songCount,
+  getSong,
+  getAllSongs,
+  searchSongs,
+  getSongsByArtist,
+  getSongsInAlbum,
+  getSourceIdsOfSong,
+  // artist
+  artistCount,
+  getArtist,
+  getAllArtists,
+  searchArtists,
+  getArtistsOfSong,
+  // album
+  albumCount,
+  getAlbum,
+  getAllAlbums,
+  searchAlbums,
+  getAlbumOfSong,
+  getAlbumsByArtist,
+  // lyric
+  lyricCount,
+  getLyric,
+  getAllLyrics,
+  searchLyrics,
+  getLyricOfSong,
+} from './musicSource/library.js';
+
+// ── Music Resource: 大文件获取 ─────────────────────
+export {
   getMusicFile,
+  getSongFile,
+  getAlbumPicture,
+  getAlbumArt,
+  getLyricText,
   getLyrics,
   parseSyncedLyrics,
   formatToLRC,
-  getPlaylistInfo,
-  // resourceLoader.js
+} from './musicSource/musicResource.js';
+
+// ── Resource Loader ─────────────────────────────────
+export {
   getAlbumArtResource,
   getMusicFileResource,
   getArtistImageResource,
@@ -45,13 +76,62 @@ export {
   releaseMusicFile,
   clearAllResources,
   getResourceStats,
-} from './musicSource/index.js';
+} from './musicSource/resourceLoader.js';
 
-// 歌手相关 API（返回类实例）- 包含 getArtistImage
-export * from './artist.js';
+// ── Config ──────────────────────────────────────────
+export {
+  configGet,
+  configSet,
+  configRemove,
+  configHas,
+  configKeys,
+  configClear,
+  configFlush,
+  configReload,
+} from './storage/config.js';
 
-// 专辑相关 API（返回类实例）- 包含 getAlbumArt
-export * from './album.js';
+// ── Storage ─────────────────────────────────────────
+export {
+  storageGet,
+  storageSet,
+  storageRemove,
+  storageHas,
+  storageKeys,
+  storageClear,
+  storageSave,
+  storageSetBlob,
+  storageGetBlob,
+  storageRemoveBlob,
+  storageHasBlob,
+  storageBlobKeys,
+  storageClearBlobs,
+} from './storage/index.js';
 
-// 类型类导出（方便直接使用）
-export { Artist, ArtistSummary, Album, AlbumSummary, Track } from '@/class';
+// ── Cache ───────────────────────────────────────────
+export {
+  cacheGet,
+  cacheSet,
+  cacheRemove,
+  cacheHas,
+  cacheKeys,
+  cacheClear,
+  cacheClearExpired,
+  cacheTouch,
+  cacheTtl,
+  enableBlobStorage,
+  isBlobStorageEnabled,
+  cacheSetBlob,
+  cacheGetBlob,
+  cacheRemoveBlob,
+  cacheHasBlob,
+  cacheBlobKeys,
+  cacheClearBlobs,
+  cacheClearExpiredBlobs,
+} from './storage/index.js';
+
+// ── Artist / Album convenience ──────────────────────
+export { getArtistImageUrl } from './artist.js';
+export { getAlbumArtUrl } from './album.js';
+
+// ── Classes ─────────────────────────────────────────
+export { Song, Track, Artist, ArtistSummary, Album, AlbumSummary, Lyric, SourceId } from '@/class';

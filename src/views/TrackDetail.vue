@@ -48,7 +48,7 @@ const handlePlay = () => {
 
 const getCoverUrl = () => {
   // 优先使用从 ResourceManager 加载的封面
-  return coverUrl.value || track.value?.getCoverUrl?.() || track.value?.albumCoverData || '';
+  return coverUrl.value || '';
 };
 
 const formatDuration = (seconds) => {

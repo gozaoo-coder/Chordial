@@ -1,75 +1,72 @@
 /**
- * 歌手相关 API
- * 
- * 所有返回的数据都会被包装成对应的类实例
+ * 歌手相关 API — 后端 library_* 命令
+ *
+ * 所有返回值通过 {@link Artist|ArtistSummary} 类包装。
  */
 import { invoke } from '@tauri-apps/api/core';
 import { Artist, ArtistSummary } from '@/class';
 
 /**
- * 获取歌手完整信息
- * @param {string} artistId - 歌手 ID
- * @returns {Promise<Artist>} 歌手实例
+ * 获取歌手完整信息（自动填充 trackIds / albumIds）。
+ * @param {string} artistId
+ * @returns {Promise<Artist>}
  */
 export async function getArtist(artistId) {
-  const data = await invoke('get_artist_info', { artist_id: artistId });
-  return new Artist(data);
+  const [data, songs, albums] = await Promise.all([
+    invoke('library_get_artist', { id: artistId }),
+    invoke('library_get_songs_by_artist', { artistId }),
+    invoke('library_get_albums_by_artist', { artistId }),
+  ]);
+  return new Artist({
+    ...data,
+    track_ids: (songs || []).map((s) => s.id),
+    album_ids: (albums || []).map((a) => a.id),
+    track_count: (songs || []).length,
+    album_count: (albums || []).length,
+  });
 }
 
 /**
- * 获取歌手摘要信息
- * @param {string} artistId - 歌手 ID
- * @returns {Promise<ArtistSummary>} 歌手摘要实例
+ * 获取歌手摘要信息。
+ * @param {string} artistId
+ * @returns {Promise<ArtistSummary>}
  */
 export async function getArtistSummary(artistId) {
-  const data = await invoke('get_artist_summary', { artist_id: artistId });
+  const data = await invoke('library_get_artist', { id: artistId });
   return new ArtistSummary(data);
 }
 
 /**
- * 批量获取歌手信息
- * @param {string[]} artistIds - 歌手 ID 数组
- * @returns {Promise<Artist[]>} 歌手实例数组
+ * 批量获取歌手信息。
+ * @param {string[]} artistIds
+ * @returns {Promise<Artist[]>}
  */
 export async function getArtistsByIds(artistIds) {
-  const data = await invoke('get_artists_by_ids', { artist_ids: artistIds });
-  return data.map(item => new Artist(item));
+  const all = await invoke('library_get_all_artists');
+  return (artistIds || [])
+    .map((id) => (all[id] ? new Artist(all[id]) : null))
+    .filter(Boolean);
 }
 
 /**
- * 获取所有歌手列表
- * @returns {Promise<ArtistSummary[]>} 歌手摘要列表
+ * 获取所有歌手列表。
+ * @returns {Promise<ArtistSummary[]>}
  */
 export async function getAllArtists() {
-  const data = await invoke('get_all_artists');
-  return data.map(item => new ArtistSummary(item));
+  const data = await invoke('library_get_all_artists');
+  return Object.values(data).map((d) => new ArtistSummary(d));
 }
 
 /**
- * 获取歌手图片
- * @param {string} artistId - 歌手 ID
- * @returns {Promise<Blob>} 图片 Blob
+ * 获取歌手图片 URL。
+ * 注意：后端 Artist 模型不直接包含图片数据，
+ * 图片需要通过 SourceId + getAlbumPicture 获取。
+ *
+ * @param {string} _artistId
+ * @returns {Promise<string>} 图片 URL（当前返回空，需通过其他方式获取）
  */
-export async function getArtistImage(artistId) {
-  const response = await invoke('get_artist_image', { artist_id: artistId });
-  return new Blob([response], { type: 'image/jpeg' });
-}
-
-/**
- * 获取歌手图片 URL
- * 如果歌手有封面数据，返回 Data URL；否则返回默认图片
- * @param {string} artistId - 歌手 ID
- * @returns {Promise<string>} 图片 URL
- */
-export async function getArtistImageUrl(artistId) {
-  try {
-    const artist = await getArtist(artistId);
-    if (artist.coverData) {
-      return artist.coverData;
-    }
-  } catch (e) {
-    console.warn('Failed to get artist cover:', e);
-  }
-  // 返回默认图片 URL 或空
+export async function getArtistImageUrl(_artistId) {
+  // Artist 模型不含图片二进制数据
+  // 歌手图片需通过其作品专辑封面或其他 SourceId 获取
   return '';
 }

@@ -1,70 +1,99 @@
 /**
- * 音乐源管理 API
+ * 音乐源管理 API — 后端 local_* 命令
+ *
+ * 当前仅支持本地来源（LocalMusicSource），网盘来源尚未实现。
  */
 
 import { invoke } from '@tauri-apps/api/core';
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Local Folder Management
+// ══════════════════════════════════════════════════════════════════════════════
+
 /**
- * 添加本地音乐源
- * @param {string} path - 文件夹路径
- * @param {boolean} recursive - 是否递归扫描子文件夹
- * @returns {Promise<Object>} 创建的源配置
+ * 添加本地音乐文件夹。
+ *
+ * 后端操作：
+ * 1. 持久化文件夹路径
+ * 2. 全量扫描音频文件并导入 MusicLibrary
+ * 3. 启动文件系统监听
+ *
+ * @param {string} path - 文件夹绝对路径
+ * @returns {Promise<{added: boolean, path: string, files_found: number, indexed: number, errors: string[]}>}
  */
-export async function addLocalFolder(path, recursive = true) {
-  return invoke('add_local_source', { path, recursive });
+export async function addLocalFolder(path) {
+  return invoke('local_add_folder', { path });
 }
 
 /**
- * 添加网盘源
- * @param {string} url - 网盘 URL (webdev://...)
- * @param {string} [username] - 用户名（可选）
- * @param {string} [password] - 密码（可选）
- * @returns {Promise<Object>} 创建的源配置
+ * 移除本地音乐文件夹。
+ *
+ * 后端操作：
+ * 1. 注销文件夹下所有音频文件的 SourceId（级联清理空实体）
+ * 2. 从文件夹管理器移除
+ * 3. 持久化
+ *
+ * @param {string} path - 文件夹绝对路径
+ * @returns {Promise<{removed: boolean, path: string, cleaned_files: number}>}
  */
-export async function addWebDisk(url, username = null, password = null) {
-  return invoke('add_web_disk_source', { url, username, password });
+export async function removeLocalFolder(path) {
+  return invoke('local_remove_folder', { path });
+}
+
+/** 别名 —— 保持向后兼容 */
+export { removeLocalFolder as remove };
+
+/**
+ * 获取已添加的本地文件夹列表。
+ * @returns {Promise<string[]>} 文件夹路径数组
+ */
+export async function getFolders() {
+  return invoke('local_get_folders');
+}
+
+/** 别名 —— 保持向后兼容 */
+export { getFolders as getAll };
+
+/**
+ * 获取本地来源索引统计。
+ * @returns {Promise<{folder_count: number, indexed_files: number}>}
+ */
+export async function getLocalStats() {
+  return invoke('local_stats');
 }
 
 /**
- * 添加 WebDev 音乐源
- * @param {string} apiBaseUrl - API 基础 URL
- * @param {string} [name] - 源名称（可选）
- * @param {string} [apiKey] - API 密钥（可选）
- * @param {string} [authToken] - 认证令牌（可选）
- * @returns {Promise<Object>} 创建的源配置
+ * 手动重新扫描所有文件夹（调试用）。
+ * @returns {Promise<{indexed: number, folders_scanned: number}>}
  */
-export async function addWebDev(apiBaseUrl, name = null, apiKey = null, authToken = null) {
-  return invoke('add_webdev_source', { 
-    api_base_url: apiBaseUrl, 
-    name, 
-    api_key: apiKey, 
-    auth_token: authToken 
-  });
+export async function rescanAll() {
+  return invoke('local_rescan');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Source enable / disable — 暂未实现
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 设置源启用状态（当前 stub，后端尚未实现非本地来源开关）。
+ * @deprecated
+ */
+export async function setEnabled(_id, _enabled) {
+  throw new Error('setEnabled 暂未实现 — 本地来源是 must-source，不允许禁用');
 }
 
 /**
- * 移除音乐源
- * @param {string} id - 源 ID
- * @returns {Promise<boolean>} 是否成功
+ * 添加网盘来源（后端尚未实现）。
+ * @deprecated 后端未实现网盘源
  */
-export async function remove(id) {
-  return invoke('remove_source', { id });
+export async function addWebDisk(_url, _username, _password) {
+  throw new Error('网盘来源后端尚未实现');
 }
 
 /**
- * 获取所有音乐源
- * @returns {Promise<Array>} 所有源配置列表
+ * 添加 WebDAV 来源（后端尚未实现）。
+ * @deprecated 后端未实现 WebDAV 源
  */
-export async function getAll() {
-  return invoke('get_all_sources');
-}
-
-/**
- * 设置源启用状态
- * @param {string} id - 源 ID
- * @param {boolean} enabled - 是否启用
- * @returns {Promise<boolean>} 操作结果
- */
-export async function setEnabled(id, enabled) {
-  return invoke('set_source_enabled', { id, enabled });
+export async function addWebDev(_apiBaseUrl, _name, _apiKey, _authToken) {
+  throw new Error('WebDAV 来源后端尚未实现');
 }

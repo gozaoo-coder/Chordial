@@ -32,7 +32,7 @@ const backgroundAlbums = computed(() => {
   if (!props.albums || props.albums.length === 0) return [];
   
   // 过滤出有封面的专辑
-  const albumsWithCover = props.albums.filter(album => album.coverData);
+  const albumsWithCover = props.albums.filter(album => album.coverUrl);
   
   if (albumsWithCover.length === 0) return [];
   
@@ -139,7 +139,7 @@ const animationStyle = computed(() => {
         :style="animationStyle"
       >
         <CoverImage
-          :src="album.coverData"
+          :src="album.coverUrl"
           :alt="album.title"
           type="album"
           class="collage-cover"

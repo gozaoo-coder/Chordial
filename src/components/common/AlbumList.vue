@@ -56,7 +56,7 @@ const handleAlbumClick = (album) => {
 
 const getCoverUrl = (album) => {
   // 优先使用从 ResourceManager 加载的封面
-  return coverUrls.value.get(album.id) || album.coverData || '';
+  return coverUrls.value.get(album.id) || album.coverUrl || '';
 };
 
 const formatYear = (year) => {

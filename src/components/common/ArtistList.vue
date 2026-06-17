@@ -51,7 +51,7 @@ const handleArtistClick = (artist) => {
 
 const getCoverUrl = (artist) => {
   // 优先使用从 ResourceManager 加载的封面
-  return coverUrls.value.get(artist.id) || artist.coverData || '';
+  return coverUrls.value.get(artist.id) || '';
 };
 
 const getTrackCount = (artist) => {

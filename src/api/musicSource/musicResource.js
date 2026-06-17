@@ -1,190 +1,134 @@
 /**
- * 音乐资源获取 API
- * 使用 Tauri IPC Response 传递二进制大文件
- * 
- * 所有返回的数据都会被包装成对应的类实例
+ * 音乐资源获取 API — 后端 get_* 命令
+ *
+ * 大文件通过 Tauri 的 raw payload 传输（Vec<u8> / String）。
+ * 前端以 `source_id_json` 的形式传入 {@link SourceId} 的 JSON 序列化字符串。
+ *
+ * 链路：
+ *   front → tauri → get_song_file(source_id_json)
+ *     → trait MusicSource::song_file_get → Vec<u8> → 前端
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { Track } from '@/class';
+import { SourceId } from '@/class';
 
-/**
- * 处理二进制响应数据
- * 统一处理 Tauri 返回的各种二进制数据格式
- * @param {Object|ArrayBuffer|Uint8Array} result - Tauri 响应结果
- * @returns {ArrayBuffer} 处理后的 ArrayBuffer
- * @throws {Error} 当响应格式无效时抛出
- */
-function processBinaryResponse(result) {
-  // 处理包含 data 属性的响应对象
-  if (result && result.data) {
-    if (result.data instanceof ArrayBuffer) {
-      return result.data;
-    }
-    if (result.data instanceof Uint8Array) {
-      return result.data.buffer;
-    }
-    if (Array.isArray(result.data)) {
-      return new Uint8Array(result.data).buffer;
-    }
-  }
+// ══════════════════════════════════════════════════════════════════════════════
+// Helpers
+// ══════════════════════════════════════════════════════════════════════════════
 
-  // 直接返回的 ArrayBuffer
-  if (result instanceof ArrayBuffer) {
-    return result;
-  }
-
-  // 直接返回的 Uint8Array
-  if (result instanceof Uint8Array) {
-    return result.buffer;
-  }
-
-  // 数组格式（JSON 序列化的二进制数据）
-  if (Array.isArray(result)) {
-    return new Uint8Array(result).buffer;
-  }
-
-  throw new Error(`无效的响应格式: ${typeof result}`);
+/** 将 SourceId 实例或普通对象序列化为后端所需的 JSON 字符串 */
+function serializeSourceId(sourceId) {
+  const obj = sourceId instanceof SourceId ? sourceId : new SourceId(sourceId);
+  return JSON.stringify(obj.toJSON());
 }
 
-/**
- * 获取音乐完整信息
- * @param {string} trackId - 曲目 ID
- * @returns {Promise<Track>} 音乐的完整信息（Track 实例）
- */
-export async function getTrackInfo(trackId) {
-  const data = await invoke('get_track_info', { track_id: trackId });
-  return new Track(data);
+/** 处理 Tauri 返回的二进制数据（可能是 Uint8Array 或 number[]） */
+function toArrayBuffer(data) {
+  if (data instanceof ArrayBuffer) return data;
+  if (data instanceof Uint8Array) return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+  if (Array.isArray(data)) return new Uint8Array(data).buffer;
+  throw new Error(`无效的二进制响应格式: ${typeof data}`);
 }
 
-/**
- * 批量获取曲目信息
- * @param {string[]} trackIds - 曲目 ID 数组
- * @returns {Promise<Track[]>} 曲目实例数组
- */
-export async function getTracksByIds(trackIds) {
-  if (!trackIds || trackIds.length === 0) {
-    return [];
-  }
-  const data = await invoke('get_tracks_by_ids', { track_ids: trackIds });
-  return data.map(item => new Track(item));
-}
+// ══════════════════════════════════════════════════════════════════════════════
+// Resource Commands
+// ══════════════════════════════════════════════════════════════════════════════
 
 /**
- * 获取专辑图片（使用二进制响应）
- * @param {string} albumId - 专辑 ID
- * @param {string} size - 图片尺寸 ('small', 'medium', 'large')
- * @returns {Promise<ArrayBuffer>} 图片二进制数据
+ * 获取歌曲的音频文件数据。
+ *
+ * @param {SourceId|object} sourceId - 歌曲的来源标识
+ * @returns {Promise<ArrayBuffer>} 音频文件的原始字节数据
  */
-export async function getAlbumArt(albumId, size = 'medium') {
-  const result = await invoke('get_album_art', { album_id: albumId, size });
-  return processBinaryResponse(result);
+export async function getMusicFile(sourceId) {
+  const result = await invoke('get_song_file', {
+    sourceIdJson: serializeSourceId(sourceId),
+  });
+  return toArrayBuffer(result);
 }
 
-/**
- * 获取音乐文件（使用二进制响应）
- * @param {string} trackId - 曲目 ID
- * @returns {Promise<ArrayBuffer>} 音乐文件二进制数据
- */
-export async function getMusicFile(trackId) {
-  const result = await invoke('get_music_file', { track_id: trackId });
-  return processBinaryResponse(result);
-}
+/** @deprecated 使用 {@link getMusicFile} */
+export const getSongFile = getMusicFile;
 
 /**
- * 获取歌手图片
- * @param {string} artistId - 歌手 ID
- * @returns {Promise<ArrayBuffer>} 歌手图片二进制数据
+ * 获取专辑的封面图片数据。
+ *
+ * @param {SourceId|object} sourceId - 专辑的来源标识
+ * @returns {Promise<ArrayBuffer>} 图片文件的原始字节数据（JPEG / PNG）
  */
-export async function getArtistImage(artistId) {
-  const result = await invoke('get_artist_image', { artist_id: artistId });
-  return processBinaryResponse(result);
+export async function getAlbumPicture(sourceId) {
+  const result = await invoke('get_album_picture', {
+    sourceIdJson: serializeSourceId(sourceId),
+  });
+  return toArrayBuffer(result);
 }
 
-/**
- * 获取歌词文件
- * @param {string} trackId - 曲目 ID
- * @returns {Promise<Object>} 歌词信息对象
- */
-export async function getLyrics(trackId) {
-  const result = await invoke('get_lyrics', { track_id: trackId });
-  
-  // 处理返回的 JSON 对象
-  if (typeof result === 'object' && result !== null) {
-    return {
-      plainLyrics: result.plain_lyrics || '',
-      syncedLyrics: result.synced_lyrics || '',
-      hasSyncedLyrics: result.has_synced_lyrics || false,
-      hasPlainLyrics: result.has_plain_lyrics || false
-    };
-  }
-  
-  // 兼容旧版本返回字符串的情况
-  return {
-    plainLyrics: result || '',
-    syncedLyrics: '',
-    hasSyncedLyrics: false,
-    hasPlainLyrics: !!result
-  };
-}
+/** @deprecated 旧名称，使用 {@link getAlbumPicture} */
+export const getAlbumArt = getAlbumPicture;
 
 /**
- * 解析同步歌词
- * 支持 JSON 格式和 LRC 文本格式 [mm:ss.xx]歌词内容
- * @param {string} content - 歌词内容（JSON 字符串或 LRC 格式文本）
- * @returns {Array} 解析后的同步歌词数组
+ * 获取歌曲的歌词文本。
+ *
+ * @param {SourceId|object} sourceId - 歌词的来源标识
+ * @returns {Promise<string>} 歌词原始文本（LRC 或纯文本）
+ */
+export async function getLyricText(sourceId) {
+  return invoke('get_lyric_text', {
+    sourceIdJson: serializeSourceId(sourceId),
+  });
+}
+
+/** @deprecated 旧名称，使用 {@link getLyricText} */
+export const getLyrics = getLyricText;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Utility: LRC parse / format
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 解析同步歌词（支持 JSON 和 LRC 两种格式）。
+ *
+ * @param {string} content - 歌词内容
+ * @returns {{time: number, text: string}[]} 解析后的同步歌词数组
  */
 export function parseSyncedLyrics(content) {
   if (!content) return [];
 
-  // 首先尝试解析为 JSON 格式
+  // 1. 尝试 JSON
   try {
     const data = JSON.parse(content);
     if (Array.isArray(data)) {
-      return data.map(line => ({
-        time: line.timestamp / 1000,  // 转换为秒
-        text: line.text
+      return data.map((line) => ({
+        time: line.timestamp / 1000,
+        text: line.text,
       }));
     }
-  } catch (e) {
-    // 不是 JSON，继续尝试 LRC 格式
+  } catch (_) {
+    // 非 JSON，尝试 LRC
   }
 
-  // 解析 LRC 格式: [mm:ss.xx]歌词内容 或 [mm:ss.xxx]歌词内容
+  // 2. LRC 格式 [mm:ss.xx]歌词 或 [mm:ss.xxx]歌词
   const lyrics = [];
   const lines = content.split(/\r?\n/);
-  // 支持 [mm:ss.xx] 或 [mm:ss.xxx] 格式，分钟可以是1位或2位
-  // 注意：不使用全局标志 g，避免每次循环需要重置 lastIndex
   const timeRegex = /\[(\d{1,2}):(\d{2})\.(\d{2,3})\]/;
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // 查找所有时间标签
-    const timeMatches = [...trimmed.matchAll(timeRegex)];
+    const matches = [...trimmed.matchAll(timeRegex)];
+    if (matches.length === 0) continue;
 
-    if (timeMatches.length > 0) {
-      // 获取最后一个时间标签后的文本
-      const lastMatch = timeMatches[timeMatches.length - 1];
-      const textStartIndex = lastMatch.index + lastMatch[0].length;
-      const text = trimmed.substring(textStartIndex).trim();
+    const lastMatch = matches[matches.length - 1];
+    const text = trimmed.substring(lastMatch.index + lastMatch[0].length).trim();
+    if (!text) continue;
 
-      // 为每个时间标签创建一个歌词条目
-      for (const match of timeMatches) {
-        const minutes = parseInt(match[1], 10);
-        const seconds = parseInt(match[2], 10);
-        const msPart = match[3];
-        // 处理毫秒：2位是百分之一秒，3位是毫秒
-        const milliseconds = msPart.length === 2
-          ? parseInt(msPart, 10) * 10
-          : parseInt(msPart, 10);
-        const time = (minutes * 60 + seconds) + milliseconds / 1000;
-
-        if (text) {
-          lyrics.push({ time, text });
-        }
-      }
+    for (const m of matches) {
+      const minutes = parseInt(m[1], 10);
+      const seconds = parseInt(m[2], 10);
+      const msPart = m[3];
+      const ms = msPart.length === 2 ? parseInt(msPart, 10) * 10 : parseInt(msPart, 10);
+      lyrics.push({ time: minutes * 60 + seconds + ms / 1000, text });
     }
   }
 
@@ -192,36 +136,61 @@ export function parseSyncedLyrics(content) {
 }
 
 /**
- * 格式化歌词为 LRC 格式
- * @param {Array} syncedLyrics - 同步歌词数组
- * @returns {string} LRC 格式的歌词
+ * 将同步歌词格式化为 LRC 文本。
+ *
+ * @param {{time: number, text: string}[]} syncedLyrics
+ * @returns {string} LRC 格式文本
  */
 export function formatToLRC(syncedLyrics) {
-  if (!syncedLyrics || syncedLyrics.length === 0) return '';
-  
-  return syncedLyrics.map(line => {
-    const minutes = Math.floor(line.time / 60);
-    const seconds = Math.floor(line.time % 60);
-    const millis = Math.floor((line.time % 1) * 100);
-    return `[${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${millis.toString().padStart(3, '0')}]${line.text}`;
-  }).join('\n');
+  if (!syncedLyrics?.length) return '';
+  return syncedLyrics
+    .map((line) => {
+      const mins = Math.floor(line.time / 60);
+      const secs = Math.floor(line.time % 60);
+      const ms = Math.floor((line.time % 1) * 100);
+      return `[${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(ms).padStart(3, '0')}]${line.text}`;
+    })
+    .join('\n');
 }
 
-/**
- * 获取播放列表详情
- * @param {string} playlistId - 播放列表 ID
- * @returns {Promise<Object>} 播放列表详情
- */
-export async function getPlaylistInfo(playlistId) {
-  return invoke('get_playlist_info', { playlist_id: playlistId });
+// ══════════════════════════════════════════════════════════════════════════════
+// Deprecated stubs (前端不再有 getTrackInfo / getTracksByIds / getPlaylistInfo)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** @deprecated 使用 {@link module:src/api/musicSource/library.getSong} */
+export async function getTrackInfo(trackId) {
+  const { getSong } = await import('./library.js');
+  return getSong(trackId);
+}
+
+/** @deprecated 使用多次 {@link module:src/api/musicSource/library.getSong} */
+export async function getTracksByIds(trackIds) {
+  if (!trackIds?.length) return [];
+  const { getSong } = await import('./library.js');
+  return Promise.all(trackIds.map((id) => getSong(id)));
+}
+
+/** @deprecated 使用 {@link module:src/api/artist.getArtist} */
+export async function getArtistImage() {
+  throw new Error('getArtistImage 已移除 —— 请通过 SourceId + getAlbumPicture 或 Album/Artist 数据中的 cover_url 获取图片');
+}
+
+/** @deprecated 后端未实现 */
+export async function getPlaylistInfo() {
+  throw new Error('getPlaylistInfo 后端未实现');
 }
 
 export default {
+  getMusicFile,
+  getSongFile,
+  getAlbumPicture,
+  getAlbumArt,
+  getLyricText,
+  getLyrics,
+  parseSyncedLyrics,
+  formatToLRC,
   getTrackInfo,
   getTracksByIds,
-  getAlbumArt,
-  getMusicFile,
   getArtistImage,
-  getLyrics,
   getPlaylistInfo,
 };

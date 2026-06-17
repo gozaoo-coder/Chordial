@@ -1,11 +1,11 @@
 <script setup>
 import { ref, onMounted, onActivated, computed } from 'vue';
 import { useRouter } from 'vue-router';
-// import TrackList from '../components/common/TrackList.vue';
-// import ArtistList from '../components/common/ArtistList.vue';
-// import AlbumList from '../components/common/AlbumList.vue';
-// import CoverImage from '../components/common/CoverImage.vue';
-// import AlbumCollageBackground from '../components/common/AlbumCollageBackground.vue';
+import TrackList from '../components/common/TrackList.vue';
+import ArtistList from '../components/common/ArtistList.vue';
+import AlbumList from '../components/common/AlbumList.vue';
+import CoverImage from '../components/common/CoverImage.vue';
+import AlbumCollageBackground from '../components/common/AlbumCollageBackground.vue';
 import { library } from '../api/musicSource';
 import PlayerStore from '@/stores/player.js';
 
@@ -94,16 +94,7 @@ const shufflePlay = () => {
   }
 };
 
-const getCoverUrl = (track) => {
-  if (track.coverData) return track.coverData;
-  if (track.albumCoverData) return track.albumCoverData;
-  if (track.album?.coverData) return track.album.coverData;
-  return '';
-};
 
-const getAlbumCoverUrl = (album) => {
-  return album.coverData || '';
-};
 </script>
 
 <template>
@@ -177,7 +168,7 @@ const getAlbumCoverUrl = (album) => {
           >
             <div class="track-card-cover">
               <CoverImage
-                :src="getCoverUrl(track)"
+                :item="track"
                 :alt="track.title"
                 type="track"
               />
@@ -211,7 +202,7 @@ const getAlbumCoverUrl = (album) => {
           >
             <div class="album-cover-wrapper">
               <CoverImage
-                :src="getAlbumCoverUrl(album)"
+                :item="album"
                 :alt="album.title"
                 type="album"
               />

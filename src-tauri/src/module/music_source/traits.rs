@@ -27,6 +27,26 @@ pub trait MusicSource: Send + Sync {
     /// 按来源内部 ID 获取专辑。
     fn get_album(&self, id: &str) -> Result<Option<Album>, String>;
 
-    /// 按来源内部歌曲 ID 获取歌词。
+    /// 按来源内部歌曲 ID 获取歌词（元数据，含 `text` 字段）。
     fn get_lyric(&self, song_id: &str) -> Result<Option<Lyric>, String>;
+
+    // ── 资源获取（大文件 / 二进制）────────────────────
+
+    /// 获取歌曲的音频文件数据。
+    ///
+    /// `entity_id` 为来源内部的歌曲 ID。返回完整的音频文件字节。
+    /// 用于前端播放或离线缓存。
+    fn song_file_get(&self, entity_id: &str) -> Result<Vec<u8>, String>;
+
+    /// 获取专辑的封面图片数据。
+    ///
+    /// `entity_id` 为来源内部的专辑 ID。返回图片字节（JPEG/PNG 等）。
+    fn album_picture_get(&self, entity_id: &str) -> Result<Vec<u8>, String>;
+
+    /// 获取歌曲的歌词文本。
+    ///
+    /// `song_id` 为来源内部的歌曲 ID。返回原始歌词文本（LRC 或纯文本）。
+    /// 与 [`get_lyric`](Self::get_lyric) 不同，此方法直接从来源拉取原始文本，
+    /// 而不是返回库内已存储的 [`Lyric`] 结构体。
+    fn lyric_text_get(&self, song_id: &str) -> Result<String, String>;
 }

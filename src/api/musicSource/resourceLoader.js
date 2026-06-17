@@ -1,119 +1,100 @@
 /**
  * ResourceManager 集成层
- * 管理音乐资源（图片、音频文件）的内存引用和生命周期
+ *
+ * 管理音乐资源（音频、封面）的内存引用和生命周期。
+ * 适配重构后的 API：使用 SourceId 定位资源。
  */
 
 import { resourceManager } from '@/js/resourceManager.js';
 
 /**
- * 获取专辑图片资源
- * @param {string} albumId - 专辑 ID
- * @param {string} size - 图片尺寸
+ * 获取专辑封面资源。
+ *
+ * @param {import('@/class').SourceId} sourceId - 专辑的 SourceId
  * @returns {Promise<{url: string, release: Function}>}
  */
-export async function getAlbumArtResource(albumId, size = 'medium') {
-  const key = `album_art_${albumId}_${size}`;
-  
+export async function getAlbumArtResource(sourceId) {
+  const key = `album_picture_${sourceId.sourceName}_${sourceId.entityId}`;
   return resourceManager.getResource(key, async () => {
-    const { getAlbumArt } = await import('./musicResource.js');
-    const data = await getAlbumArt(albumId, size);
-    return data;
+    const { getAlbumPicture } = await import('./musicResource.js');
+    return getAlbumPicture(sourceId);
   });
 }
 
 /**
- * 获取音乐文件资源
- * @param {string} trackId - 曲目 ID
+ * 获取音乐文件资源。
+ *
+ * @param {import('@/class').SourceId} sourceId - 歌曲的 SourceId
  * @returns {Promise<{url: string, release: Function}>}
  */
-export async function getMusicFileResource(trackId) {
-  const key = `music_file_${trackId}`;
-  
+export async function getMusicFileResource(sourceId) {
+  const key = `music_file_${sourceId.sourceName}_${sourceId.entityId}`;
   return resourceManager.getResource(key, async () => {
     const { getMusicFile } = await import('./musicResource.js');
-    const data = await getMusicFile(trackId);
-    return data;
+    return getMusicFile(sourceId);
   });
 }
 
 /**
- * 获取歌手图片资源
- * @param {string} artistId - 歌手 ID
+ * 获取歌手图片资源（使用 cover_url 或 via SourceId）。
+ *
+ * @param {import('@/class').SourceId|null} sourceId
+ * @param {string} fallbackUrl
  * @returns {Promise<{url: string, release: Function}>}
  */
-export async function getArtistImageResource(artistId) {
-  const key = `artist_image_${artistId}`;
-  
+export async function getArtistImageResource(sourceId, fallbackUrl = '') {
+  const key = `artist_image_${sourceId?.sourceName ?? 'fallback'}_${sourceId?.entityId ?? 'none'}`;
   return resourceManager.getResource(key, async () => {
-    const { getArtistImage } = await import('./musicResource.js');
-    const data = await getArtistImage(artistId);
-    return data;
+    if (sourceId) {
+      try {
+        const { getAlbumPicture } = await import('./musicResource.js');
+        return getAlbumPicture(sourceId);
+      } catch (_) {
+        /* 静默降级 */
+      }
+    }
+    return fallbackUrl;
   });
 }
 
-/**
- * 预加载专辑图片
- * @param {string} albumId - 专辑 ID
- * @param {string} size - 图片尺寸
- */
-export async function preloadAlbumArt(albumId, size = 'medium') {
-  const key = `album_art_${albumId}_${size}`;
-  
+// ══════════════════════════════════════════════════════════════════════════════
+// Preload / Release
+// ══════════════════════════════════════════════════════════════════════════════
+
+export async function preloadAlbumArt(sourceId) {
+  const key = `album_picture_${sourceId.sourceName}_${sourceId.entityId}`;
   resourceManager.preload(key, async () => {
-    const { getAlbumArt } = await import('./musicResource.js');
-    return getAlbumArt(albumId, size);
+    const { getAlbumPicture } = await import('./musicResource.js');
+    return getAlbumPicture(sourceId);
   });
 }
 
-/**
- * 预加载音乐文件
- * @param {string} trackId - 曲目 ID
- */
-export async function preloadMusicFile(trackId) {
-  const key = `music_file_${trackId}`;
-  
+export async function preloadMusicFile(sourceId) {
+  const key = `music_file_${sourceId.sourceName}_${sourceId.entityId}`;
   resourceManager.preload(key, async () => {
     const { getMusicFile } = await import('./musicResource.js');
-    return getMusicFile(trackId);
+    return getMusicFile(sourceId);
   });
 }
 
-/**
- * 释放专辑图片资源
- * @param {string} albumId - 专辑 ID
- * @param {string} size - 图片尺寸
- */
-export function releaseAlbumArt(albumId, size = 'medium') {
-  const key = `album_art_${albumId}_${size}`;
-  const resource = resourceManager.getCachedResource(key);
-  if (resource) {
+export function releaseAlbumArt(sourceId) {
+  const key = `album_picture_${sourceId.sourceName}_${sourceId.entityId}`;
+  if (resourceManager.getCachedResource(key)) {
     resourceManager.releaseResource(key);
   }
 }
 
-/**
- * 释放音乐文件资源
- * @param {string} trackId - 曲目 ID
- */
-export function releaseMusicFile(trackId) {
-  const key = `music_file_${trackId}`;
-  const resource = resourceManager.getCachedResource(key);
-  if (resource) {
+export function releaseMusicFile(sourceId) {
+  const key = `music_file_${sourceId.sourceName}_${sourceId.entityId}`;
+  if (resourceManager.getCachedResource(key)) {
     resourceManager.releaseResource(key);
   }
 }
 
-/**
- * 清理所有音乐资源
- */
 export function clearAllResources() {
   resourceManager.clear();
 }
 
-/**
- * 获取资源使用统计
- * @returns {Object} 资源统计信息
- */
 export function getResourceStats() {
   return {
     cachedResources: resourceManager.cache.size,

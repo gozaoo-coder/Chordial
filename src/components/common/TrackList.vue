@@ -82,7 +82,7 @@ const formatDuration = (seconds) => {
 
 const getCoverUrl = (track) => {
   // 优先使用从 ResourceManager 加载的封面
-  return coverUrls.value.get(track.id) || track.albumCoverData || track.album?.coverData || '';
+  return coverUrls.value.get(track.id) || track.album?.coverUrl || '';
 };
 </script>
 
