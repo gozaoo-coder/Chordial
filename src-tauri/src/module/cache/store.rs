@@ -1,6 +1,7 @@
-use super::entry::{StoredEntry, Ttl};
+use crate::module::storage::entry::{StoredEntry, Ttl};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 
 /// 内存缓存存储，支持 TTL 自动过期。
@@ -21,7 +22,8 @@ use std::collections::HashMap;
 /// # 示例
 ///
 /// ```ignore
-/// use crate::module::storage::{cache::CacheStore, Ttl};
+/// use crate::module::cache::CacheStore;
+/// use crate::module::storage::Ttl;
 ///
 /// let cache = CacheStore::new();
 ///
@@ -65,7 +67,7 @@ impl CacheStore {
     }
 
     /// 获取原始 JSON 值，自动检查过期。
-    pub fn get_raw(&self, key: &str) -> Option<serde_json::Value> {
+    pub fn get_raw(&self, key: &str) -> Option<Value> {
         let entries = self.entries.read();
         let entry = entries.get(key)?;
         if entry.is_expired() {
@@ -80,15 +82,15 @@ impl CacheStore {
     ///
     /// 若 key 已存在，旧的 TTL 会被覆盖。
     pub fn set<T: Serialize>(&self, key: &str, value: &T, ttl: &Ttl) -> Result<(), String> {
-        let json = serde_json::to_value(value)
-            .map_err(|e| format!("序列化失败: {}", e))?;
+        let json =
+            serde_json::to_value(value).map_err(|e| format!("序列化失败: {}", e))?;
         let entry = StoredEntry::new(json, ttl);
         self.entries.write().insert(key.to_string(), entry);
         Ok(())
     }
 
     /// 存入原始 JSON 值，指定 TTL 策略。
-    pub fn set_raw(&self, key: &str, value: serde_json::Value, ttl: &Ttl) {
+    pub fn set_raw(&self, key: &str, value: Value, ttl: &Ttl) {
         let entry = StoredEntry::new(value, ttl);
         self.entries.write().insert(key.to_string(), entry);
     }

@@ -13,6 +13,7 @@ use std::path::PathBuf;
 ///
 /// 不内置锁——上层封装（[`PersistentStore`](super::persistent::PersistentStore)）
 /// 负责通过 `RwLock` 保护并发访问。
+#[derive(Clone)]
 pub struct FileBackend {
     /// JSON 文件的完整路径
     path: PathBuf,

@@ -1,11 +1,11 @@
 <script setup>
 import { ref, onMounted, onActivated, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import TrackList from '../components/common/TrackList.vue';
-import ArtistList from '../components/common/ArtistList.vue';
-import AlbumList from '../components/common/AlbumList.vue';
-import CoverImage from '../components/common/CoverImage.vue';
-import AlbumCollageBackground from '../components/common/AlbumCollageBackground.vue';
+// import TrackList from '../components/common/TrackList.vue';
+// import ArtistList from '../components/common/ArtistList.vue';
+// import AlbumList from '../components/common/AlbumList.vue';
+// import CoverImage from '../components/common/CoverImage.vue';
+// import AlbumCollageBackground from '../components/common/AlbumCollageBackground.vue';
 import { library } from '../api/musicSource';
 import PlayerStore from '@/stores/player.js';
 
