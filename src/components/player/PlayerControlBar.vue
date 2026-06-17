@@ -1,764 +1,247 @@
 <template>
-  <div class="player-control-bar" v-if="PlayerStore.hasCurrentTrack.value" :style="{ '--player-bar-height': barHeight + 'px' }" ref="controlBarRef">
+  <div class="player-control-bar">
     <!-- 进度条 -->
     <div class="progress-section">
-      <div 
-        class="progress-bar" 
-        @click="onProgressClick"
-        @mousedown="onProgressMouseDown"
-        ref="progressBarRef"
-      >
-        <div class="progress-track">
-          <div 
-            class="progress-fill" 
-            :style="{ width: progressPercent + '%' }"
-          ></div>
-          <div 
-            class="progress-handle" 
-            :style="{ left: progressPercent + '%' }"
-            :class="{ dragging: isDragging }"
-          ></div>
-        </div>
-      </div>
-      <div class="time-display">
-        <span class="current-time">{{ PlayerStore.formattedCurrentTime.value }}</span>
-        <span class="time-separator">/</span>
-        <span class="total-time">{{ PlayerStore.formattedDuration.value }}</span>
-      </div>
+      <span class="time">{{ formatTime(currentTime) }}</span>
+      <input
+        type="range"
+        class="progress-slider"
+        :min="0"
+        :max="duration"
+        :value="currentTime"
+        @input="onSeek"
+      />
+      <span class="time">{{ formatTime(duration) }}</span>
     </div>
     
-    <!-- 控制区域 -->
-    <div class="control-section">
-      <!-- 歌曲信息 -->
-      <div class="track-info" @click="goToPlayerView">
-        <div class="track-cover">
-          <img 
-            v-if="currentCoverUrl" 
-            :src="currentCoverUrl" 
-            :alt="currentTrackTitle"
-          />
-          <div v-else class="cover-placeholder">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M9 18V5l12-2v13"/>
-              <circle cx="6" cy="18" r="3"/>
-              <circle cx="18" cy="16" r="3"/>
-            </svg>
-          </div>
-        </div>
-        <div class="track-meta">
-          <div class="track-title" :title="currentTrackTitle">{{ currentTrackTitle }}</div>
-          <div class="track-artist" :title="currentTrackArtist">{{ currentTrackArtist }}</div>
-        </div>
-      </div>
+    <!-- 控制按钮 -->
+    <div class="controls-section">
+      <button class="control-btn" @click="$emit('toggle-play-mode')">
+        <i :class="playModeIcon"></i>
+      </button>
       
-      <!-- 播放控制 -->
-      <div class="playback-controls">
-        <!-- 播放模式 -->
-        <button 
-          class="control-btn mode-btn" 
-          @click="PlayerStore.togglePlayMode()"
-          :title="playModeText"
-        >
-          <svg v-if="playMode === 'sequence'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 4h16v16H4z" style="display:none"/>
-            <path d="M3 6h18M3 12h18M3 18h18"/>
-          </svg>
-          <svg v-else-if="playMode === 'random'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
-          </svg>
-          <svg v-else-if="playMode === 'loop'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 2l4 4-4 4M3 12V9a4 4 0 014-4h13M7 22l-4-4 4-4M21 12v3a4 4 0 01-4 4H4"/>
-          </svg>
-          <svg v-else-if="playMode === 'loop_one'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 2l4 4-4 4M3 12V9a4 4 0 014-4h13M7 22l-4-4 4-4M21 12v3a4 4 0 01-4 4H4"/>
-            <text x="12" y="15" text-anchor="middle" font-size="8" fill="currentColor">1</text>
-          </svg>
-        </button>
-        
-        <!-- 上一首 -->
-        <button 
-          class="control-btn previous-btn" 
-          @click="PlayerStore.playPrevious()"
-          :disabled="!PlayerStore.canPlayPrevious.value"
-          title="上一首"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
-          </svg>
-        </button>
-        
-        <!-- 播放/暂停 -->
-        <button 
-          class="control-btn play-btn" 
-          @click="PlayerStore.togglePlay()"
-          :title="isPlaying ? '暂停' : '播放'"
-        >
-          <svg v-if="!isPlaying" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M8 5v14l11-7z"/>
-          </svg>
-          <svg v-else viewBox="0 0 24 24" fill="currentColor">
-            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
-          </svg>
-        </button>
-        
-        <!-- 下一首 -->
-        <button 
-          class="control-btn next-btn" 
-          @click="PlayerStore.playNext()"
-          :disabled="!PlayerStore.canPlayNext.value"
-          title="下一首"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
-          </svg>
-        </button>
-        
-        <!-- 歌词按钮 -->
-        <button 
-          class="control-btn lyrics-btn" 
-          @click="toggleLyrics"
-          :class="{ active: showLyrics }"
-          title="歌词"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-          </svg>
-        </button>
-      </div>
+      <button class="control-btn" @click="$emit('previous')">
+        <i class="bi bi-skip-start-fill"></i>
+      </button>
+      
+      <button class="control-btn play-btn" @click="togglePlay">
+        <i :class="isPlaying ? 'bi bi-pause-fill' : 'bi bi-play-fill'"></i>
+      </button>
+      
+      <button class="control-btn" @click="$emit('next')">
+        <i class="bi bi-skip-end-fill"></i>
+      </button>
       
       <!-- 音量控制 -->
-      <div class="volume-section">
-        <button 
-          class="control-btn volume-btn" 
-          @click="PlayerStore.toggleMute()"
-          :title="muted ? '取消静音' : '静音'"
-        >
-          <svg v-if="muted || volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
-            <path d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
-          </svg>
-          <svg v-else-if="volume < 0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
-            <path d="M15.536 8.464a5 5 0 010 7.072"/>
-          </svg>
-          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
-            <path d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728"/>
-          </svg>
-        </button>
-        
-        <div 
-          class="volume-slider" 
-          @click="onVolumeClick"
-          @mousedown="onVolumeMouseDown"
-          ref="volumeSliderRef"
-        >
-          <div class="volume-track">
-            <div 
-              class="volume-fill" 
-              :style="{ width: (muted ? 0 : volume * 100) + '%' }"
-            ></div>
-          </div>
-        </div>
+      <div class="volume-control">
+        <i :class="volumeIcon" @click="$emit('toggle-mute')"></i>
+        <input
+          type="range"
+          class="volume-slider"
+          min="0"
+          max="1"
+          step="0.01"
+          :value="volume"
+          @input="onVolumeChange"
+        />
       </div>
     </div>
   </div>
 </template>
 
-<script>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import PlayerStore from '@/stores/player.js';
-import { useCoverImage } from '@/composables/useCoverImage';
+<script setup>
+/**
+ * PlayerControlBar - 播放器控制栏
+ * 
+ * 提供播放控制、进度条、音量控制等功能
+ */
+import { computed } from 'vue'
 
-export default {
-  name: 'PlayerControlBar',
-  setup() {
-    const router = useRouter();
-    const progressBarRef = ref(null);
-    const volumeSliderRef = ref(null);
-    const isDragging = ref(false);
-    const isVolumeDragging = ref(false);
-    const barHeight = ref(100);
-    const controlBarRef = ref(null);
-
-    // 从 PlayerStore 获取状态
-    const isPlaying = computed(() => PlayerStore.state.isPlaying);
-    const currentTrack = computed(() => PlayerStore.state.currentTrack);
-    const volume = computed(() => PlayerStore.state.volume);
-    const muted = computed(() => PlayerStore.state.muted);
-    const playMode = computed(() => PlayerStore.state.playMode);
-    const showLyrics = computed(() => PlayerStore.state.showLyrics);
-    const progressPercent = computed(() => PlayerStore.progress.value);
-
-    // 当前歌曲信息
-    const currentTrackTitle = computed(() => {
-      return currentTrack.value?.getDisplayTitle?.() || currentTrack.value?.title || '未知歌曲';
-    });
-
-    const currentTrackArtist = computed(() => {
-      return currentTrack.value?.getDisplayArtist?.() || currentTrack.value?.artist || '未知歌手';
-    });
-
-    // 使用 useCoverImage 加载封面
-    const { coverUrl: currentCoverUrlFromResource } = useCoverImage(currentTrack, 'small');
-
-    const currentCoverUrl = computed(() => {
-      // 优先使用从 ResourceManager 加载的封面
-      return currentCoverUrlFromResource.value || currentTrack.value?.getCoverUrl?.() || currentTrack.value?.albumCoverData || '';
-    });
-    
-    // 播放模式文本
-    const playModeText = computed(() => {
-      const modeTexts = {
-        'sequence': '顺序播放',
-        'random': '随机播放',
-        'loop': '列表循环',
-        'loop_one': '单曲循环'
-      };
-      return modeTexts[playMode.value] || '顺序播放';
-    });
-    
-    // 进度条点击
-    const onProgressClick = (e) => {
-      if (!progressBarRef.value) return;
-      const rect = progressBarRef.value.getBoundingClientRect();
-      const percent = (e.clientX - rect.left) / rect.width;
-      PlayerStore.seekToPercent(percent * 100);
-    };
-    
-    // 进度条拖拽
-    const onProgressMouseDown = (e) => {
-      isDragging.value = true;
-      document.addEventListener('mousemove', onProgressMouseMove);
-      document.addEventListener('mouseup', onProgressMouseUp);
-    };
-    
-    const onProgressMouseMove = (e) => {
-      if (!isDragging.value || !progressBarRef.value) return;
-      const rect = progressBarRef.value.getBoundingClientRect();
-      const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      PlayerStore.seekToPercent(percent * 100);
-    };
-    
-    const onProgressMouseUp = () => {
-      isDragging.value = false;
-      document.removeEventListener('mousemove', onProgressMouseMove);
-      document.removeEventListener('mouseup', onProgressMouseUp);
-    };
-    
-    // 音量控制
-    const onVolumeClick = (e) => {
-      if (!volumeSliderRef.value) return;
-      const rect = volumeSliderRef.value.getBoundingClientRect();
-      const percent = (e.clientX - rect.left) / rect.width;
-      PlayerStore.setVolume(percent);
-    };
-    
-    const onVolumeMouseDown = (e) => {
-      isVolumeDragging.value = true;
-      document.addEventListener('mousemove', onVolumeMouseMove);
-      document.addEventListener('mouseup', onVolumeMouseUp);
-    };
-    
-    const onVolumeMouseMove = (e) => {
-      if (!isVolumeDragging.value || !volumeSliderRef.value) return;
-      const rect = volumeSliderRef.value.getBoundingClientRect();
-      const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      PlayerStore.setVolume(percent);
-    };
-    
-    const onVolumeMouseUp = () => {
-      isVolumeDragging.value = false;
-      document.removeEventListener('mousemove', onVolumeMouseMove);
-      document.removeEventListener('mouseup', onVolumeMouseUp);
-    };
-    
-    // 切换歌词显示
-    const toggleLyrics = () => {
-      PlayerStore.toggleLyrics();
-      if (PlayerStore.state.showLyrics) {
-        router.push('/player');
-      }
-    };
-    
-    // 跳转到播放器页面
-    const goToPlayerView = () => {
-      router.push('/player');
-    };
-    
-    onMounted(() => {
-      // 组件挂载后计算实际高度
-      if (controlBarRef.value) {
-        barHeight.value = controlBarRef.value.offsetHeight;
-      }
-    });
-    
-    onUnmounted(() => {
-      // 清理事件监听
-      document.removeEventListener('mousemove', onProgressMouseMove);
-      document.removeEventListener('mouseup', onProgressMouseUp);
-      document.removeEventListener('mousemove', onVolumeMouseMove);
-      document.removeEventListener('mouseup', onVolumeMouseUp);
-    });
-    
-    return {
-      PlayerStore,
-      progressBarRef,
-      volumeSliderRef,
-      controlBarRef,
-      isDragging,
-      isPlaying,
-      currentTrack,
-      volume,
-      muted,
-      playMode,
-      playModeText,
-      showLyrics,
-      progressPercent,
-      currentTrackTitle,
-      currentTrackArtist,
-      currentCoverUrl,
-      barHeight,
-      onProgressClick,
-      onProgressMouseDown,
-      onVolumeClick,
-      onVolumeMouseDown,
-      toggleLyrics,
-      goToPlayerView
-    };
+const props = defineProps({
+  currentTime: {
+    type: Number,
+    default: 0
+  },
+  duration: {
+    type: Number,
+    default: 0
+  },
+  isPlaying: {
+    type: Boolean,
+    default: false
+  },
+  volume: {
+    type: Number,
+    default: 0.8
+  },
+  playMode: {
+    type: String,
+    default: 'sequence'
+  },
+  muted: {
+    type: Boolean,
+    default: false
   }
-};
+})
+
+const emit = defineEmits([
+  'play',
+  'pause',
+  'seek',
+  'volume-change',
+  'toggle-play-mode',
+  'previous',
+  'next',
+  'toggle-mute'
+])
+
+// 播放模式图标
+const playModeIcon = computed(() => {
+  switch (props.playMode) {
+    case 'random':
+      return 'bi bi-shuffle'
+    case 'loop':
+      return 'bi bi-repeat'
+    case 'loop_one':
+      return 'bi bi-repeat-1'
+    default:
+      return 'bi bi-arrow-right'
+  }
+})
+
+// 音量图标
+const volumeIcon = computed(() => {
+  if (props.muted || props.volume === 0) return 'bi bi-volume-mute-fill'
+  if (props.volume < 0.3) return 'bi bi-volume-off-fill'
+  if (props.volume < 0.7) return 'bi bi-volume-down-fill'
+  return 'bi bi-volume-up-fill'
+})
+
+// 切换播放/暂停
+const togglePlay = () => {
+  if (props.isPlaying) {
+    emit('pause')
+  } else {
+    emit('play')
+  }
+}
+
+// 跳转
+const onSeek = (e) => {
+  emit('seek', parseFloat(e.target.value))
+}
+
+// 音量变化
+const onVolumeChange = (e) => {
+  emit('volume-change', parseFloat(e.target.value))
+}
+
+// 格式化时间
+const formatTime = (seconds) => {
+  if (!seconds || isNaN(seconds)) return '0:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
 </script>
 
 <style scoped>
 .player-control-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: var(--bg-glass);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-top: 1px solid var(--border-light);
-  padding: 10px 20px;
-  z-index: 1000;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0.75rem;
+  padding: 1rem;
+  color: white;
 }
 
-/* 进度条区域 */
 .progress-section {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 4px;
+  gap: 0.75rem;
 }
 
-.progress-bar {
+.time {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  min-width: 2.5rem;
+  text-align: center;
+}
+
+.progress-slider {
   flex: 1;
-  height: 20px;
-  display: flex;
-  align-items: center;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
   cursor: pointer;
-  position: relative;
 }
 
-.progress-track {
-  width: 100%;
-  height: 3px;
-  background: var(--border-color);
-  border-radius: 1.5px;
-  position: relative;
-  overflow: visible;
-}
-
-.progress-fill {
-  height: 100%;
-  background: var(--primary-color);
-  border-radius: 1.5px;
-  transition: width 0.1s linear;
-}
-
-.progress-handle {
-  position: absolute;
-  top: 50%;
-  width: 14px;
-  height: 14px;
-  background: var(--primary-color);
+.progress-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  transform: translate(-50%, -50%) scale(0);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
-  box-shadow: var(--shadow-sm);
-}
-
-.progress-bar:hover .progress-handle,
-.progress-handle.dragging {
-  transform: translate(-50%, -50%) scale(1);
-  box-shadow: var(--shadow-primary);
-}
-
-.time-display {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  min-width: 90px;
-  justify-content: flex-end;
-  font-variant-numeric: tabular-nums;
-}
-
-.time-separator {
-  opacity: 0.5;
-}
-
-/* 控制区域 */
-.control-section {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-/* 歌曲信息 */
-.track-info {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex: 1;
-  min-width: 0;
+  background: white;
   cursor: pointer;
-  padding: 6px;
-  border-radius: var(--radius-md);
-  transition: background var(--transition-fast);
 }
 
-.track-info:hover {
-  background: var(--bg-hover);
-}
-
-.track-cover {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  flex-shrink: 0;
-  background: var(--bg-tertiary);
-  box-shadow: var(--shadow-sm);
-}
-
-.track-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.cover-placeholder {
-  width: 100%;
-  height: 100%;
+.controls-section {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-tertiary);
-}
-
-.cover-placeholder svg {
-  width: 24px;
-  height: 24px;
-}
-
-.track-meta {
-  min-width: 0;
-  flex: 1;
-}
-
-.track-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.4;
-  letter-spacing: -0.2px;
-}
-
-.track-artist {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.4;
-}
-
-/* 播放控制按钮 */
-.playback-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  gap: 1rem;
 }
 
 .control-btn {
-  width: 38px;
-  height: 38px;
+  background: none;
   border: none;
-  background: transparent;
-  border-radius: 50%;
+  color: white;
+  font-size: 1.25rem;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-primary);
-  transition: all var(--transition-fast);
+  padding: 0.5rem;
+  opacity: 0.8;
+  transition: opacity 0.2s;
 }
 
-.control-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  transform: scale(1.05);
-}
-
-.control-btn:active:not(:disabled) {
-  transform: scale(0.95);
-}
-
-.control-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.control-btn svg {
-  width: 20px;
-  height: 20px;
+.control-btn:hover {
+  opacity: 1;
 }
 
 .play-btn {
-  width: 48px;
-  height: 48px;
-  background: var(--primary-color);
-  color: white;
-  box-shadow: var(--shadow-primary);
+  font-size: 2rem;
 }
 
-.play-btn:hover:not(:disabled) {
-  background: var(--primary-hover);
-  transform: scale(1.08);
-  box-shadow: 0 6px 20px rgba(0, 122, 255, 0.35);
-}
-
-.play-btn:active:not(:disabled) {
-  transform: scale(0.98);
-}
-
-.play-btn svg {
-  width: 26px;
-  height: 26px;
-}
-
-.mode-btn svg,
-.lyrics-btn svg {
-  width: 18px;
-  height: 18px;
-}
-
-.lyrics-btn.active {
-  color: var(--primary-color);
-  background: var(--primary-light);
-}
-
-/* 音量控制 */
-.volume-section {
+.volume-control {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex: 1;
-  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-left: 1rem;
 }
 
-.volume-btn svg {
-  width: 20px;
-  height: 20px;
-}
-
-.volume-slider {
-  width: 90px;
-  height: 20px;
-  display: flex;
-  align-items: center;
+.volume-control i {
+  font-size: 1rem;
   cursor: pointer;
 }
 
-.volume-track {
-  width: 100%;
-  height: 3px;
-  background: var(--border-color);
-  border-radius: 1.5px;
-  overflow: hidden;
+.volume-slider {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  cursor: pointer;
 }
 
-.volume-fill {
-  height: 100%;
-  background: var(--primary-color);
-  border-radius: 1.5px;
-  transition: width 0.1s;
-}
-
-/* 移动端适配 */
-@media (max-width: 767px) {
-  .player-control-bar {
-    padding: 6px 12px;
-    gap: 4px;
-  }
-
-  .progress-section {
-    padding: 0 4px;
-    gap: 8px;
-  }
-
-  .time-display {
-    min-width: auto;
-    font-size: 10px;
-  }
-
-  .control-section {
-    gap: 8px;
-  }
-
-  .track-info {
-    flex: 1;
-    min-width: 0;
-    gap: 8px;
-  }
-
-  .track-cover {
-    width: 36px;
-    height: 36px;
-  }
-
-  .track-meta {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .track-title {
-    font-size: 12px;
-  }
-
-  .track-artist {
-    font-size: 10px;
-  }
-
-  .playback-controls {
-    gap: 4px;
-    flex-shrink: 0;
-  }
-
-  .control-btn {
-    width: 32px;
-    height: 32px;
-  }
-
-  .control-btn svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .play-btn {
-    width: 40px;
-    height: 40px;
-  }
-
-  .play-btn svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .mode-btn,
-  .lyrics-btn {
-    display: none;
-  }
-
-  .volume-section {
-    display: none;
-  }
-}
-
-@media (max-width: 480px) {
-  .player-control-bar {
-    padding: 4px 8px;
-  }
-
-  .track-cover {
-    width: 32px;
-    height: 32px;
-  }
-
-  .track-title {
-    font-size: 11px;
-  }
-
-  .track-artist {
-    font-size: 9px;
-  }
-
-  .control-btn {
-    width: 28px;
-    height: 28px;
-  }
-
-  .play-btn {
-    width: 36px;
-    height: 36px;
-  }
-}
-
-/* 深色模式 */
-@media (prefers-color-scheme: dark) {
-  .player-control-bar {
-    background: var(--bg-glass);
-    border-top-color: var(--border-light);
-  }
-
-  .progress-track,
-  .volume-track {
-    background: var(--border-color);
-  }
-
-  .time-display {
-    color: var(--text-secondary);
-  }
-
-  .track-title {
-    color: var(--text-primary);
-  }
-
-  .track-artist {
-    color: var(--text-secondary);
-  }
-
-  .control-btn {
-    color: var(--text-primary);
-  }
-
-  .control-btn:hover:not(:disabled) {
-    background: var(--bg-hover);
-  }
-
-  .track-info:hover {
-    background: var(--bg-hover);
-  }
-
-  .track-cover {
-    background: var(--bg-tertiary);
-  }
-
-  .cover-placeholder {
-    color: var(--text-tertiary);
-  }
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
 }
 </style>

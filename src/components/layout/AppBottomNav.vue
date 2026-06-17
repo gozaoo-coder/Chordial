@@ -61,9 +61,9 @@ const isActive = (path) => {
 <style scoped>
 .app-bottom-nav {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: 1.5rem;
+  left: 2rem;
+  /* right: 0; */
   height: var(--bottom-nav-height);
   background: var(--bg-glass);
   border-top: 1px solid var(--border-light);

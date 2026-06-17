@@ -22,10 +22,6 @@ body {
   background: var(--bg-primary, #F3F3F3);
 }
 
-#app {
-  min-height: 100vh;
-}
-
 /* 深色模式基础 */
 @media (prefers-color-scheme: dark) {
   body {
@@ -33,7 +29,9 @@ body {
     background: var(--bg-primary, #2f2f2f);
   }
 }
-
+body::-webkit-scrollbar {
+  display: none;
+}
 /* 滚动条样式 */
 ::-webkit-scrollbar {
   width: 8px;
