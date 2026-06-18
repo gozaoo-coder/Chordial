@@ -45,7 +45,7 @@ const handleTrackPlay = (track) => {
 <template>
   <div class="tracks-page">
     <div class="page-header">
-      <h1 class="page-title">歌曲</h1>
+      <!-- <h1 class="page-title">歌曲</h1> -->
       <p class="page-subtitle">共 {{ tracks.length }} 首歌曲</p>
     </div>
 

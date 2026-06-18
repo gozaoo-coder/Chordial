@@ -68,26 +68,29 @@ const isActive = (path) => {
 .app-sidebar {
   width: var(--sidebar-width);
   height: 100%;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border-light);
   display: flex;
   flex-direction: column;
-  padding: 20px 16px;
+  margin: 28px 16px;
+  left: 2rem;  border-radius: calc(var(--bottom-nav-height) * 0.5);
+  background: var(--bg-glass);
+  border: 1px solid var(--border-light);
+
+  height: fit-content;
 }
 
 .sidebar-nav {
+  padding: 20px 16px;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  border-radius: var(--radius-md);
+  padding: 10px 16px;
   color: var(--text-secondary);
   text-decoration: none;
   transition: all var(--transition-fast);
@@ -96,14 +99,14 @@ const isActive = (path) => {
 }
 
 .nav-item:hover {
-  background: var(--bg-hover);
+  /* background: var(--bg-hover); */
   color: var(--text-primary);
 }
 
 .nav-item.active {
-  background: var(--primary-color);
-  color: #ffffff;
-  box-shadow: var(--shadow-primary);
+  /* background: var(--primary-color); */
+  color: var(--primary-color);
+  text-shadow: var(--primary-color)  0 0 3em;
   font-weight: 600;
 }
 

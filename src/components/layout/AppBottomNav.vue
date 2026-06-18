@@ -62,12 +62,12 @@ const isActive = (path) => {
 .app-bottom-nav {
   position: fixed;
   bottom: 1.5rem;
-  left: 2rem;
-  /* right: 0; */
-  height: var(--bottom-nav-height);
-  border-radius: calc(var(--bottom-nav-height) * 0.5);
+  left: 2rem;  border-radius: calc(var(--bottom-nav-height) * 0.5);
   background: var(--bg-glass);
   border: 1px solid var(--border-light);
+  /* right: 0; */
+  height: var(--bottom-nav-height);
+
   display: flex;
   justify-content: space-around;
   align-items: center;
@@ -80,7 +80,7 @@ const isActive = (path) => {
 
 /* 当播放器显示时，底部导航向上移动 */
 .app-bottom-nav.with-player {
-  bottom: var(--player-bar-height, 100px);
+  /* bottom: var(--player-bar-height, 100px); */
 }
 
 .bottom-nav-item {
@@ -88,7 +88,7 @@ const isActive = (path) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 0 14px;
+  padding: 0 18px;
   color: var(--text-secondary);
   text-decoration: none;
   transition: all var(--transition-fast);
@@ -104,7 +104,7 @@ const isActive = (path) => {
 
 .bottom-nav-item.active {
   color: var(--primary-color);
-  text-shadow: var(--primary-color)  0 0 3em;
+  text-shadow: var(--primary-color)  0 0 2em;
   /* background: var(--primary-light); */
 }
 

@@ -1,33 +1,37 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
-import { library, addLocalFolder, addWebDev } from '../api/musicSource';
+import {
+  addLocalFolder,
+  removeLocalFolder,
+  getFolders,
+  getLocalStats,
+  rescanAll,
+} from '../api/musicSource';
 
-const sources = ref([]);
+// ── State ──────────────────────────────────────────────────────────────────
+const folders = ref([]);
+const stats = ref({ folder_count: 0, indexed_files: 0 });
 const isLoading = ref(true);
 const isScanning = ref(false);
 const isAdding = ref(false);
-const isAddingWebDev = ref(false);
+const isRemoving = ref(false);
 
-// WebDev 源表单数据
-const webDevForm = ref({
-  apiBaseUrl: '',
-  name: '',
-  apiKey: '',
-  authToken: ''
-});
-const showWebDevDialog = ref(false);
-
+// ── Lifecycle ──────────────────────────────────────────────────────────────
 onMounted(async () => {
-  await loadSources();
+  await loadData();
 });
 
-const loadSources = async () => {
+// ── Data loading ───────────────────────────────────────────────────────────
+const loadData = async () => {
   try {
-    const data = await library.getCached();
-    if (data) {
-      sources.value = data.sources || [];
-    }
+    const [paths, s] = await Promise.all([getFolders(), getLocalStats()]);
+    folders.value = (paths || []).map((p) => ({
+      path: p,
+      // 从路径提取显示名（最后一个目录名）
+      name: p.split(/[/\\]/).filter(Boolean).pop() || p,
+    }));
+    stats.value = s || { folder_count: 0, indexed_files: 0 };
   } catch (error) {
     console.error('Failed to load sources:', error);
   } finally {
@@ -35,13 +39,12 @@ const loadSources = async () => {
   }
 };
 
+// ── Actions ────────────────────────────────────────────────────────────────
 const handleScanAll = async () => {
   isScanning.value = true;
   try {
-    // 扫描所有源，后端会自动更新 library 缓存
-    await library.scanAll();
-    // 重新加载数据，获取最新的 artists、albums 统计
-    await loadSources();
+    await rescanAll();
+    await loadData();
   } catch (error) {
     console.error('Failed to scan sources:', error);
   } finally {
@@ -50,25 +53,17 @@ const handleScanAll = async () => {
 };
 
 const handleAddSource = async () => {
-  console.log('handleAddSource clicked');
   try {
-    // 打开文件夹选择对话框
-    console.log('Opening dialog...');
     const selected = await open({
       directory: true,
       multiple: false,
-      title: '选择音乐文件夹'
+      title: '选择音乐文件夹',
     });
-    console.log('Dialog result:', selected);
 
     if (selected) {
       isAdding.value = true;
-      console.log('Adding local folder:', selected);
-      // 添加本地文件夹作为音乐源
-      const result = await addLocalFolder(selected, true);
-      console.log('Add source result:', result);
-      // 刷新列表
-      await loadSources();
+      await addLocalFolder(selected);
+      await loadData();
     }
   } catch (error) {
     console.error('Failed to add source:', error);
@@ -78,80 +73,42 @@ const handleAddSource = async () => {
   }
 };
 
-const handleEditSource = (source) => {
-  console.log('Edit source:', source);
-};
+const handleDeleteSource = async (folder) => {
+  const confirmed = confirm(`确定要移除音乐源 "${folder.name}" 吗？\n\n该操作将从数据库中清理该文件夹下的所有索引数据，不会删除磁盘上的文件。`);
+  if (!confirmed) return;
 
-const handleDeleteSource = (source) => {
-  console.log('Delete source:', source);
-};
-
-const openWebDevDialog = () => {
-  showWebDevDialog.value = true;
-};
-
-const closeWebDevDialog = () => {
-  showWebDevDialog.value = false;
-  // 重置表单
-  webDevForm.value = {
-    apiBaseUrl: '',
-    name: '',
-    apiKey: '',
-    authToken: ''
-  };
-};
-
-const handleAddWebDevSource = async () => {
-  if (!webDevForm.value.apiBaseUrl) {
-    alert('请输入 API 地址');
-    return;
-  }
-
-  isAddingWebDev.value = true;
+  isRemoving.value = true;
   try {
-    const result = await addWebDev(
-      webDevForm.value.apiBaseUrl,
-      webDevForm.value.name || null,
-      webDevForm.value.apiKey || null,
-      webDevForm.value.authToken || null
-    );
-    console.log('Add WebDev source result:', result);
-    closeWebDevDialog();
-    await loadSources();
+    await removeLocalFolder(folder.path);
+    await loadData();
   } catch (error) {
-    console.error('Failed to add WebDev source:', error);
-    alert('添加 WebDev 音乐源失败: ' + error.message);
+    console.error('Failed to remove source:', error);
+    alert('移除音乐源失败: ' + error.message);
   } finally {
-    isAddingWebDev.value = false;
+    isRemoving.value = false;
   }
 };
 
-const getSourceTypeLabel = (sourceType) => {
-  switch (sourceType) {
-    case 'LocalFolder':
-      return '本地文件夹';
-    case 'WebDisk':
-      return '网盘';
-    case 'WebDev':
-      return 'WebDev';
-    default:
-      return sourceType;
-  }
-};
+// ── Helpers ────────────────────────────────────────────────────────────────
+const getSourceTypeLabel = () => '本地文件夹';
 
-const formatDate = (dateString) => {
-  if (!dateString) return '从未';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('zh-CN');
+const formatFileCount = (n) => {
+  if (n == null) return '—';
+  return n.toLocaleString();
 };
 </script>
 
 <template>
   <div class="music-source-page">
+    <!-- Header -->
     <div class="page-header">
       <div>
         <h1 class="page-title">音乐源管理</h1>
-        <p class="page-subtitle">管理你的音乐文件夹和网盘</p>
+        <p class="page-subtitle">
+          管理本地音乐文件夹 —
+          <template v-if="!isLoading">{{ stats.folder_count }} 个文件夹，共 {{ formatFileCount(stats.indexed_files) }} 个音频文件</template>
+          <template v-else>加载中…</template>
+        </p>
       </div>
       <div class="page-actions">
         <button class="btn btn-secondary" @click="handleScanAll" :disabled="isScanning">
@@ -161,7 +118,7 @@ const formatDate = (dateString) => {
           <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0118.8-4.3M22 12.5a10 10 0 01-18.8 4.3"/>
           </svg>
-          {{ isScanning ? '扫描中...' : '扫描全部' }}
+          {{ isScanning ? '扫描中…' : '重新扫描' }}
         </button>
         <button class="btn btn-primary" @click="handleAddSource" :disabled="isAdding">
           <svg v-if="isAdding" class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -171,57 +128,41 @@ const formatDate = (dateString) => {
             <line x1="12" y1="5" x2="12" y2="19"/>
             <line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
-          {{ isAdding ? '添加中...' : '添加本地源' }}
-        </button>
-        <button class="btn btn-primary" @click="openWebDevDialog" :disabled="isAddingWebDev">
-          <svg v-if="isAddingWebDev" class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12a9 9 0 11-6.219-8.56"/>
-          </svg>
-          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-          </svg>
-          {{ isAddingWebDev ? '添加中...' : '添加 WebDev 源' }}
+          {{ isAdding ? '添加中…' : '添加本地文件夹' }}
         </button>
       </div>
     </div>
 
+    <!-- Loading -->
     <div v-if="isLoading" class="loading-state">
       <div class="spinner"></div>
     </div>
 
+    <!-- Folder list -->
     <template v-else>
-      <div v-if="sources.length > 0" class="sources-list">
-        <div v-for="source in sources" :key="source.id" class="source-card card">
+      <div v-if="folders.length > 0" class="sources-list">
+        <div v-for="folder in folders" :key="folder.path" class="source-card card">
           <div class="source-info">
             <div class="source-icon">
-              <svg v-if="source.source_type === 'LocalFolder'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-              </svg>
-              <svg v-else-if="source.source_type === 'WebDisk'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/>
-              </svg>
-              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
               </svg>
             </div>
             <div class="source-details">
-              <h3 class="source-name">{{ source.name }}</h3>
-              <p class="source-path">{{ source.path }}</p>
+              <h3 class="source-name">{{ folder.name }}</h3>
+              <p class="source-path">{{ folder.path }}</p>
               <div class="source-meta">
-                <span class="source-type">{{ getSourceTypeLabel(source.source_type) }}</span>
-                <span class="separator">·</span>
-                <span>上次扫描: {{ formatDate(source.last_scanned_at) }}</span>
+                <span class="source-type">{{ getSourceTypeLabel() }}</span>
               </div>
             </div>
           </div>
           <div class="source-actions">
-            <button class="btn-icon" @click="handleEditSource(source)" title="编辑">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-              </svg>
-            </button>
-            <button class="btn-icon btn-delete" @click="handleDeleteSource(source)" title="删除">
+            <button
+              class="btn-icon btn-delete"
+              @click="handleDeleteSource(folder)"
+              :disabled="isRemoving"
+              title="移除文件夹（不删除磁盘文件）"
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 6 5 6 21 6"/>
                 <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
@@ -231,82 +172,34 @@ const formatDate = (dateString) => {
         </div>
       </div>
 
+      <!-- Empty state -->
       <div v-else class="empty-state">
         <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
         </svg>
         <h3 class="empty-state-title">暂无音乐源</h3>
-        <p class="empty-state-desc">添加音乐文件夹开始管理你的音乐</p>
+        <p class="empty-state-desc">添加本地音乐文件夹开始管理你的音乐</p>
         <button class="btn btn-primary" style="margin-top: 16px;" @click="handleAddSource">
-          添加音乐源
+          添加文件夹
         </button>
       </div>
     </template>
 
-    <!-- WebDev 源添加对话框 -->
-    <div v-if="showWebDevDialog" class="dialog-overlay" @click.self="closeWebDevDialog">
-      <div class="dialog">
-        <div class="dialog-header">
-          <h3>添加 WebDev 音乐源</h3>
-          <button class="dialog-close" @click="closeWebDevDialog">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-        <div class="dialog-body">
-          <div class="form-group">
-            <label for="apiBaseUrl">API 地址 <span class="required">*</span></label>
-            <input
-              id="apiBaseUrl"
-              v-model="webDevForm.apiBaseUrl"
-              type="url"
-              placeholder="https://api.example.com"
-              class="form-input"
-            />
-            <small class="form-hint">WebDev API 的基础 URL，必须以 http:// 或 https:// 开头</small>
-          </div>
-          <div class="form-group">
-            <label for="sourceName">源名称</label>
-            <input
-              id="sourceName"
-              v-model="webDevForm.name"
-              type="text"
-              placeholder="我的 WebDev 音乐源"
-              class="form-input"
-            />
-          </div>
-          <div class="form-group">
-            <label for="apiKey">API 密钥</label>
-            <input
-              id="apiKey"
-              v-model="webDevForm.apiKey"
-              type="password"
-              placeholder="可选"
-              class="form-input"
-            />
-          </div>
-          <div class="form-group">
-            <label for="authToken">认证令牌</label>
-            <input
-              id="authToken"
-              v-model="webDevForm.authToken"
-              type="password"
-              placeholder="可选"
-              class="form-input"
-            />
-          </div>
-        </div>
-        <div class="dialog-footer">
-          <button class="btn btn-secondary" @click="closeWebDevDialog">取消</button>
-          <button class="btn btn-primary" @click="handleAddWebDevSource" :disabled="isAddingWebDev">
-            <svg v-if="isAddingWebDev" class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12a9 9 0 11-6.219-8.56"/>
-            </svg>
-            {{ isAddingWebDev ? '添加中...' : '添加' }}
-          </button>
-        </div>
+    <!-- Unsupported source notice -->
+    <div class="unsupported-note card" style="margin-top: 24px;">
+      <div class="note-content">
+        <p class="note-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="note-icon">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          关于网盘和 WebDAV 源
+        </p>
+        <p class="note-text">
+          网盘（WebDisk）和 WebDAV 来源目前后端尚未实现。
+          当前仅支持本地文件夹作为音乐源。
+        </p>
       </div>
     </div>
   </div>
@@ -346,12 +239,8 @@ const formatDate = (dateString) => {
 }
 
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .sources-list {
@@ -371,6 +260,7 @@ const formatDate = (dateString) => {
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
 }
 
 .source-icon {
@@ -382,6 +272,7 @@ const formatDate = (dateString) => {
   align-items: center;
   justify-content: center;
   color: var(--primary-color, #0078d7);
+  flex-shrink: 0;
 }
 
 .source-icon svg {
@@ -407,7 +298,7 @@ const formatDate = (dateString) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 400px;
+  max-width: 500px;
 }
 
 .source-meta {
@@ -423,13 +314,10 @@ const formatDate = (dateString) => {
   font-weight: 500;
 }
 
-.separator {
-  margin: 0 6px;
-}
-
 .source-actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .btn-icon {
@@ -461,6 +349,53 @@ const formatDate = (dateString) => {
   color: #ef4444;
 }
 
+.btn-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-icon:disabled:hover {
+  background: transparent;
+  color: var(--text-secondary, #666);
+}
+
+/* ── Unsupported note ──────────────────────────────────────────────── */
+.unsupported-note {
+  background: var(--bg-secondary, #fafafa);
+  border: 1px solid var(--border-color, #e8e8ed);
+}
+
+.note-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.note-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+}
+
+.note-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--text-tertiary, #999);
+  flex-shrink: 0;
+}
+
+.note-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  line-height: 1.5;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
   .page-header {
     flex-direction: column;
@@ -496,163 +431,9 @@ const formatDate = (dateString) => {
   .source-name {
     color: var(--text-primary, #f6f6f6);
   }
-}
 
-/* 对话框样式 */
-.dialog-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.dialog {
-  background: var(--bg-primary, #fff);
-  border-radius: var(--radius-lg, 12px);
-  width: 100%;
-  max-width: 480px;
-  margin: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-}
-
-.dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border-color, #e8e8ed);
-}
-
-.dialog-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary, #333);
-}
-
-.dialog-close {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: var(--radius-md, 8px);
-  background: transparent;
-  color: var(--text-secondary, #666);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.dialog-close:hover {
-  background: var(--hover-bg, rgba(0, 0, 0, 0.05));
-  color: var(--text-primary, #333);
-}
-
-.dialog-close svg {
-  width: 20px;
-  height: 20px;
-}
-
-.dialog-body {
-  padding: 24px;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-group:last-child {
-  margin-bottom: 0;
-}
-
-.form-group label {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary, #333);
-  margin-bottom: 8px;
-}
-
-.form-group .required {
-  color: #ef4444;
-}
-
-.form-input {
-  width: 100%;
-  padding: 10px 14px;
-  font-size: 14px;
-  border: 1px solid var(--border-color, #e8e8ed);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg-primary, #fff);
-  color: var(--text-primary, #333);
-  transition: all 0.2s ease;
-  box-sizing: border-box;
-}
-
-.form-input:focus {
-  outline: none;
-  border-color: var(--primary-color, #0078d7);
-  box-shadow: 0 0 0 3px rgba(0, 120, 215, 0.1);
-}
-
-.form-input::placeholder {
-  color: var(--text-tertiary, #999);
-}
-
-.form-hint {
-  display: block;
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--text-tertiary, #999);
-}
-
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 24px;
-  border-top: 1px solid var(--border-color, #e8e8ed);
-}
-
-.dialog-footer .btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.dialog-footer .btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .dialog {
-    background: var(--bg-primary, #1c1c1e);
-  }
-
-  .dialog-header h3 {
-    color: var(--text-primary, #f6f6f6);
-  }
-
-  .form-group label {
-    color: var(--text-primary, #f6f6f6);
-  }
-
-  .form-input {
+  .unsupported-note {
     background: var(--bg-secondary, #2c2c2e);
-    border-color: var(--border-color, #3a3a3c);
-    color: var(--text-primary, #f6f6f6);
-  }
-
-  .form-input::placeholder {
-    color: var(--text-tertiary, #8e8e93);
   }
 }
 </style>

@@ -3,47 +3,32 @@
     <!-- 进度条 -->
     <div class="progress-section">
       <span class="time">{{ formatTime(currentTime) }}</span>
-      <input
-        type="range"
-        class="progress-slider"
-        :min="0"
-        :max="duration"
-        :value="currentTime"
-        @input="onSeek"
-      />
+      <input type="range" class="progress-slider" :min="0" :max="duration" :value="currentTime" @input="onSeek" />
       <span class="time">{{ formatTime(duration) }}</span>
     </div>
-    
+
     <!-- 控制按钮 -->
     <div class="controls-section">
       <button class="control-btn" @click="$emit('toggle-play-mode')">
         <i :class="playModeIcon"></i>
       </button>
-      
+
       <button class="control-btn" @click="$emit('previous')">
         <i class="bi bi-skip-start-fill"></i>
       </button>
-      
+
       <button class="control-btn play-btn" @click="togglePlay">
         <i :class="isPlaying ? 'bi bi-pause-fill' : 'bi bi-play-fill'"></i>
       </button>
-      
+
       <button class="control-btn" @click="$emit('next')">
         <i class="bi bi-skip-end-fill"></i>
       </button>
-      
+
       <!-- 音量控制 -->
       <div class="volume-control">
         <i :class="volumeIcon" @click="$emit('toggle-mute')"></i>
-        <input
-          type="range"
-          class="volume-slider"
-          min="0"
-          max="1"
-          step="0.01"
-          :value="volume"
-          @input="onVolumeChange"
-        />
+        <input type="range" class="volume-slider" min="0" max="1" step="0.01" :value="volume" @input="onVolumeChange" />
       </div>
     </div>
   </div>
@@ -148,10 +133,22 @@ const formatTime = (seconds) => {
 <style scoped>
 .player-control-bar {
   display: flex;
+  position: fixed;
   flex-direction: column;
-  gap: 0.75rem;
+  /* gap: 0.75rem; */
   padding: 1rem;
-  color: white;
+  /* color: white; */
+  position: fixed;
+  bottom: 1.5rem;
+
+  right: 0.9rem;
+  padding: 16px 16px;
+  transition: bottom var(--transition-slow);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-radius: calc(var(--bottom-nav-height) * 0.9);
+  background: var(--bg-glass);
+  border: 1px solid var(--border-light);
 }
 
 .progress-section {
@@ -197,10 +194,10 @@ const formatTime = (seconds) => {
 .control-btn {
   background: none;
   border: none;
-  color: white;
+  /* color: white; */
   font-size: 1.25rem;
   cursor: pointer;
-  padding: 0.5rem;
+  padding: 0.2rem 0.5rem 0 0.5rem;
   opacity: 0.8;
   transition: opacity 0.2s;
 }

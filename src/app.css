@@ -15,10 +15,10 @@
   --bg-glass: rgba(255, 255, 255, 0.45);
   
   /* 文字色 - Apple 风格 */
-  --text-primary: #1D1D1F;
-  --text-secondary: #6E6E73;
-  --text-tertiary: #86868B;
-  --text-quaternary: #A1A1A6;
+  --text-primary: #121200E2;
+  --text-secondary: #12120092;
+  --text-tertiary: #12120079;
+  --text-quaternary: #1212005E;
   
   /* 边框 - Apple 风格 */
   --border-color: rgba(0, 0, 0, 0.1);
