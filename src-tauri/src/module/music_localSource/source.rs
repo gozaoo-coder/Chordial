@@ -314,6 +314,19 @@ impl MusicSource for LocalMusicSource {
             .map_err(|e| format!("读取音频文件失败 '{}': {}", entity_id, e))
     }
 
+    fn song_file_path(&self, entity_id: &str) -> Option<String> {
+        let path = PathBuf::from(entity_id);
+        if path.is_file() {
+            Some(entity_id.to_string())
+        } else {
+            // 尝试通过 id_to_path 查找
+            self.id_to_path
+                .read()
+                .get(entity_id)
+                .and_then(|p| p.to_str().map(|s| s.to_string()))
+        }
+    }
+
     fn album_picture_get(&self, entity_id: &str) -> Result<Vec<u8>, String> {
         let path = PathBuf::from(entity_id);
 

@@ -32,6 +32,18 @@ pub fn get_song_file(
     source.song_file_get(&source_id.entity_id)
 }
 
+/// 获取歌曲文件的本地路径（用于自定义协议流式传输）。
+///
+/// 仅本地来源支持；网络来源返回 `None`。
+pub fn get_song_file_path(
+    registrar: &SourceRegistrar,
+    source_id: &SourceId,
+) -> Option<String> {
+    let source = registrar
+        .get(&source_id.source_name)?;
+    source.song_file_path(&source_id.entity_id)
+}
+
 /// 获取专辑的封面图片。
 ///
 /// # 链路

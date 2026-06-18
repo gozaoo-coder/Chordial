@@ -38,6 +38,14 @@ pub trait MusicSource: Send + Sync {
     /// 用于前端播放或离线缓存。
     fn song_file_get(&self, entity_id: &str) -> Result<Vec<u8>, String>;
 
+    /// 获取歌曲文件的本地路径（如果可用）。
+    ///
+    /// 用于自定义协议流式传输，避免将整个文件加载到内存。
+    /// 默认返回 `None`；本地来源应覆盖此方法返回实际路径。
+    fn song_file_path(&self, _entity_id: &str) -> Option<String> {
+        None
+    }
+
     /// 获取专辑的封面图片数据。
     ///
     /// `entity_id` 为来源内部的专辑 ID。返回图片字节（JPEG/PNG 等）。

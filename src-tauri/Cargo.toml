@@ -35,6 +35,9 @@ futures = "0.3"
 
 uuid = { version = "1", features = ["v4", "serde"] }
 
+# base64 编解码 — 用于自定义协议 URL 参数
+base64 = "0.22"
+
 
 
 # 音频播放引擎依赖
@@ -43,7 +46,7 @@ symphonia = { version = "0.6", features = ["mpa", "isomp4", "aac"] }
 # 文件系统监听
 notify = "8"
 
-# 分析结果缓存
-blake3 = "1.5"
+# 自定义协议响应
+http = "1"
 parking_lot = "0.12.5"
 

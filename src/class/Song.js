@@ -58,42 +58,41 @@ export class Song {
   // ── 资源方法 ────────────────────────────────────
 
   /**
-   * 获取音频 Blob URL（通过第一个 SourceId 从后端拉取）
+   * 获取音频 URL（通过 chordial:// 自定义协议流式传输）。
+   *
+   * 直接返回 chordial:// URL，浏览器原生处理流式传输和 Range 请求，
+   * 无需 invoke + Blob + createObjectURL。
    * @returns {Promise<string|null>}
    */
   async getAudioBlobUrl() {
     if (!this.sourceIds || this.sourceIds.length === 0) return null;
-    const { getMusicFileResource } = await import('@/api/musicSource/resourceLoader.js');
+    const { buildAudioUrl } = await import('@/api/musicSource/chordialUrl.js');
     try {
-      const { url } = await getMusicFileResource(this.sourceIds[0]);
-      return url;
+      return buildAudioUrl(this.sourceIds[0]);
     } catch (e) {
-      console.warn('获取音频 Blob URL 失败:', e);
+      console.warn('构建音频 URL 失败:', e);
       return null;
     }
   }
 
   /**
-   * 释放音频 Blob URL（通过第一个 SourceId）
+   * 释放音频资源（chordial:// 协议下为 no-op，保留接口兼容性）。
    */
   releaseAudio() {
-    if (!this.sourceIds || this.sourceIds.length === 0) return;
-    import('@/api/musicSource/resourceLoader.js').then(({ releaseMusicFile }) => {
-      releaseMusicFile(this.sourceIds[0]);
-    }).catch(() => {});
+    // chordial:// 协议下无需手动释放，浏览器按需缓存管理
   }
 
   /**
-   * 获取封面资源（用于 useCoverImage composable）。
-   * 通过第一个 SourceId 获取（本地来源会查找歌曲所在目录的封面文件）。
+   * 获取封面资源 URL（通过 chordial:// 自定义协议）。
    * @param {string} _size - 图片尺寸（本地来源忽略）
    * @returns {Promise<{url: string, release: Function}|null>}
    */
   async acquireCoverResource(_size = 'medium') {
     if (this.sourceIds && this.sourceIds.length > 0) {
       try {
-        const { getAlbumArtResource } = await import('@/api/musicSource/resourceLoader.js');
-        return await getAlbumArtResource(this.sourceIds[0]);
+        const { buildImageUrl } = await import('@/api/musicSource/chordialUrl.js');
+        const url = buildImageUrl(this.sourceIds[0]);
+        return { url, release: () => {} };
       } catch (e) {
         console.warn('获取歌曲封面失败:', e);
       }

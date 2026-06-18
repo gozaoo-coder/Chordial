@@ -31,13 +31,15 @@ const shuffleArray = (array) => {
 const backgroundAlbums = computed(() => {
   if (!props.albums || props.albums.length === 0) return [];
   
-  // 过滤出有封面的专辑
-  const albumsWithCover = props.albums.filter(album => album.coverUrl);
+  // 过滤出有来源的专辑（可通过 ResourceManager 尝试加载封面）
+  const albumsWithSource = props.albums.filter(
+    album => album.sourceIds && album.sourceIds.length > 0
+  );
   
-  if (albumsWithCover.length === 0) return [];
+  if (albumsWithSource.length === 0) return [];
   
   // 随机打乱并选取
-  const shuffled = shuffleArray(albumsWithCover);
+  const shuffled = shuffleArray(albumsWithSource);
   const selected = shuffled.slice(0, props.maxDisplay);
   
   // 如果数量不足，重复填充以达到网格效果
@@ -139,9 +141,10 @@ const animationStyle = computed(() => {
         :style="animationStyle"
       >
         <CoverImage
-          :src="album.coverUrl"
+          :item="album"
           :alt="album.title"
           type="album"
+          size="medium"
           class="collage-cover"
         />
       </div>
@@ -203,7 +206,7 @@ const animationStyle = computed(() => {
 .blur-overlay {
   position: absolute;
   inset: 0;
-  backdrop-filter: blur(40px) saturate(1.2);
+  backdrop-filter: blur(4rem) saturate(1.2);
   background: rgba(0, 0, 0, 0.2);
   z-index: 1;
 }

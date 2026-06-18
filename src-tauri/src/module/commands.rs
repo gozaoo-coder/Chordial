@@ -148,8 +148,8 @@ pub fn init_music_system() {
     }
 }
 
-/// 获取全局来源注册器的引用（用于 Tauri 命令）。
-fn source_registrar() -> &'static Arc<SourceRegistrar> {
+/// 获取全局来源注册器的引用（用于 Tauri 命令和媒体协议）。
+pub fn source_registrar() -> &'static Arc<SourceRegistrar> {
     SOURCE_REGISTRAR
         .get()
         .expect("音乐来源系统未初始化，请先调用 init_music_system()")

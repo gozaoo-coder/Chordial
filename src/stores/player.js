@@ -372,9 +372,9 @@ const actions = {
         return;
       }
       
-      // 停止当前播放并释放旧的 Blob URL
+      // 停止当前播放并释放旧的音频资源
       if (state.audioElement) {
-        // 释放旧的 Blob URL 防止内存泄漏
+        // chordial:// 协议下无需 revokeObjectURL；保留 blob: 兼容
         const oldSrc = state.audioElement.src;
         if (oldSrc && oldSrc.startsWith('blob:')) {
           URL.revokeObjectURL(oldSrc);

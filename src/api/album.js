@@ -53,42 +53,47 @@ export async function getAllAlbums() {
 /**
  * 获取专辑封面图片数据。
  *
- * 注意：需要通过来源中的 SourceId 调用 `get_album_picture` 后端命令。
- * 本函数作为快捷入口，接收专辑 ID 后查找其第一个 SourceId 并请求图片。
+ * 通过 chordial:// 协议直接从后端流式传输，无需 invoke + Blob。
  *
  * @param {string} albumId
  * @returns {Promise<ArrayBuffer|null>} 图片二进制数据
+ * @deprecated 使用 {@link getAlbumArtUrl} 获取可直接使用的 URL
  */
 export async function getAlbumArt(albumId) {
-  // 1. 获取专辑数据
-  const albumData = await invoke('library_get_album', { id: albumId });
-  if (!albumData?.source_ids?.length) return null;
-
-  // 2. 取第一个匹配 Album 类型的 SourceId
-  const { SourceId } = await import('@/class');
-  const albumSourceId = albumData.source_ids.find(
-    (s) => (s.entity_type ?? s.entityType) === 'Album',
-  );
-  if (!albumSourceId) return null;
-
-  // 3. 通过 SourceId 请求图片
-  const { getAlbumPicture } = await import('./musicSource/musicResource.js');
-  return getAlbumPicture(new SourceId(albumSourceId));
+  // 保留兼容性：通过 chordial 协议获取
+  const url = await getAlbumArtUrl(albumId);
+  if (!url) return null;
+  // 回退：通过 fetch 获取数据
+  try {
+    const response = await fetch(url);
+    return await response.arrayBuffer();
+  } catch (_) {
+    return null;
+  }
 }
 
 /**
- * 获取专辑封面 URL（返回 Object URL）。
+ * 获取专辑封面 URL（直接返回 chordial:// URL）。
  *
  * @param {string} albumId
  * @returns {Promise<string>} 图片 URL
  */
 export async function getAlbumArtUrl(albumId) {
   try {
-    const data = await getAlbumArt(albumId);
-    if (data) {
-      const blob = new Blob([data], { type: 'image/jpeg' });
-      return URL.createObjectURL(blob);
-    }
+    // 1. 获取专辑数据
+    const albumData = await invoke('library_get_album', { id: albumId });
+    if (!albumData?.source_ids?.length) return '';
+
+    // 2. 取第一个匹配 Album 类型的 SourceId
+    const { SourceId } = await import('@/class');
+    const albumSourceId = albumData.source_ids.find(
+      (s) => (s.entity_type ?? s.entityType) === 'Album',
+    );
+    if (!albumSourceId) return '';
+
+    // 3. 通过 chordial:// 协议返回 URL
+    const { buildImageUrl } = await import('./musicSource/chordialUrl.js');
+    return buildImageUrl(new SourceId(albumSourceId));
   } catch (e) {
     console.warn('获取专辑封面失败:', e);
   }

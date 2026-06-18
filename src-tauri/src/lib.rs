@@ -2,14 +2,21 @@ mod module;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_dialog::init());
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
+
+    builder
         .setup(|_app| {
             // 初始化音乐来源系统（音乐库 + 来源管理器 + 注册器 + Blob 缓存）
             crate::module::commands::init_music_system();
             Ok(())
+        })
+        .register_asynchronous_uri_scheme_protocol("chordial", |_ctx, request, responder| {
+            crate::module::media_protocol::handle_protocol(request, responder);
         })
         .invoke_handler(tauri::generate_handler![
             // Config — 自动防抖落盘

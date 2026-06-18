@@ -1,38 +1,33 @@
 /**
  * ResourceManager 集成层
  *
- * 管理音乐资源（音频、封面）的内存引用和生命周期。
- * 适配重构后的 API：使用 SourceId 定位资源。
+ * 管理音乐资源（音频、封面）的访问。
+ * 音频和图片通过 chordial:// 自定义协议流式传输，
+ * 无需 Blob + createObjectURL。
  */
 
-import { resourceManager } from '@/js/resourceManager.js';
+import { buildAudioUrl, buildImageUrl } from './chordialUrl.js';
 
 /**
- * 获取专辑封面资源。
+ * 获取专辑封面资源 URL。
  *
  * @param {import('@/class').SourceId} sourceId - 专辑的 SourceId
  * @returns {Promise<{url: string, release: Function}>}
  */
 export async function getAlbumArtResource(sourceId) {
-  const key = `album_picture_${sourceId.sourceName}_${sourceId.entityId}`;
-  return resourceManager.getResource(key, async () => {
-    const { getAlbumPicture } = await import('./musicResource.js');
-    return getAlbumPicture(sourceId);
-  });
+  const url = buildImageUrl(sourceId);
+  return { url, release: () => {} };
 }
 
 /**
- * 获取音乐文件资源。
+ * 获取音乐文件资源 URL。
  *
  * @param {import('@/class').SourceId} sourceId - 歌曲的 SourceId
  * @returns {Promise<{url: string, release: Function}>}
  */
 export async function getMusicFileResource(sourceId) {
-  const key = `music_file_${sourceId.sourceName}_${sourceId.entityId}`;
-  return resourceManager.getResource(key, async () => {
-    const { getMusicFile } = await import('./musicResource.js');
-    return getMusicFile(sourceId);
-  });
+  const url = buildAudioUrl(sourceId);
+  return { url, release: () => {} };
 }
 
 /**
@@ -43,63 +38,38 @@ export async function getMusicFileResource(sourceId) {
  * @returns {Promise<{url: string, release: Function}>}
  */
 export async function getArtistImageResource(sourceId, fallbackUrl = '') {
-  const key = `artist_image_${sourceId?.sourceName ?? 'fallback'}_${sourceId?.entityId ?? 'none'}`;
-  return resourceManager.getResource(key, async () => {
-    if (sourceId) {
-      try {
-        const { getAlbumPicture } = await import('./musicResource.js');
-        return getAlbumPicture(sourceId);
-      } catch (_) {
-        /* 静默降级 */
-      }
-    }
-    return fallbackUrl;
-  });
+  if (sourceId) {
+    return { url: buildImageUrl(sourceId), release: () => {} };
+  }
+  return { url: fallbackUrl, release: () => {} };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Preload / Release
+// Preload / Release（chordial:// 协议下无需 Blob 管理，保留接口兼容性）
 // ══════════════════════════════════════════════════════════════════════════════
 
-export async function preloadAlbumArt(sourceId) {
-  const key = `album_picture_${sourceId.sourceName}_${sourceId.entityId}`;
-  resourceManager.preload(key, async () => {
-    const { getAlbumPicture } = await import('./musicResource.js');
-    return getAlbumPicture(sourceId);
-  });
+export async function preloadAlbumArt(_sourceId) {
+  // chordial:// 协议下无需预加载，浏览器按需请求
 }
 
-export async function preloadMusicFile(sourceId) {
-  const key = `music_file_${sourceId.sourceName}_${sourceId.entityId}`;
-  resourceManager.preload(key, async () => {
-    const { getMusicFile } = await import('./musicResource.js');
-    return getMusicFile(sourceId);
-  });
+export async function preloadMusicFile(_sourceId) {
+  // chordial:// 协议下无需预加载，浏览器按需请求
 }
 
-export function releaseAlbumArt(sourceId) {
-  const key = `album_picture_${sourceId.sourceName}_${sourceId.entityId}`;
-  if (resourceManager.getCachedResource(key)) {
-    resourceManager.releaseResource(key);
-  }
+export function releaseAlbumArt(_sourceId) {
+  // chordial:// 协议下无需释放
 }
 
-export function releaseMusicFile(sourceId) {
-  const key = `music_file_${sourceId.sourceName}_${sourceId.entityId}`;
-  if (resourceManager.getCachedResource(key)) {
-    resourceManager.releaseResource(key);
-  }
+export function releaseMusicFile(_sourceId) {
+  // chordial:// 协议下无需释放
 }
 
 export function clearAllResources() {
-  resourceManager.clear();
+  // chordial:// 协议下无需清理 Blob URL
 }
 
 export function getResourceStats() {
-  return {
-    cachedResources: resourceManager.cache.size,
-    referenceCounts: Object.fromEntries(resourceManager.referenceCount),
-  };
+  return { cachedResources: 0, referenceCounts: {} };
 }
 
 export default {
