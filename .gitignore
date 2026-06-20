@@ -27,3 +27,6 @@ dist-ssr
 .codegraph/
 reasonix.toml
 src-tauri/gen/
+
+# Windows reserved filename accidentally created by tooling
+nul

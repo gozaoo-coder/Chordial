@@ -2,8 +2,14 @@
 //!
 //! 对单个音频文件进行探测（probe），提取格式、标签等元信息，
 //! 不进行完整解码，速度较快。
+//!
+//! ## 跨平台
+//!
+//! 通过 [`crate::module::platform`] 适配不同平台的文件访问：
+//! - 桌面端：`std::fs::File` → symphonia
+//! - Android：`Cursor<Vec<u8>>`（预读全部字节）→ symphonia
 
-use std::path::Path;
+use crate::module::platform::{self, PlatformPath};
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
@@ -35,16 +41,15 @@ pub struct AudioMeta {
 ///
 /// # 返回
 /// 成功时返回 [`AudioMeta`]，失败时返回错误信息。
-pub fn probe_file(path: &Path) -> Result<AudioMeta, String> {
-    let src = std::fs::File::open(path)
-        .map_err(|e| format!("无法打开文件 '{}': {}", path.display(), e))?;
+pub fn probe_file(path: &PlatformPath) -> Result<AudioMeta, String> {
+    let src = platform::open_file(path)?;
 
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
     // 创建 Hint 以加速格式探测
     let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
+    if let Some(ext) = platform::path_extension(path) {
+        hint.with_extension(&ext);
     }
 
     let mut format = symphonia::default::get_probe()
@@ -54,7 +59,7 @@ pub fn probe_file(path: &Path) -> Result<AudioMeta, String> {
             FormatOptions::default(),
             MetadataOptions::default(),
         )
-        .map_err(|e| format!("无法识别音频格式 '{}': {}", path.display(), e))?;
+        .map_err(|e| format!("无法识别音频格式 '{}': {}", platform::path_to_string(path), e))?;
 
     let mut meta = AudioMeta::default();
 
@@ -101,10 +106,7 @@ pub fn probe_file(path: &Path) -> Result<AudioMeta, String> {
 
     // 若标签中无标题，回退到文件名（不含扩展名）
     if meta.title.is_none() {
-        meta.title = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .map(|s| s.to_string());
+        meta.title = platform::path_file_stem(path);
     }
 
     Ok(meta)
@@ -120,15 +122,14 @@ pub fn probe_file(path: &Path) -> Result<AudioMeta, String> {
 ///
 /// # 返回
 /// 成功时返回图片字节数据（JPEG / PNG），失败时返回错误信息。
-pub fn extract_cover_art(path: &Path) -> Result<Vec<u8>, String> {
-    let src = std::fs::File::open(path)
-        .map_err(|e| format!("无法打开文件 '{}': {}", path.display(), e))?;
+pub fn extract_cover_art(path: &PlatformPath) -> Result<Vec<u8>, String> {
+    let src = platform::open_file(path)?;
 
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
     let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
+    if let Some(ext) = platform::path_extension(path) {
+        hint.with_extension(&ext);
     }
 
     let mut format = symphonia::default::get_probe()
@@ -185,10 +186,10 @@ pub fn extract_cover_art(path: &Path) -> Result<Vec<u8>, String> {
 /// 检查文件是否为 symphonia 支持的音频格式。
 ///
 /// 通过扩展名快速过滤。
-pub fn is_supported_audio(path: &Path) -> bool {
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+pub fn is_supported_audio(path: &PlatformPath) -> bool {
+    if let Some(ext) = platform::path_extension(path) {
         matches!(
-            ext.to_lowercase().as_str(),
+            ext.as_str(),
             "mp3"
                 | "flac"
                 | "wav"
@@ -211,13 +212,15 @@ pub fn is_supported_audio(path: &Path) -> bool {
 mod tests {
     use super::*;
 
+    use crate::module::platform::PlatformPath;
+
     #[test]
     fn test_extension_filter() {
-        assert!(is_supported_audio(Path::new("song.mp3")));
-        assert!(is_supported_audio(Path::new("track.FLAC")));
-        assert!(is_supported_audio(Path::new("audio.ogg")));
-        assert!(!is_supported_audio(Path::new("cover.jpg")));
-        assert!(!is_supported_audio(Path::new("lyrics.lrc")));
-        assert!(!is_supported_audio(Path::new("readme.txt")));
+        assert!(is_supported_audio(&PlatformPath::from("song.mp3")));
+        assert!(is_supported_audio(&PlatformPath::from("track.FLAC")));
+        assert!(is_supported_audio(&PlatformPath::from("audio.ogg")));
+        assert!(!is_supported_audio(&PlatformPath::from("cover.jpg")));
+        assert!(!is_supported_audio(&PlatformPath::from("lyrics.lrc")));
+        assert!(!is_supported_audio(&PlatformPath::from("readme.txt")));
     }
 }

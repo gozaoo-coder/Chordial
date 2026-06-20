@@ -5,10 +5,12 @@
 //!
 //! # 设计要点
 //!
-//! - **entity_id 使用文件绝对路径**：`SourceId.entity_id` 即为音频文件的规范化绝对路径。
+//! - **entity_id 使用文件绝对路径**：`SourceId.entity_id` 即为音频文件的规范化路径。
 //!   这使得资源获取（`song_file_get`）成为简单的文件读取操作。
 //! - **must-source**：本地来源在初始化时自动注册，不允许注销。
 //! - **初始文件夹**：首次启动时自动添加系统音乐目录（`dirs::audio_dir()`）。
+//! - **跨平台路径**：通过 [`crate::module::platform::PlatformPath`] 适配桌面（`PathBuf`）
+//!   和 Android（`String` / content URI）。
 
 use super::folder::FolderManager;
 use super::scanner::{self, AudioMeta};
@@ -16,9 +18,9 @@ use crate::module::music_library::library::MusicLibrary;
 use crate::module::music_library::models::{Album, Artist, Lyric, Song};
 use crate::module::music_source::traits::MusicSource;
 use crate::module::music_source::types::{EntityType, SourceId, SourceType};
+use crate::module::platform::{self, PlatformPath};
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -36,9 +38,9 @@ pub struct LocalMusicSource {
     /// 音乐库引用 — 用于增量同步，供命令层访问
     pub library: Arc<MusicLibrary>,
     /// 文件索引：规范路径 → 库内 Song ID，供命令层访问
-    pub file_index: RwLock<HashMap<PathBuf, String>>,
+    pub file_index: RwLock<HashMap<PlatformPath, String>>,
     /// 反向索引：库内 Song ID → 规范路径
-    id_to_path: RwLock<HashMap<String, PathBuf>>,
+    id_to_path: RwLock<HashMap<String, PlatformPath>>,
 }
 
 impl LocalMusicSource {
@@ -62,10 +64,9 @@ impl LocalMusicSource {
     /// 扫描单个音频文件并添加到音乐库（或合并到已有条目）。
     ///
     /// 返回 `true` 表示成功处理（新增或合并），`false` 表示跳过（非音频文件）。
-    pub fn index_file(&self, path: &Path) -> Result<bool, String> {
-        let canonical = path
-            .canonicalize()
-            .unwrap_or_else(|_| path.to_path_buf());
+    pub fn index_file(&self, path: &PlatformPath) -> Result<bool, String> {
+        let canonical = platform::canonicalize(path)
+            .unwrap_or_else(|_| path.clone());
 
         // 跳过非音频文件
         if !scanner::is_supported_audio(&canonical) {
@@ -101,10 +102,9 @@ impl LocalMusicSource {
     ///
     /// 若歌曲失去全部来源引用，则歌曲被自动删除；
     /// 级联空实体由 [`MusicLibrary::cleanup_empty_entities`] 处理。
-    pub fn unindex_file(&self, path: &Path) -> Result<bool, String> {
-        let canonical = path
-            .canonicalize()
-            .unwrap_or_else(|_| path.to_path_buf());
+    pub fn unindex_file(&self, path: &PlatformPath) -> Result<bool, String> {
+        let canonical = platform::canonicalize(path)
+            .unwrap_or_else(|_| path.clone());
 
         let song_id = {
             let index = self.file_index.read();
@@ -116,7 +116,7 @@ impl LocalMusicSource {
         };
 
         // 从音乐库中精准移除该文件的 SourceId
-        let entity_id = canonical.to_string_lossy().to_string();
+        let entity_id = platform::path_to_string(&canonical);
         let mut entity_ids = HashSet::new();
         entity_ids.insert(entity_id);
         self.library
@@ -130,7 +130,7 @@ impl LocalMusicSource {
     }
 
     /// 重新索引文件（适用于文件修改事件）。
-    pub fn reindex_file(&self, path: &Path) -> Result<bool, String> {
+    pub fn reindex_file(&self, path: &PlatformPath) -> Result<bool, String> {
         // 先卸载旧索引
         self.unindex_file(path)?;
         // 再重新索引
@@ -138,8 +138,8 @@ impl LocalMusicSource {
     }
 
     /// 从 AudioMeta 构建 Song 模型。
-    fn build_song(&self, file_path: &Path, meta: &AudioMeta) -> Song {
-        let entity_id = file_path.to_string_lossy().to_string();
+    fn build_song(&self, file_path: &PlatformPath, meta: &AudioMeta) -> Song {
+        let entity_id = platform::path_to_string(file_path);
         let song_id = Uuid::new_v4().to_string();
         let artist_name = meta.artist.clone().unwrap_or_else(|| "未知艺术家".to_string());
         let artist_id = Uuid::new_v4().to_string();
@@ -168,15 +168,17 @@ impl LocalMusicSource {
     }
 
     /// 按文件路径查找对应的库内 Song ID。
-    pub fn find_song_id_by_path(&self, path: &Path) -> Option<String> {
-        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    pub fn find_song_id_by_path(&self, path: &PlatformPath) -> Option<String> {
+        let canonical = platform::canonicalize(path)
+            .unwrap_or_else(|_| path.clone());
         self.file_index.read().get(&canonical).cloned()
     }
 
     /// 按文件路径查找对应的 SourceId。
-    pub fn find_source_id_by_path(&self, path: &Path) -> Option<SourceId> {
-        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        let entity_id = canonical.to_string_lossy().to_string();
+    pub fn find_source_id_by_path(&self, path: &PlatformPath) -> Option<SourceId> {
+        let canonical = platform::canonicalize(path)
+            .unwrap_or_else(|_| path.clone());
+        let entity_id = platform::path_to_string(&canonical);
         Some(SourceId {
             source_name: LOCAL_SOURCE_NAME.to_string(),
             source_type: SourceType::Local,
@@ -205,10 +207,11 @@ impl LocalMusicSource {
 
             let Some(sid) = local_sid else { continue };
 
-            let path = PathBuf::from(&sid.entity_id);
+            let path = PlatformPath::from(sid.entity_id.as_str());
 
-            if path.exists() {
-                let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+            if platform::exists(&path) {
+                let canonical = platform::canonicalize(&path)
+                    .unwrap_or_else(|_| path.clone());
                 self.file_index
                     .write()
                     .insert(canonical.clone(), song_id.clone());
@@ -259,7 +262,7 @@ impl MusicSource for LocalMusicSource {
         let query_lower = query.to_lowercase();
         let mut results = Vec::new();
 
-        let paths: Vec<PathBuf> = self.file_index.read().keys().cloned().collect();
+        let paths: Vec<PlatformPath> = self.file_index.read().keys().cloned().collect();
         for path in paths {
             if let Ok(meta) = scanner::probe_file(&path) {
                 let title = meta.title.as_deref().unwrap_or("");
@@ -280,8 +283,8 @@ impl MusicSource for LocalMusicSource {
         let path = if let Some(p) = self.id_to_path.read().get(id) {
             p.clone()
         } else {
-            let p = PathBuf::from(id);
-            if p.exists() {
+            let p = PlatformPath::from(id);
+            if platform::exists(&p) {
                 p
             } else {
                 return Ok(None);
@@ -309,73 +312,73 @@ impl MusicSource for LocalMusicSource {
     }
 
     fn song_file_get(&self, entity_id: &str) -> Result<Vec<u8>, String> {
-        let path = PathBuf::from(entity_id);
-        std::fs::read(&path)
+        let path = PlatformPath::from(entity_id);
+        platform::read_bytes(&path)
             .map_err(|e| format!("读取音频文件失败 '{}': {}", entity_id, e))
     }
 
     fn song_file_path(&self, entity_id: &str) -> Option<String> {
-        let path = PathBuf::from(entity_id);
-        if path.is_file() {
+        let path = PlatformPath::from(entity_id);
+        if platform::is_file(&path) {
             Some(entity_id.to_string())
         } else {
             // 尝试通过 id_to_path 查找
             self.id_to_path
                 .read()
                 .get(entity_id)
-                .and_then(|p| p.to_str().map(|s| s.to_string()))
+                .map(|p| platform::path_to_string(p))
         }
     }
 
     fn album_picture_get(&self, entity_id: &str) -> Result<Vec<u8>, String> {
-        let path = PathBuf::from(entity_id);
+        let path = PlatformPath::from(entity_id);
 
         // 1. 若为音频文件，尝试提取嵌入封面（FLAC / ID3v2）
-        if path.is_file() && super::scanner::is_supported_audio(&path) {
+        if platform::is_file(&path) && super::scanner::is_supported_audio(&path) {
             if let Ok(cover_data) = super::scanner::extract_cover_art(&path) {
                 return Ok(cover_data);
             }
         }
 
         // 2. 确定搜索目录
-        let search_dir = if path.is_dir() {
+        let search_dir = if platform::is_dir(&path) {
             path.clone()
-        } else if let Some(parent) = path.parent() {
-            parent.to_path_buf()
+        } else if let Some(parent) = platform::path_parent(&path) {
+            parent
         } else {
-            return Err(format!("无法确定搜索目录: {}", path.display()));
+            return Err(format!("无法确定搜索目录: {}", platform::path_to_string(&path)));
         };
 
         // 3. 同目录下与音频文件同名的图片文件
-        if !path.is_dir() {
+        if !platform::is_dir(&path) {
             for ext in &["jpg", "jpeg", "png", "webp", "bmp"] {
-                let sibling = path.with_extension(ext);
-                if sibling.exists() {
-                    return std::fs::read(&sibling)
-                        .map_err(|e| format!("读取封面文件失败 '{}': {}", sibling.display(), e));
+                let sibling = platform::path_with_extension(&path, ext);
+                if platform::exists(&sibling) {
+                    return platform::read_bytes(&sibling)
+                        .map_err(|e| format!("读取封面文件失败 '{}': {}", platform::path_to_string(&sibling), e));
                 }
             }
         }
 
         // 4. 目录下常见封面文件名
         let candidates = [
-            search_dir.join("cover.jpg"),
-            search_dir.join("cover.png"),
-            search_dir.join("folder.jpg"),
-            search_dir.join("folder.png"),
-            search_dir.join("albumart.jpg"),
-            search_dir.join("albumart.png"),
-            search_dir.join("front.jpg"),
-            search_dir.join("front.png"),
+            platform::path_join(&search_dir, "cover.jpg"),
+            platform::path_join(&search_dir, "cover.png"),
+            platform::path_join(&search_dir, "folder.jpg"),
+            platform::path_join(&search_dir, "folder.png"),
+            platform::path_join(&search_dir, "albumart.jpg"),
+            platform::path_join(&search_dir, "albumart.png"),
+            platform::path_join(&search_dir, "front.jpg"),
+            platform::path_join(&search_dir, "front.png"),
         ];
         for candidate in &candidates {
-            if candidate.exists() {
-                return std::fs::read(candidate)
-                    .map_err(|e| format!("读取封面文件失败 '{}': {}", candidate.display(), e));
+            if platform::exists(candidate) {
+                return platform::read_bytes(candidate)
+                    .map_err(|e| format!("读取封面文件失败 '{}': {}", platform::path_to_string(candidate), e));
             }
         }
 
-        Err(format!("未找到封面图片: {}", path.display()))
+        Err(format!("未找到封面图片: {}", platform::path_to_string(&path)))
     }
 
     fn lyric_text_get(&self, song_id: &str) -> Result<String, String> {
@@ -383,22 +386,26 @@ impl MusicSource for LocalMusicSource {
         let audio_path = if let Some(p) = self.id_to_path.read().get(song_id) {
             p.clone()
         } else {
-            PathBuf::from(song_id)
+            PlatformPath::from(song_id)
         };
 
-        let lrc_path = audio_path.with_extension("lrc");
-        if lrc_path.exists() {
-            return std::fs::read_to_string(&lrc_path)
-                .map_err(|e| format!("读取歌词文件失败 '{}': {}", lrc_path.display(), e));
+        let lrc_path = platform::path_with_extension(&audio_path, "lrc");
+        if platform::exists(&lrc_path) {
+            let bytes = platform::read_bytes(&lrc_path)
+                .map_err(|e| format!("读取歌词文件失败 '{}': {}", platform::path_to_string(&lrc_path), e))?;
+            return String::from_utf8(bytes)
+                .map_err(|e| format!("歌词文件编码无效: {}", e));
         }
 
         // 也尝试 .txt 扩展名
-        let txt_path = audio_path.with_extension("txt");
-        if txt_path.exists() {
-            return std::fs::read_to_string(&txt_path)
-                .map_err(|e| format!("读取歌词文件失败 '{}': {}", txt_path.display(), e));
+        let txt_path = platform::path_with_extension(&audio_path, "txt");
+        if platform::exists(&txt_path) {
+            let bytes = platform::read_bytes(&txt_path)
+                .map_err(|e| format!("读取歌词文件失败 '{}': {}", platform::path_to_string(&txt_path), e))?;
+            return String::from_utf8(bytes)
+                .map_err(|e| format!("歌词文件编码无效: {}", e));
         }
 
-        Err(format!("未找到歌词文件: {}", audio_path.display()))
+        Err(format!("未找到歌词文件: {}", platform::path_to_string(&audio_path)))
     }
 }

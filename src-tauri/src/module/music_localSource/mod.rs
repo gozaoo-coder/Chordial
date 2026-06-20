@@ -21,12 +21,13 @@
 pub mod folder;
 pub mod scanner;
 pub mod source;
+#[cfg(not(target_os = "android"))]
 pub mod watcher;
 
 use crate::module::music_library::library::MusicLibrary;
 use crate::module::music_source::registrar::SourceRegistrar;
+use crate::module::platform::PlatformPath;
 use source::LocalMusicSource;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 /// 初始化本地音乐来源。
@@ -38,7 +39,7 @@ use std::sync::Arc;
 /// 4. 从 MusicLibrary 恢复内存索引（跳过已索引文件的重扫描）
 /// 5. 增量扫描文件夹，仅对不在索引中的新文件执行 symphonia 探测
 /// 6. 将本地来源注册到注册器（must-source，不允许注销）
-/// 7. 启动文件系统监听器（后台线程）
+/// 7. 启动文件系统监听器（后台线程，桌面端）
 ///
 /// # 参数
 /// - `folder_store_path`: 文件夹管理器的持久化存储路径
@@ -48,7 +49,7 @@ use std::sync::Arc;
 /// # 返回
 /// 成功时返回 `Arc<LocalMusicSource>`，失败时返回错误信息。
 pub fn init_local_source(
-    folder_store_path: PathBuf,
+    folder_store_path: std::path::PathBuf,
     library: Arc<MusicLibrary>,
     registrar: &SourceRegistrar,
 ) -> Result<Arc<LocalMusicSource>, String> {
@@ -63,7 +64,8 @@ pub fn init_local_source(
     if folder_manager.count() == 0 {
         if let Some(audio_dir) = dirs::audio_dir() {
             if audio_dir.exists() {
-                let _ = folder_manager.add_folder(&audio_dir);
+                let platform_path = PlatformPath::from(audio_dir.to_string_lossy().as_ref());
+                let _ = folder_manager.add_folder(&platform_path);
             }
         }
     }
@@ -92,7 +94,7 @@ pub fn init_local_source(
                 Ok(true) => indexed += 1,
                 Ok(false) => {} // 非音频文件或已索引
                 Err(e) => {
-                    eprintln!("[local_source] 索引文件失败 '{}': {}", file.display(), e);
+                    eprintln!("[local_source] 索引文件失败 '{}': {}", crate::module::platform::path_to_string(file), e);
                 }
             }
         }
@@ -108,17 +110,20 @@ pub fn init_local_source(
         .register(local_source.clone())
         .map_err(|e| format!("注册本地来源失败: {}", e))?;
 
-    // 7. 启动后台文件监听器
-    let watcher_source = local_source.clone();
-    let watcher_folders = folders;
-    std::thread::Builder::new()
-        .name("local-source-watcher".into())
-        .spawn(move || {
-            if let Err(e) = watcher::start_watcher(watcher_source, watcher_folders) {
-                eprintln!("[local_source] 文件监听器退出: {}", e);
-            }
-        })
-        .map_err(|e| format!("启动文件监听线程失败: {}", e))?;
+    // 7. 启动后台文件监听器（仅桌面端）
+    #[cfg(not(target_os = "android"))]
+    {
+        let watcher_source = local_source.clone();
+        let watcher_folders = folders;
+        std::thread::Builder::new()
+            .name("local-source-watcher".into())
+            .spawn(move || {
+                if let Err(e) = watcher::start_watcher(watcher_source, watcher_folders) {
+                    eprintln!("[local_source] 文件监听器退出: {}", e);
+                }
+            })
+            .map_err(|e| format!("启动文件监听线程失败: {}", e))?;
+    }
 
     eprintln!(
         "[local_source] 本地来源初始化完成: {} 个文件夹, {} 首已恢复, {} 首新索引",

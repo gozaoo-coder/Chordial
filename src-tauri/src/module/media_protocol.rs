@@ -14,13 +14,18 @@
 //!
 //! 所有参数使用 base64url 编码（`+` → `-`, `/` → `_`, 无填充），
 //! 避免文件路径中的特殊字符（如 Windows 的 `\`、`:`）破坏 URL 解析。
+//!
+//! ## 跨平台
+//!
+//! 文件 I/O 通过 [`crate::module::platform`] 适配：
+//! - 桌面端：`std::fs::File` 直接 Seek + Read
+//! - Android：`Cursor<Vec<u8>>`（预读全部字节，支持 Seek + Read）
 
 use crate::module::commands;
 use crate::module::music_source::types::SourceId;
+use crate::module::platform::{self, PlatformPath};
 use http::{header, Method, Request, Response, StatusCode};
-use std::fs;
 use std::io::{Read, Seek, SeekFrom};
-use std::path::PathBuf;
 use tauri::UriSchemeResponder;
 
 /// base64url 解码。
@@ -74,45 +79,6 @@ fn parse_url(path: &str) -> Result<ParsedUrl, String> {
     })
 }
 
-/// 根据文件扩展名推断 MIME 类型
-fn mime_from_path(path: &str) -> &'static str {
-    let lower = path.to_lowercase();
-    // 音频
-    if lower.ends_with(".mp3") {
-        "audio/mpeg"
-    } else if lower.ends_with(".flac") {
-        "audio/flac"
-    } else if lower.ends_with(".wav") || lower.ends_with(".wave") {
-        "audio/wav"
-    } else if lower.ends_with(".ogg") || lower.ends_with(".oga") {
-        "audio/ogg"
-    } else if lower.ends_with(".m4a") || lower.ends_with(".aac") {
-        "audio/mp4"
-    } else if lower.ends_with(".wma") {
-        "audio/x-ms-wma"
-    } else if lower.ends_with(".opus") {
-        "audio/opus"
-    }
-    // 图片
-    else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
-        "image/jpeg"
-    } else if lower.ends_with(".png") {
-        "image/png"
-    } else if lower.ends_with(".webp") {
-        "image/webp"
-    } else if lower.ends_with(".bmp") {
-        "image/bmp"
-    } else if lower.ends_with(".gif") {
-        "image/gif"
-    }
-    // 歌词
-    else if lower.ends_with(".lrc") || lower.ends_with(".txt") {
-        "text/plain; charset=utf-8"
-    } else {
-        "application/octet-stream"
-    }
-}
-
 /// 快速错误响应
 fn error_response(status: StatusCode, msg: &str) -> Response<Vec<u8>> {
     Response::builder()
@@ -123,21 +89,24 @@ fn error_response(status: StatusCode, msg: &str) -> Response<Vec<u8>> {
 }
 
 /// 为音频文件提供流式响应，支持 Range 请求。
-fn serve_audio_file(path: &str, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
-    let path_buf = PathBuf::from(path);
+///
+/// 使用 [`platform::open_file`] 和 [`platform::file_size`] 实现跨平台文件访问。
+fn serve_audio_file(path_str: &str, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let path = PlatformPath::from(path_str);
 
-    // 打开文件获取元数据
-    let mut file = match fs::File::open(&path_buf) {
+    // 获取文件大小（先于 open 以减少内存分配）
+    let file_size = match platform::file_size(&path) {
+        Ok(s) => s,
+        Err(e) => return error_response(StatusCode::NOT_FOUND, &e),
+    };
+
+    // 打开文件
+    let mut file = match platform::open_file(&path) {
         Ok(f) => f,
         Err(e) => return error_response(StatusCode::NOT_FOUND, &format!("文件未找到: {}", e)),
     };
 
-    let file_size = match file.metadata() {
-        Ok(m) => m.len(),
-        Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("读取文件元数据失败: {}", e)),
-    };
-
-    let mime = mime_from_path(path);
+    let mime = platform::mime_from_path(path_str);
 
     // 处理 HEAD 请求 — 只返回头信息
     if request.method() == Method::HEAD {
@@ -260,7 +229,7 @@ pub fn handle_protocol(request: Request<Vec<u8>>, responder: UriSchemeResponder)
                                 Ok(data) => Response::builder()
                                     .header(
                                         header::CONTENT_TYPE,
-                                        mime_from_path(&parsed.entity_id),
+                                        platform::mime_from_path(&parsed.entity_id),
                                     )
                                     .header(header::CONTENT_LENGTH, data.len().to_string())
                                     .body(data)
@@ -284,7 +253,7 @@ pub fn handle_protocol(request: Request<Vec<u8>>, responder: UriSchemeResponder)
                         &source_id,
                     ) {
                         Ok(data) => {
-                            let mime = mime_from_path(&parsed.entity_id);
+                            let mime = platform::mime_from_path(&parsed.entity_id);
                             Response::builder()
                                 .header(header::CONTENT_TYPE, mime)
                                 .header(header::CONTENT_LENGTH, data.len().to_string())

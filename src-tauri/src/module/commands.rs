@@ -61,6 +61,7 @@ use crate::module::music_source::manager::SourceManager;
 use crate::module::music_source::registrar::{SourceCleanup, SourceRegistrar};
 use crate::module::music_source::resource;
 use crate::module::music_source::types::SourceId;
+use crate::module::platform::{self, PlatformPath};
 use crate::module::storage::entry::Ttl;
 use crate::module::storage::persistent::PersistentStore;
 use serde::Deserialize;
@@ -569,7 +570,7 @@ pub fn local_add_folder(path: String) -> Result<serde_json::Value, String> {
         .get()
         .ok_or("本地来源未初始化")?;
 
-    let folder_path = PathBuf::from(&path);
+    let folder_path = PlatformPath::from(path.as_str());
     source.folder_manager.add_folder(&folder_path)?;
 
     // 扫描并索引文件夹中的音频文件
@@ -581,7 +582,7 @@ pub fn local_add_folder(path: String) -> Result<serde_json::Value, String> {
         match source.index_file(file) {
             Ok(true) => indexed += 1,
             Ok(false) => {} // 跳过非音频文件
-            Err(e) => errors.push(format!("{}: {}", file.display(), e)),
+            Err(e) => errors.push(format!("{}: {}", platform::path_to_string(file), e)),
         }
     }
 
@@ -610,18 +611,16 @@ pub fn local_remove_folder(path: String) -> Result<serde_json::Value, String> {
         .get()
         .ok_or("本地来源未初始化")?;
 
-    let folder_path = PathBuf::from(&path);
+    let folder_path = PlatformPath::from(path.as_str());
 
     // 1. 清理该文件夹下所有文件的 SourceId
     use std::collections::HashSet;
     let files = music_localSource::folder::collect_audio_files(&folder_path);
     let entity_ids: HashSet<String> = files
         .iter()
-        .filter_map(|f| {
-            f.canonicalize()
-                .ok()
-                .map(|c| c.to_string_lossy().to_string())
-        })
+        .map(|f| platform::path_to_string(
+            &platform::canonicalize(f).unwrap_or_else(|_| f.clone())
+        ))
         .collect();
 
     if !entity_ids.is_empty() {
@@ -660,7 +659,7 @@ pub fn local_get_folders() -> Result<Vec<String>, String> {
         .folder_manager
         .get_folders()
         .iter()
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| platform::path_to_string(p))
         .collect())
 }
 
@@ -681,7 +680,7 @@ pub fn local_rescan() -> Result<serde_json::Value, String> {
                 Ok(true) => total += 1,
                 Ok(false) => {}
                 Err(e) => {
-                    eprintln!("[local_rescan] {}: {}", file.display(), e);
+                    eprintln!("[local_rescan] {}: {}", platform::path_to_string(file), e);
                 }
             }
         }
