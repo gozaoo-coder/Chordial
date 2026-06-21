@@ -10,7 +10,7 @@
  * await storageSave();
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { transport } from '@/api/transport';
 
 /**
  * 读取键值
@@ -18,7 +18,7 @@ import { invoke } from '@tauri-apps/api/core';
  * @returns {Promise<any>} 存储的值
  */
 export async function storageGet(key) {
-  return invoke('storage_get', { key });
+  return transport.command('storage_get', { key });
 }
 
 /**
@@ -28,7 +28,7 @@ export async function storageGet(key) {
  * @returns {Promise<void>}
  */
 export async function storageSet(key, value) {
-  return invoke('storage_set', { key, value });
+  return transport.command('storage_set', { key, value });
 }
 
 /**
@@ -37,7 +37,7 @@ export async function storageSet(key, value) {
  * @returns {Promise<boolean>} 是否成功删除
  */
 export async function storageRemove(key) {
-  return invoke('storage_remove', { key });
+  return transport.command('storage_remove', { key });
 }
 
 /**
@@ -46,7 +46,7 @@ export async function storageRemove(key) {
  * @returns {Promise<boolean>}
  */
 export async function storageHas(key) {
-  return invoke('storage_has', { key });
+  return transport.command('storage_has', { key });
 }
 
 /**
@@ -54,7 +54,7 @@ export async function storageHas(key) {
  * @returns {Promise<string[]>}
  */
 export async function storageKeys() {
-  return invoke('storage_keys');
+  return transport.command('storage_keys');
 }
 
 /**
@@ -62,7 +62,7 @@ export async function storageKeys() {
  * @returns {Promise<void>}
  */
 export async function storageClear() {
-  return invoke('storage_clear');
+  return transport.command('storage_clear');
 }
 
 /**
@@ -70,5 +70,5 @@ export async function storageClear() {
  * @returns {Promise<void>}
  */
 export async function storageSave() {
-  return invoke('storage_save');
+  return transport.command('storage_save');
 }

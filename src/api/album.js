@@ -3,7 +3,7 @@
  *
  * 所有返回值通过 {@link Album|AlbumSummary} 类包装。
  */
-import { invoke } from '@tauri-apps/api/core';
+import { transport } from '@/api/transport';
 import { Album, AlbumSummary } from '@/class';
 
 /**
@@ -12,7 +12,7 @@ import { Album, AlbumSummary } from '@/class';
  * @returns {Promise<Album>}
  */
 export async function getAlbum(albumId) {
-  const data = await invoke('library_get_album', { id: albumId });
+  const data = await transport.command('library_get_album', { id: albumId });
   return new Album({
     ...data,
     track_ids: data.song_ids ?? data.songIds ?? [],
@@ -25,7 +25,7 @@ export async function getAlbum(albumId) {
  * @returns {Promise<AlbumSummary>}
  */
 export async function getAlbumSummary(albumId) {
-  const data = await invoke('library_get_album', { id: albumId });
+  const data = await transport.command('library_get_album', { id: albumId });
   return new AlbumSummary(data);
 }
 
@@ -35,7 +35,7 @@ export async function getAlbumSummary(albumId) {
  * @returns {Promise<Album[]>}
  */
 export async function getAlbumsByIds(albumIds) {
-  const all = await invoke('library_get_all_albums');
+  const all = await transport.command('library_get_all_albums');
   return (albumIds || [])
     .map((id) => (all[id] ? new Album(all[id]) : null))
     .filter(Boolean);
@@ -46,7 +46,7 @@ export async function getAlbumsByIds(albumIds) {
  * @returns {Promise<AlbumSummary[]>}
  */
 export async function getAllAlbums() {
-  const data = await invoke('library_get_all_albums');
+  const data = await transport.command('library_get_all_albums');
   return Object.values(data).map((d) => new AlbumSummary(d));
 }
 
@@ -81,7 +81,7 @@ export async function getAlbumArt(albumId) {
 export async function getAlbumArtUrl(albumId) {
   try {
     // 1. 获取专辑数据
-    const albumData = await invoke('library_get_album', { id: albumId });
+    const albumData = await transport.command('library_get_album', { id: albumId });
     if (!albumData?.source_ids?.length) return '';
 
     // 2. 取第一个匹配 Album 类型的 SourceId

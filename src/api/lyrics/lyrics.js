@@ -3,7 +3,7 @@
  * 提供歌词解析、格式检测、文件读取等功能
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { transport } from '@/api/transport'
 
 /**
  * 解析歌词内容
@@ -13,7 +13,7 @@ import { invoke } from '@tauri-apps/api/core'
  */
 export async function parseLyricContent(content, format = null) {
   try {
-    return await invoke('parse_lyric_content', { content, format })
+    return await transport.command('parse_lyric_content', { content, format })
   } catch (error) {
     console.error('解析歌词失败:', error)
     throw error
@@ -27,7 +27,7 @@ export async function parseLyricContent(content, format = null) {
  */
 export async function detectLyricFormat(content) {
   try {
-    return await invoke('detect_lyric_format', { content })
+    return await transport.command('detect_lyric_format', { content })
   } catch (error) {
     console.error('检测歌词格式失败:', error)
     throw error

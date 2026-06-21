@@ -9,7 +9,7 @@
  *     → trait MusicSource::song_file_get → Vec<u8> → 前端
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { transport } from '@/api/transport';
 import { SourceId } from '@/class';
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -41,7 +41,7 @@ function toArrayBuffer(data) {
  * @returns {Promise<ArrayBuffer>} 音频文件的原始字节数据
  */
 export async function getMusicFile(sourceId) {
-  const result = await invoke('get_song_file', {
+  const result = await transport.command('get_song_file', {
     sourceIdJson: serializeSourceId(sourceId),
   });
   return toArrayBuffer(result);
@@ -57,7 +57,7 @@ export const getSongFile = getMusicFile;
  * @returns {Promise<ArrayBuffer>} 图片文件的原始字节数据（JPEG / PNG）
  */
 export async function getAlbumPicture(sourceId) {
-  const result = await invoke('get_album_picture', {
+  const result = await transport.command('get_album_picture', {
     sourceIdJson: serializeSourceId(sourceId),
   });
   return toArrayBuffer(result);
@@ -73,7 +73,7 @@ export const getAlbumArt = getAlbumPicture;
  * @returns {Promise<string>} 歌词原始文本（LRC 或纯文本）
  */
 export async function getLyricText(sourceId) {
-  return invoke('get_lyric_text', {
+  return transport.command('get_lyric_text', {
     sourceIdJson: serializeSourceId(sourceId),
   });
 }

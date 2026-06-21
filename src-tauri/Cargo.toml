@@ -4,53 +4,60 @@ version = "0.1.0"
 description = "A Music App"
 authors = ["you"]
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+default-run = "chordial"
 
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "chordial_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+path = "crates/chordial-tauri/src/lib.rs"
+
+[[bin]]
+name = "chordial"
+path = "crates/chordial-tauri/src/main.rs"
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/chordial-core",
+    "crates/chordial-server",
+]
+
+# Workspace 级共享依赖版本（各 crate 可按需引用）
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# server 层核心（库调用形式）
+chordial-core = { path = "crates/chordial-core" }
+
+# 协议响应类型（与 core 共用同一 http crate）
+http = "1"
+
+# Tauri 框架
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
+
+# 序列化（命令参数）
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-
-
-# 音乐源和缓存管理依赖
-dirs = "5"
-
-tokio = { version = "1", features = ["full"] }
-futures = "0.3"
-
-uuid = { version = "1", features = ["v4", "serde"] }
-
-# base64 编解码 — 用于自定义协议 URL 参数
-base64 = "0.22"
-
-
-
-# 音频播放引擎依赖
-symphonia = { version = "0.6", features = ["mpa", "isomp4", "aac"] }
-
-# 文件系统监听
-notify = "8"
-
-# 自定义协议响应
-http = "1"
+# 平台路径类型 + base64
 parking_lot = "0.12.5"
 
 # Android JNI 桥接（仅 Android 目标）
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 
+[features]
+# 此特性门控由 Tauri 的 mobile 入口使用
+custom-protocol = ["tauri/custom-protocol"]

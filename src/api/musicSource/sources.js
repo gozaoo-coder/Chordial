@@ -4,7 +4,7 @@
  * 当前仅支持本地来源（LocalMusicSource），网盘来源尚未实现。
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { transport } from '@/api/transport';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Local Folder Management
@@ -22,7 +22,7 @@ import { invoke } from '@tauri-apps/api/core';
  * @returns {Promise<{added: boolean, path: string, files_found: number, indexed: number, errors: string[]}>}
  */
 export async function addLocalFolder(path) {
-  return invoke('local_add_folder', { path });
+  return transport.command('local_add_folder', { path });
 }
 
 /**
@@ -37,7 +37,7 @@ export async function addLocalFolder(path) {
  * @returns {Promise<{removed: boolean, path: string, cleaned_files: number}>}
  */
 export async function removeLocalFolder(path) {
-  return invoke('local_remove_folder', { path });
+  return transport.command('local_remove_folder', { path });
 }
 
 /** 别名 —— 保持向后兼容 */
@@ -48,7 +48,7 @@ export { removeLocalFolder as remove };
  * @returns {Promise<string[]>} 文件夹路径数组
  */
 export async function getFolders() {
-  return invoke('local_get_folders');
+  return transport.command('local_get_folders');
 }
 
 /** 别名 —— 保持向后兼容 */
@@ -59,7 +59,7 @@ export { getFolders as getAll };
  * @returns {Promise<{folder_count: number, indexed_files: number}>}
  */
 export async function getLocalStats() {
-  return invoke('local_stats');
+  return transport.command('local_stats');
 }
 
 /**
@@ -67,7 +67,7 @@ export async function getLocalStats() {
  * @returns {Promise<{indexed: number, folders_scanned: number}>}
  */
 export async function rescanAll() {
-  return invoke('local_rescan');
+  return transport.command('local_rescan');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

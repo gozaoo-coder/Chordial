@@ -1,0 +1,38 @@
+[package]
+name = "chordial-core"
+version = "0.1.0"
+description = "Chordial server layer core — pure business logic, no Tauri dependency"
+edition = "2021"
+
+[lib]
+name = "chordial_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 数据目录定位
+dirs = "5"
+
+# 异步运行时（watcher / 后台任务）
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# base64 编解码 — 自定义协议 URL 参数 + 协议层
+base64 = "0.22"
+
+# 音频播放引擎依赖
+symphonia = { version = "0.6", features = ["mpa", "isomp4", "aac"] }
+
+# 文件系统监听（桌面端）
+notify = "8"
+
+# 协议响应类型（Range / StatusCode / headers）
+http = "1"
+parking_lot = "0.12.5"
+
+# Android JNI 桥接（仅 Android 目标）
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"

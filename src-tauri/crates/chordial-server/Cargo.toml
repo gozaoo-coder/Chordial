@@ -1,0 +1,31 @@
+[package]
+name = "chordial-server"
+version = "0.1.0"
+description = "Chordial web server adapter — exposes core via axum HTTP"
+edition = "2021"
+default-run = "chordial-server"
+
+[[bin]]
+name = "chordial-server"
+path = "src/main.rs"
+
+[dependencies]
+# server 层核心（库调用形式）
+chordial-core = { path = "../chordial-core" }
+
+# HTTP 服务框架
+axum = { version = "0.7", features = ["http2"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors"] }
+
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP 类型 + base64（媒体端点复用 core::media）
+http = "1"
+base64 = "0.22"
+
+# 进程/环境
+anyhow = "1"

@@ -3,7 +3,7 @@
  * 封装 Tauri 后端命令，提供前端友好的接口
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { transport } from '@/api/transport';
 import { listen } from '@tauri-apps/api/event';
 
 /**
@@ -12,7 +12,7 @@ import { listen } from '@tauri-apps/api/event';
  * @returns {Promise<{bpm: number, beat_positions: number[], downbeat_position: number|null}>}
  */
 export async function analyzeAudioBeat(filePath) {
-  return await invoke('analyze_audio_beat', { file_path: filePath });
+  return await transport.command('analyze_audio_beat', { file_path: filePath });
 }
 
 /**
@@ -21,7 +21,7 @@ export async function analyzeAudioBeat(filePath) {
  * @returns {Promise<{bpm: number, beat_positions: number[], downbeat_position: number|null}>}
  */
 export async function reanalyzeAudioBeat(filePath) {
-  return await invoke('reanalyze_audio_beat', { file_path: filePath });
+  return await transport.command('reanalyze_audio_beat', { file_path: filePath });
 }
 
 /**
@@ -30,7 +30,7 @@ export async function reanalyzeAudioBeat(filePath) {
  * @returns {Promise<{bpm: number, mix_in_point: number|null, mix_out_point: number|null, duration: number}>}
  */
 export async function getMixPoints(filePath) {
-  return await invoke('get_mix_points', { file_path: filePath });
+  return await transport.command('get_mix_points', { file_path: filePath });
 }
 
 /**
@@ -39,7 +39,7 @@ export async function getMixPoints(filePath) {
  * @returns {Promise<Array<{file_path: string, success: boolean, bpm?: number, beat_count?: number, downbeat?: number, error?: string}>>}
  */
 export async function batchAnalyzeAudio(filePaths) {
-  return await invoke('batch_analyze_audio', { file_paths: filePaths });
+  return await transport.command('batch_analyze_audio', { file_paths: filePaths });
 }
 
 /**
@@ -47,7 +47,7 @@ export async function batchAnalyzeAudio(filePaths) {
  * @returns {Promise<{entry_count: number, total_data_size: number}>}
  */
 export async function getAnalysisCacheStats() {
-  return await invoke('get_analysis_cache_stats');
+  return await transport.command('get_analysis_cache_stats');
 }
 
 /**
@@ -55,7 +55,7 @@ export async function getAnalysisCacheStats() {
  * @returns {Promise<void>}
  */
 export async function clearAnalysisCache() {
-  return await invoke('clear_analysis_cache');
+  return await transport.command('clear_analysis_cache');
 }
 
 /**
@@ -64,7 +64,7 @@ export async function clearAnalysisCache() {
  * @returns {Promise<void>}
  */
 export async function setCrossfadeEnabled(enabled) {
-  return await invoke('set_crossfade_enabled', { enabled });
+  return await transport.command('set_crossfade_enabled', { enabled });
 }
 
 /**
@@ -72,7 +72,7 @@ export async function setCrossfadeEnabled(enabled) {
  * @returns {Promise<boolean>}
  */
 export async function isCrossfadeEnabled() {
-  return await invoke('is_crossfade_enabled');
+  return await transport.command('is_crossfade_enabled');
 }
 
 /**
@@ -82,7 +82,7 @@ export async function isCrossfadeEnabled() {
  * @returns {Promise<void>}
  */
 export async function setCrossfadeConfig(durationSecs, curveType = 's_curve') {
-  return await invoke('set_crossfade_config', {
+  return await transport.command('set_crossfade_config', {
     duration_secs: durationSecs,
     curve_type: curveType
   });
@@ -94,7 +94,7 @@ export async function setCrossfadeConfig(durationSecs, curveType = 's_curve') {
  * @returns {Promise<void>}
  */
 export async function preloadNextAudio(filePath) {
-  return await invoke('preload_next_audio', { file_path: filePath });
+  return await transport.command('preload_next_audio', { file_path: filePath });
 }
 
 /**
@@ -102,7 +102,7 @@ export async function preloadNextAudio(filePath) {
  * @returns {Promise<string|null>}
  */
 export async function getNextAudioPath() {
-  return await invoke('get_next_audio_path');
+  return await transport.command('get_next_audio_path');
 }
 
 /**
@@ -112,7 +112,7 @@ export async function getNextAudioPath() {
  * @returns {Promise<void>}
  */
 export async function setCurrentTrackBpm(bpm, beatPositions) {
-  return await invoke('set_current_track_bpm', {
+  return await transport.command('set_current_track_bpm', {
     bpm,
     beat_positions: beatPositions
   });
@@ -125,7 +125,7 @@ export async function setCurrentTrackBpm(bpm, beatPositions) {
  * @returns {Promise<void>}
  */
 export async function setNextTrackBpm(bpm, beatPositions) {
-  return await invoke('set_next_track_bpm', {
+  return await transport.command('set_next_track_bpm', {
     bpm,
     beat_positions: beatPositions
   });
@@ -137,7 +137,7 @@ export async function setNextTrackBpm(bpm, beatPositions) {
  * @returns {Promise<void>}
  */
 export async function setBpmSyncEnabled(enabled) {
-  return await invoke('set_bpm_sync_enabled', { enabled });
+  return await transport.command('set_bpm_sync_enabled', { enabled });
 }
 
 /**
@@ -145,7 +145,7 @@ export async function setBpmSyncEnabled(enabled) {
  * @returns {Promise<boolean>}
  */
 export async function isBpmSyncEnabled() {
-  return await invoke('is_bpm_sync_enabled');
+  return await transport.command('is_bpm_sync_enabled');
 }
 
 /**
@@ -153,7 +153,7 @@ export async function isBpmSyncEnabled() {
  * @returns {Promise<number>}
  */
 export async function getPlaybackSpeedRatio() {
-  return await invoke('get_playback_speed_ratio');
+  return await transport.command('get_playback_speed_ratio');
 }
 
 /**
@@ -162,7 +162,7 @@ export async function getPlaybackSpeedRatio() {
  * @returns {Promise<void>}
  */
 export async function setPlaybackSpeed(speedRatio) {
-  return await invoke('set_playback_speed', { speed_ratio: speedRatio });
+  return await transport.command('set_playback_speed', { speed_ratio: speedRatio });
 }
 
 /**

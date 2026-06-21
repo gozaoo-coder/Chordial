@@ -11,7 +11,7 @@
  * const data = await storageGetBlob('artist_cover_456'); // → Uint8Array
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { transport } from '@/api/transport';
 
 /**
  * 写入二进制数据到持久化 Blob 存储（立即落盘）。
@@ -24,7 +24,7 @@ export async function storageSetBlob(key, data) {
     : data instanceof Uint8Array
       ? Array.from(data)
       : data;
-  return invoke('storage_set_blob', { key, data: bytes });
+  return transport.command('storage_set_blob', { key, data: bytes });
 }
 
 /**
@@ -33,7 +33,7 @@ export async function storageSetBlob(key, data) {
  * @returns {Promise<Uint8Array>}
  */
 export async function storageGetBlob(key) {
-  const result = await invoke('storage_get_blob', { key });
+  const result = await transport.command('storage_get_blob', { key });
   if (result instanceof Uint8Array) return result;
   if (Array.isArray(result)) return new Uint8Array(result);
   throw new Error(`无效的 Blob 响应格式: ${typeof result}`);
@@ -41,20 +41,20 @@ export async function storageGetBlob(key) {
 
 /** 删除持久化 Blob 存储项 */
 export async function storageRemoveBlob(key) {
-  return invoke('storage_remove_blob', { key });
+  return transport.command('storage_remove_blob', { key });
 }
 
 /** 检查持久化 Blob 存储项是否存在 */
 export async function storageHasBlob(key) {
-  return invoke('storage_has_blob', { key });
+  return transport.command('storage_has_blob', { key });
 }
 
 /** 获取所有持久化 Blob 存储的 key 列表 */
 export async function storageBlobKeys() {
-  return invoke('storage_blob_keys');
+  return transport.command('storage_blob_keys');
 }
 
 /** 清空所有持久化 Blob 存储项 */
 export async function storageClearBlobs() {
-  return invoke('storage_clear_blobs');
+  return transport.command('storage_clear_blobs');
 }

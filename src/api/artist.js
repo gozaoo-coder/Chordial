@@ -3,7 +3,7 @@
  *
  * 所有返回值通过 {@link Artist|ArtistSummary} 类包装。
  */
-import { invoke } from '@tauri-apps/api/core';
+import { transport } from '@/api/transport';
 import { Artist, ArtistSummary } from '@/class';
 
 /**
@@ -13,9 +13,9 @@ import { Artist, ArtistSummary } from '@/class';
  */
 export async function getArtist(artistId) {
   const [data, songs, albums] = await Promise.all([
-    invoke('library_get_artist', { id: artistId }),
-    invoke('library_get_songs_by_artist', { artistId }),
-    invoke('library_get_albums_by_artist', { artistId }),
+    transport.command('library_get_artist', { id: artistId }),
+    transport.command('library_get_songs_by_artist', { artistId }),
+    transport.command('library_get_albums_by_artist', { artistId }),
   ]);
   return new Artist({
     ...data,
@@ -32,7 +32,7 @@ export async function getArtist(artistId) {
  * @returns {Promise<ArtistSummary>}
  */
 export async function getArtistSummary(artistId) {
-  const data = await invoke('library_get_artist', { id: artistId });
+  const data = await transport.command('library_get_artist', { id: artistId });
   return new ArtistSummary(data);
 }
 
@@ -42,7 +42,7 @@ export async function getArtistSummary(artistId) {
  * @returns {Promise<Artist[]>}
  */
 export async function getArtistsByIds(artistIds) {
-  const all = await invoke('library_get_all_artists');
+  const all = await transport.command('library_get_all_artists');
   return (artistIds || [])
     .map((id) => (all[id] ? new Artist(all[id]) : null))
     .filter(Boolean);
@@ -53,7 +53,7 @@ export async function getArtistsByIds(artistIds) {
  * @returns {Promise<ArtistSummary[]>}
  */
 export async function getAllArtists() {
-  const data = await invoke('library_get_all_artists');
+  const data = await transport.command('library_get_all_artists');
   return Object.values(data).map((d) => new ArtistSummary(d));
 }
 

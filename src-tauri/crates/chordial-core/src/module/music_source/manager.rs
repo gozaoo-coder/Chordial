@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 /// 已注册来源的持久化条目（仅保存元信息，不保存实现）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SourceEntry {
+pub struct SourceEntry {
     pub name: String,
     pub source_type: SourceType,
 }

@@ -10,7 +10,7 @@
  * const theme = await configGet('theme');
  */
 
-import { invoke } from '@tauri-apps/api/core';
+import { transport } from '@/api/transport';
 
 /**
  * 读取配置项
@@ -18,7 +18,7 @@ import { invoke } from '@tauri-apps/api/core';
  * @returns {Promise<any>} 配置值
  */
 export async function configGet(key) {
-  return invoke('config_get', { key });
+  return transport.command('config_get', { key });
 }
 
 /**
@@ -28,7 +28,7 @@ export async function configGet(key) {
  * @returns {Promise<void>}
  */
 export async function configSet(key, value) {
-  return invoke('config_set', { key, value });
+  return transport.command('config_set', { key, value });
 }
 
 /**
@@ -37,7 +37,7 @@ export async function configSet(key, value) {
  * @returns {Promise<boolean>} 是否成功删除
  */
 export async function configRemove(key) {
-  return invoke('config_remove', { key });
+  return transport.command('config_remove', { key });
 }
 
 /**
@@ -46,7 +46,7 @@ export async function configRemove(key) {
  * @returns {Promise<boolean>}
  */
 export async function configHas(key) {
-  return invoke('config_has', { key });
+  return transport.command('config_has', { key });
 }
 
 /**
@@ -54,7 +54,7 @@ export async function configHas(key) {
  * @returns {Promise<string[]>}
  */
 export async function configKeys() {
-  return invoke('config_keys');
+  return transport.command('config_keys');
 }
 
 /**
@@ -62,7 +62,7 @@ export async function configKeys() {
  * @returns {Promise<void>}
  */
 export async function configClear() {
-  return invoke('config_clear');
+  return transport.command('config_clear');
 }
 
 /**
@@ -71,7 +71,7 @@ export async function configClear() {
  * @returns {Promise<void>}
  */
 export async function configFlush() {
-  return invoke('config_flush');
+  return transport.command('config_flush');
 }
 
 /**
@@ -79,5 +79,5 @@ export async function configFlush() {
  * @returns {Promise<void>}
  */
 export async function configReload() {
-  return invoke('config_reload');
+  return transport.command('config_reload');
 }
