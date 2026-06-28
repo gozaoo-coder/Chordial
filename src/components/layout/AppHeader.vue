@@ -206,7 +206,7 @@ const goToSettings = () => {
 
 @media (max-width: 768px) {
   .app-header {
-    padding: 0 12px;
+    padding: 0 0;
     padding-top: var(--safe-area-top);
   }
 
@@ -219,8 +219,8 @@ const goToSettings = () => {
   }
 
   .header-center {
-    margin: 0 12px;
-    max-width: 200px;
+  margin: 0 20px;
+    max-width: none;
   }
 
   .search-box input {
@@ -249,13 +249,15 @@ const goToSettings = () => {
 
 @media (max-width: 480px) {
   .app-header {
-    padding: 0 8px;
+    padding: 0 0;
     padding-top: var(--safe-area-top);
   }
 
   .header-center {
-    margin: 0 8px;
-    max-width: 120px;
+    /* margin: 0 8px; */
+  margin: 0 20px;
+    max-width: none;
+    /* max-width: 120px; */
   }
 
   .search-box input::placeholder {
