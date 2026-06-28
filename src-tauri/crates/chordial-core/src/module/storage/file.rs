@@ -29,6 +29,11 @@ impl FileBackend {
         Self { path }
     }
 
+    /// 返回 JSON 文件的完整路径。
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
+
     /// 确保文件所在目录存在，不存在则递归创建。
     fn ensure_dir(&self) -> Result<(), String> {
         if let Some(parent) = self.path.parent() {
@@ -56,7 +61,7 @@ impl StorageBackend for FileBackend {
 
     fn write(&self, data: &HashMap<String, Value>) -> Result<(), String> {
         self.ensure_dir()?;
-        let content = serde_json::to_string_pretty(data)
+        let content = serde_json::to_string(data)
             .map_err(|e| format!("序列化失败: {}", e))?;
         fs::write(&self.path, &content)
             .map_err(|e| format!("写文件失败: {}", e))

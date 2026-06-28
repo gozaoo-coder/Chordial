@@ -42,6 +42,38 @@ pub fn read_dir_entries(path: &PlatformPath) -> Result<Vec<PlatformPath>, String
     Ok(entries)
 }
 
+/// 列出目录下所有条目及其类型（非递归）。
+///
+/// 桌面端使用 `DirEntry::file_type()`，在 Windows 上利用
+/// `dwFileAttributes` 避免额外的 syscall。
+pub fn read_dir_entries_with_file_type(
+    path: &PlatformPath,
+) -> Result<Vec<(PlatformPath, bool)>, String> {
+    let mut entries = Vec::new();
+    let dir = std::fs::read_dir(path)
+        .map_err(|e| format!("读取目录失败 '{}': {}", path.display(), e))?;
+    for entry in dir {
+        let entry = entry.map_err(|e| format!("读取目录条目失败: {}", e))?;
+        let is_dir = entry
+            .file_type()
+            .map(|ft| ft.is_dir())
+            .unwrap_or(false);
+        entries.push((entry.path(), is_dir));
+    }
+    Ok(entries)
+}
+
+/// 获取文件修改时间（Unix 秒）。
+pub fn file_modified_secs(path: &PlatformPath) -> Result<u64, String> {
+    let meta = std::fs::metadata(path)
+        .map_err(|e| format!("获取文件元数据失败 '{}': {}", path.display(), e))?;
+    meta.modified()
+        .map_err(|e| format!("获取修改时间失败 '{}': {}", path.display(), e))?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("时间转换失败: {}", e))
+        .map(|d| d.as_secs())
+}
+
 /// 获取文件大小（字节）。
 pub fn file_size(path: &PlatformPath) -> Result<u64, String> {
     let meta = std::fs::metadata(path)

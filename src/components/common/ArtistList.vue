@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCoverImages } from '@/composables/useCoverImage';
 import { useVirtualList } from '@/composables/useVirtualList';
@@ -24,16 +24,29 @@ const containerRef = ref(null);
 const artistsRef = computed(() => props.artists);
 const { coverUrls } = useCoverImages(artistsRef, 'small');
 
-// 计算每项高度（歌手卡片高度 = 封面高度 + 信息区域高度）
-const itemHeight = computed(() => {
-  // 根据屏幕宽度动态计算
-  const width = window.innerWidth;
-  if (width <= 480) return 180; // 小屏幕
-  if (width <= 767) return 200; // 平板
-  return 220; // 桌面
+// 根据容器宽度动态计算列数
+const containerWidth = ref(window.innerWidth);
+const columns = computed(() => {
+  const w = containerWidth.value;
+  if (w <= 480) return 2;   // 小屏幕 2 列
+  if (w <= 767) return 3;   // 平板竖屏 3 列
+  if (w <= 900) return 3;   // 平板横屏 3 列
+  if (w <= 1200) return 4;  // 中等屏幕 4 列
+  return 5;                 // 大屏幕 5 列
 });
 
-// 虚拟列表
+// 动态计算行高：卡片内容宽度 = 封面正方形高度 + 间距 + 文字区域 + 行间距
+const itemHeight = computed(() => {
+  const w = containerWidth.value;
+  const cols = columns.value;
+  // 卡片像素宽度 → 减去左右 padding (8px*2) → 封面正方形边长
+  // + margin-bottom (14px) + 文字区域 (~42px) + 行间距 (20px)
+  const cardWidth = w / cols;
+  const coverSize = cardWidth - 16; // padding: 0 8px
+  return coverSize + 14 + 42 + 20;
+});
+
+// 虚拟列表（网格模式）
 const {
   visibleItems,
   totalHeight,
@@ -42,7 +55,26 @@ const {
 } = useVirtualList(artistsRef, {
   itemHeight: itemHeight.value,
   bufferSize: 3,
-  containerRef
+  containerRef,
+  columns: columns.value,
+});
+
+// 监听容器宽度变化
+let resizeTimer = null;
+const handleResize = () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    containerWidth.value = window.innerWidth;
+  }, 100);
+};
+
+onMounted(() => {
+  window.addEventListener('resize', handleResize);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize);
+  if (resizeTimer) clearTimeout(resizeTimer);
 });
 
 const handleArtistClick = (artist) => {
@@ -89,10 +121,14 @@ const getAlbumCount = (artist) => {
       <!-- 可视区域 -->
       <div class="viewport" :style="{ height: totalHeight + 'px' }">
         <div
-          v-for="{ item: artist, index, offsetY } in visibleItems"
+          v-for="{ item: artist, index, offsetY, offsetX, width } in visibleItems"
           :key="artist.id"
           class="artist-card virtual-item"
-          :style="{ transform: `translateY(${offsetY}px)` }"
+          :style="{
+            left: offsetX + '%',
+            top: offsetY + 'px',
+            width: width + '%'
+          }"
           @click="handleArtistClick(artist)"
         >
           <div class="artist-cover-wrapper">
@@ -187,34 +223,17 @@ const getAlbumCount = (artist) => {
 /* 虚拟列表项使用绝对定位 */
 .artist-card.virtual-item {
   position: absolute;
+  top: 0;
   left: 0;
-  right: 0;
-  width: calc(20% - 16px); /* 5列布局 */
   contain: layout style paint;
+  padding: 0 8px;
+  box-sizing: border-box;
 }
 
-@media (max-width: 1200px) {
-  .artist-card.virtual-item {
-    width: calc(25% - 15px); /* 4列布局 */
-  }
-}
-
-@media (max-width: 900px) {
-  .artist-card.virtual-item {
-    width: calc(33.333% - 14px); /* 3列布局 */
-  }
-}
-
-@media (max-width: 767px) {
-  .artist-card.virtual-item {
-    width: calc(33.333% - 14px); /* 3列布局 */
-  }
-}
-
-@media (max-width: 480px) {
-  .artist-card.virtual-item {
-    width: calc(50% - 10px); /* 2列布局 */
-  }
+/* 虚拟列表项悬停时上浮（不影响定位） */
+.artist-card.virtual-item:hover {
+  transform: translateY(-6px);
+  z-index: 1;
 }
 
 .artist-cover-wrapper {

@@ -45,6 +45,7 @@
           :is-playing="isPlaying"
           :volume="volume"
           :play-mode="playMode"
+          :album-cover-url="albumCoverUrl"
           @play="play"
           @pause="pause"
           @seek="seek"

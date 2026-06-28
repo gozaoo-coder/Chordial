@@ -1,21 +1,24 @@
 <template>
   <div class="player-control-bar">
-    <!-- 进度条 -->
-    <div class="progress-section">
-      <span class="time">{{ formatTime(currentTime) }}</span>
-      <input type="range" class="progress-slider" :min="0" :max="duration" :value="currentTime" @input="onSeek" />
-      <span class="time">{{ formatTime(duration) }}</span>
+    <!-- 模糊封面背景 -->
+    <div class="bar-bg" v-if="albumCoverUrl">
+      <img :src="albumCoverUrl" alt="" />
     </div>
 
-    <!-- 控制按钮 -->
     <div class="controls-section">
-      <button class="control-btn" @click="$emit('toggle-play-mode')">
-        <i :class="playModeIcon"></i>
-      </button>
+      <!-- 专辑封面 -->
+      <div class="album-cover-thumb" v-if="albumCoverUrl">
+        <img :src="albumCoverUrl" alt="专辑封面" />
+      </div>
+      <div class="album-cover-thumb placeholder" v-else>
+        <i class="bi bi-disc-fill"></i>
+      </div>
 
-      <button class="control-btn" @click="$emit('previous')">
-        <i class="bi bi-skip-start-fill"></i>
-      </button>
+      <!-- 歌曲信息 -->
+      <div class="track-info" v-if="trackTitle">
+        <span class="track-title">{{ trackTitle }}</span>
+        <span class="track-meta">{{ trackMeta }}</span>
+      </div>
 
       <button class="control-btn play-btn" @click="togglePlay">
         <i :class="isPlaying ? 'bi bi-pause-fill' : 'bi bi-play-fill'"></i>
@@ -24,12 +27,6 @@
       <button class="control-btn" @click="$emit('next')">
         <i class="bi bi-skip-end-fill"></i>
       </button>
-
-      <!-- 音量控制 -->
-      <div class="volume-control">
-        <i :class="volumeIcon" @click="$emit('toggle-mute')"></i>
-        <input type="range" class="volume-slider" min="0" max="1" step="0.01" :value="volume" @input="onVolumeChange" />
-      </div>
     </div>
   </div>
 </template>
@@ -37,10 +34,12 @@
 <script setup>
 /**
  * PlayerControlBar - 播放器控制栏
- * 
- * 提供播放控制、进度条、音量控制等功能
+ *
+ * 提供播放控制、歌曲信息展示、封面模糊背景等功能。
+ * 从 PlayerStore 读取当前播放状态和歌曲元数据。
  */
 import { computed } from 'vue'
+import { PlayerStore } from '@/stores/player.js'
 
 const props = defineProps({
   currentTime: {
@@ -66,6 +65,10 @@ const props = defineProps({
   muted: {
     type: Boolean,
     default: false
+  },
+  albumCoverUrl: {
+    type: String,
+    default: null
   }
 })
 
@@ -79,6 +82,15 @@ const emit = defineEmits([
   'next',
   'toggle-mute'
 ])
+
+const trackTitle = computed(() => PlayerStore.state.currentTrack?.title ?? '')
+const trackArtist = computed(() => PlayerStore.state.currentTrack?.artist ?? '')
+const trackAlbum  = computed(() => PlayerStore.state.currentTrack?.albumTitle ?? '')
+
+const trackMeta = computed(() => {
+  const parts = [trackArtist.value, trackAlbum.value].filter(Boolean)
+  return parts.join(' · ')
+})
 
 // 播放模式图标
 const playModeIcon = computed(() => {
@@ -133,73 +145,74 @@ const formatTime = (seconds) => {
 <style scoped>
 .player-control-bar {
   display: flex;
-  position: fixed;
   flex-direction: column;
-  /* gap: 0.75rem; */
-  padding: 1rem;
-  /* color: white; */
   position: fixed;
-  bottom: 1.5rem;
-
+  bottom: calc(1.5rem + var(--safe-area-bottom));
   right: 0.9rem;
-  padding: 16px 16px;
+  height: var(--bottom-nav-height);
+  padding: 0.5rem 1rem;
+  backdrop-filter:saturate(180%) blur(20px) ;
   transition: bottom var(--transition-slow);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-radius: calc(var(--bottom-nav-height) * 0.9);
+  border-radius: calc(var(--bottom-nav-height) * 0.6);
   background: var(--bg-glass);
   border: 1px solid var(--border-light);
+  justify-content: center;
+  overflow: hidden;
+  isolation: isolate;
 }
 
-.progress-section {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+/* 模糊封面背景层 */
+.bar-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
-.time {
-  font-size: 0.75rem;
-  opacity: 0.8;
-  min-width: 2.5rem;
-  text-align: center;
+.bar-bg img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(22px) brightness(0.55) saturate(1.3);
+  transform: scale(1.15);
 }
 
-.progress-slider {
-  flex: 1;
-  height: 4px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 2px;
-  cursor: pointer;
-}
-
-.progress-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: white;
-  cursor: pointer;
+.bar-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    160deg,
+    rgba(0, 0, 0, 0.35) 0%,
+    rgba(0, 0, 0, 0.05) 45%,
+    rgba(0, 0, 0, 0.2) 100%
+  );
 }
 
 .controls-section {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 1rem;
+  gap: 0.75rem;
+  position: relative;
+  z-index: 1;
 }
 
 .control-btn {
   background: none;
   border: none;
-  /* color: white; */
   font-size: 1.25rem;
   cursor: pointer;
   padding: 0.2rem 0.5rem 0 0.5rem;
-  opacity: 0.8;
+  opacity: 0.85;
   transition: opacity 0.2s;
+  flex-shrink: 0;
+  color: var(--text-primary);
+}
+
+/* 有封面背景时切换为白色文字 */
+.bar-bg ~ .controls-section .control-btn {
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .control-btn:hover {
@@ -207,38 +220,92 @@ const formatTime = (seconds) => {
 }
 
 .play-btn {
-  font-size: 2rem;
+  font-size: 1.75rem;
 }
 
-.volume-control {
+/* 专辑封面缩略图 */
+.album-cover-thumb {
+  width: 2.5rem;
+  border: 1px solid var(--border-light);
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.album-cover-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.album-cover-thumb.placeholder {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-left: 1rem;
+  justify-content: center;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-light);
+  box-shadow: none;
 }
 
-.volume-control i {
-  font-size: 1rem;
-  cursor: pointer;
+.album-cover-thumb.placeholder i {
+  font-size: 1.25rem;
+  opacity: 0.5;
 }
 
-.volume-slider {
-  width: 80px;
-  height: 4px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 2px;
-  cursor: pointer;
+/* 歌曲信息 */
+.track-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 12rem;
+  line-height: 1.25;
 }
 
-.volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: white;
-  cursor: pointer;
+.track-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar-bg ~ .controls-section .track-title {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.track-meta {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.bar-bg ~ .controls-section .track-meta {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+@media (max-width: 767px) {
+  .player-control-bar {
+    right: 1rem;
+    left: 1rem;
+    /* bottom: calc(var(--bottom-nav-height) + 0.5rem); */
+    /* border-radius: 1rem; */
+    /* padding: 0.4rem 0.75rem; */
+  }
+
+  .controls-section {
+    gap: 0.5rem;
+  }
+
+  .track-info {
+    flex: 1;
+    max-width: none;
+  }
 }
 </style>

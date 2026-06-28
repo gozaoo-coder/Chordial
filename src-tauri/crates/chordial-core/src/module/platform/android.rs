@@ -82,6 +82,35 @@ pub fn read_dir_entries(path: &PlatformPath) -> Result<Vec<PlatformPath>, String
     Ok(entries)
 }
 
+/// 列出目录下所有条目及其类型（非递归）。
+///
+/// 返回 `(path, is_dir)` 元组。对于 content URI，所有条目都视为文件。
+pub fn read_dir_entries_with_file_type(
+    path: &PlatformPath,
+) -> Result<Vec<(PlatformPath, bool)>, String> {
+    if is_content_uri(path) {
+        let json = super::bridge::query_audio_files(path)
+            .map_err(|e| format!("MediaStore 查询失败: {}", e))?;
+        return parse_audio_json(&json)
+            .map(|uris| uris.into_iter().map(|u| (u, false)).collect());
+    }
+    let mut entries = Vec::new();
+    let dir = std::fs::read_dir(path)
+        .map_err(|e| format!("读取目录失败 '{}': {}", path, e))?;
+    for entry in dir {
+        let entry = entry.map_err(|e| format!("读取目录条目失败: {}", e))?;
+        let is_dir = entry
+            .file_type()
+            .map(|ft| ft.is_dir())
+            .unwrap_or(false);
+        entries.push((
+            entry.path().to_string_lossy().to_string(),
+            is_dir,
+        ));
+    }
+    Ok(entries)
+}
+
 /// 解析 `queryAudioFiles` 返回的 JSON 数组，提取 content URI。
 fn parse_audio_json(json: &str) -> Result<Vec<String>, String> {
     let parsed: serde_json::Value = serde_json::from_str(json)
@@ -95,6 +124,21 @@ fn parse_audio_json(json: &str) -> Result<Vec<String>, String> {
         }
     }
     Ok(uris)
+}
+
+/// 获取文件修改时间（Unix 秒）。
+pub fn file_modified_secs(path: &PlatformPath) -> Result<u64, String> {
+    if is_content_uri(path) {
+        return Err("Content URI 不支持获取修改时间".to_string());
+    }
+    let p = std::path::Path::new(path);
+    let meta = std::fs::metadata(p)
+        .map_err(|e| format!("获取文件元数据失败 '{}': {}", path, e))?;
+    meta.modified()
+        .map_err(|e| format!("获取修改时间失败 '{}': {}", path, e))?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("时间转换失败: {}", e))
+        .map(|d| d.as_secs())
 }
 
 /// 获取文件大小（字节）。

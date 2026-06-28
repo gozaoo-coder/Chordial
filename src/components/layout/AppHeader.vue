@@ -2,9 +2,12 @@
 import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import WindowControls from '@/components/WindowControls.vue';
+import { usePlatform } from '@/composables/usePlatform.js';
 
 const route = useRoute();
 const router = useRouter();
+
+const { isDesktop } = usePlatform();
 
 const pageTitle = computed(() => {
   return route.meta?.title || 'Chordial';
@@ -25,8 +28,8 @@ const goToSettings = () => {
 
 <template>
   <header class="app-header">
-    <!-- 窗口拖动区域 -->
-    <div class="drag-region"></div>
+    <!-- 窗口拖动区域 - 仅桌面端 -->
+    <div v-if="isDesktop" class="drag-region"></div>
 
     <div class="header-left">
       <!-- <h1 class="app-title">Chordial</h1> -->
@@ -52,8 +55,8 @@ const goToSettings = () => {
       <button class="icon-btn notification-btn" title="通知">
         <i class="bi bi-bell"></i>
       </button>
-      <!-- 窗口控制按钮 -->
-      <WindowControls />
+      <!-- 窗口控制按钮 - 仅桌面端 -->
+      <WindowControls v-if="isDesktop" />
     </div>
   </header>
 </template>
@@ -65,13 +68,14 @@ const goToSettings = () => {
   align-items: center;
   justify-content: space-between;
   padding: 0 20px 0 24px;
+  padding-top: var(--safe-area-top);
   position: sticky;
   top: 0;
   z-index: 100;
-  /* backdrop-filter: saturate(180%) blur(20px); */
-  /* background: var(--bg-glass); */
-  /* border-bottom: 1px solid var(--border-light); */
-  /* -webkit-backdrop-filter: saturate(180%) blur(20px); */
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  background: var(--bg-glass);
+  border-bottom: 1px solid var(--border-light);
 }
 
 /* 窗口拖动区域 */
@@ -139,15 +143,13 @@ const goToSettings = () => {
   padding: 0 16px 0 40px;
   border: 1px solid var(--border-light);
   border-radius: 19px;
-  background: var(--bg-tertiary);
+  background: var(--bg-glass);
   color: var(--text-primary);
   font-size: 14px;
   font-weight: 400;
   transition: all var(--transition-normal);
   -webkit-app-region: no-drag;
-    backdrop-filter: saturate(180%) blur(20px);
-  background: var(--bg-glass);
-  border-bottom: 1px solid var(--border-light);
+  backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
@@ -175,16 +177,15 @@ const goToSettings = () => {
   height: 36px;
   border: none;
   border-radius: 50%;
-  background: transparent;
+  background: var(--bg-glass);
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   backdrop-filter: saturate(180%) blur(20px);
-  background: var(--bg-glass);
-  border-bottom: 1px solid var(--border-light);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid var(--border-light);
   transition: all var(--transition-fast);
   -webkit-app-region: no-drag;
 }
@@ -206,10 +207,7 @@ const goToSettings = () => {
 @media (max-width: 768px) {
   .app-header {
     padding: 0 12px;
-  }
-
-  .drag-region {
-    right: 100px;
+    padding-top: var(--safe-area-top);
   }
 
   .app-title {
@@ -252,10 +250,7 @@ const goToSettings = () => {
 @media (max-width: 480px) {
   .app-header {
     padding: 0 8px;
-  }
-
-  .drag-region {
-    right: 90px;
+    padding-top: var(--safe-area-top);
   }
 
   .header-center {
@@ -286,7 +281,7 @@ const goToSettings = () => {
   }
 
   .search-box input {
-    background: var(--bg-tertiary);
+    background: var(--bg-glass);
     border-color: var(--border-light);
   }
 
@@ -297,7 +292,7 @@ const goToSettings = () => {
   }
 
   .icon-btn {
-    background: transparent;
+    background: var(--bg-glass);
     color: var(--text-secondary);
   }
 

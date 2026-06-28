@@ -169,9 +169,9 @@ pub fn collect_audio_files(root: &PlatformPath) -> Vec<PlatformPath> {
 }
 
 fn collect_audio_files_recursive(dir: &PlatformPath, files: &mut Vec<PlatformPath>) {
-    if let Ok(entries) = platform::read_dir_entries(dir) {
-        for entry in entries {
-            if platform::is_dir(&entry) {
+    if let Ok(entries) = platform::read_dir_entries_with_file_type(dir) {
+        for (entry, is_dir) in entries {
+            if is_dir {
                 collect_audio_files_recursive(&entry, files);
             } else if super::scanner::is_supported_audio(&entry) {
                 files.push(entry);

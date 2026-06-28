@@ -2,6 +2,7 @@
 import { ref, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Track } from '../class';
+import { getSong } from '../api/musicSource/library';
 import TrackList from '../components/common/TrackList.vue';
 import { useCoverImage } from '@/composables/useCoverImage';
 import PlayerStore from '@/stores/player.js';
@@ -24,7 +25,7 @@ onMounted(async () => {
   }
 
   try {
-    track.value = await Track.getById(trackId);
+    track.value = await getSong(trackId);
     // 歌曲数据加载后，封面会自动加载
   } catch (error) {
     console.error('Failed to load track:', error);

@@ -76,6 +76,21 @@
   --sidebar-width: 220px;
   --bottom-nav-height: 64px;
   --player-bar-height: 100px;
+
+  /* Safe area insets - system status bar / navigation bar */
+  --safe-area-top: 0px;
+  --safe-area-bottom: 0px;
+  --safe-area-left: 0px;
+  --safe-area-right: 0px;
+}
+
+@supports (padding-top: env(safe-area-inset-top)) {
+  :root {
+    --safe-area-top: env(safe-area-inset-top, 0px);
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-left: env(safe-area-inset-left, 0px);
+    --safe-area-right: env(safe-area-inset-right, 0px);
+  }
 }
 
 /* 深色模式 - Apple 风格 */

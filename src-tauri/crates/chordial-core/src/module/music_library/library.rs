@@ -48,6 +48,16 @@ impl MusicLibrary {
         self.store.reload()
     }
 
+    /// 返回持久化存储的文件路径。
+    pub fn store_path(&self) -> &std::path::PathBuf {
+        self.store.path()
+    }
+
+    /// 从内存缓存中删除指定 key（标记脏，下次 save 时落盘）。
+    pub fn remove_store_key(&self, key: &str) {
+        self.store.remove(key);
+    }
+
     // ── Song ─────────────────────────────────────────
 
     pub fn song_count(&self) -> usize {
@@ -64,82 +74,39 @@ impl MusicLibrary {
 
     /// 添加一首歌曲（智能去重合并 + 自动初始化艺人/专辑）。
     ///
-    /// # 行为
-    ///
-    /// - **去重检测**：若库中已存在标题 + 艺人名集合完全相同的歌曲，则进入合并模式。
-    /// - **合并模式**：将新 song 的 `source_ids` 合并到已有歌曲、艺人、专辑的 `source_ids` 中；
-    ///   同时将 song.id 加入专辑的 `song_ids`。
-    /// - **新建模式**：直接插入歌曲，并为尚未存在的艺人、专辑自动创建初始数据
-    ///   （名称取自 `song.artist_names` / `song.album_title`，来源 ID 由歌曲的 source_ids 派生）。
-    pub fn add_song(&self, song: &Song) -> Result<(), String> {
-        // 1. 查找重复歌曲
-        if let Some(mut existing) =
-            songs::find_duplicate(&self.store, &song.title, &song.artist_names)
-        {
-            // ── 合并模式 ──
+    /// 一次性加载 songs/artists/albums 到内存中处理，避免对每项实体反复反序列化。
+    /// 仅当数据实际变化时才写回存储。
+    /// 返回库中实际存储的歌曲 ID（合并模式返回已有歌曲 ID，新建模式返回新 ID）。
+    pub fn add_song(&self, song: &Song) -> Result<String, String> {
+        let mut all_songs = songs::get_all(&self.store);
+        let mut all_artists = artists::get_all(&self.store);
+        let mut all_albums = albums::get_all(&self.store);
 
-            // a) 合并 source_ids + artist_ids 到已有歌曲
-            merge_source_ids(&mut existing.source_ids, &song.source_ids);
-            for aid in &song.artist_ids {
-                if !existing.artist_ids.contains(aid) {
-                    existing.artist_ids.push(aid.clone());
-                }
-            }
-            if existing.album_id.is_none() {
-                existing.album_id = song.album_id.clone();
-                existing.album_title = song.album_title.clone();
-            }
-            songs::update(&self.store, &existing)?;
+        let mut song_index = build_song_index(&all_songs);
+        let mut artist_name_index = build_artist_name_index(&all_artists);
+        let mut album_index = build_album_index(&all_albums);
 
-            // b) 合并到艺人
-            self.merge_or_init_artists(
-                &song.artist_ids,
-                &song.artist_names,
-                &song.source_ids,
-            )?;
+        let (stored_id, sc, ac, alc) = merge_or_init_song_in_memory(
+            song,
+            &mut all_songs,
+            &mut all_artists,
+            &mut all_albums,
+            &mut song_index,
+            &mut artist_name_index,
+            &mut album_index,
+        );
 
-            // c) 合并到专辑
-            if let (Some(album_id), Some(album_title)) =
-                (&song.album_id, &song.album_title)
-            {
-                let artist_id = song.artist_ids.first().map(|s| s.as_str()).unwrap_or("");
-                self.merge_or_init_album(
-                    album_id,
-                    album_title,
-                    artist_id,
-                    &song.source_ids,
-                    &existing.id,
-                )?;
-            }
-        } else {
-            // ── 新建模式 ──
-
-            // a) 插入歌曲
-            songs::add(&self.store, song)?;
-
-            // b) 确保艺人存在
-            self.merge_or_init_artists(
-                &song.artist_ids,
-                &song.artist_names,
-                &song.source_ids,
-            )?;
-
-            // c) 确保专辑存在
-            if let (Some(album_id), Some(album_title)) =
-                (&song.album_id, &song.album_title)
-            {
-                let artist_id = song.artist_ids.first().map(|s| s.as_str()).unwrap_or("");
-                self.merge_or_init_album(
-                    album_id,
-                    album_title,
-                    artist_id,
-                    &song.source_ids,
-                    &song.id,
-                )?;
-            }
+        if sc {
+            self.store.set("songs", &all_songs)?;
+        }
+        if ac {
+            self.store.set("artists", &all_artists)?;
+        }
+        if alc {
+            self.store.set("albums", &all_albums)?;
         }
 
-        Ok(())
+        Ok(stored_id)
     }
 
     pub fn update_song(&self, song: &Song) -> Result<(), String> {
@@ -476,86 +443,289 @@ impl MusicLibrary {
         Ok(())
     }
 
+    /// 批量添加歌曲（智能去重合并 + 自动初始化艺人/专辑）。
+    ///
+    /// 一次性加载全部数据，预建 O(1) 查重索引后逐首合并。
+    /// 仅当数据实际变化时才序列化写回对应集合。
+    ///
+    /// 返回与输入等长的 `Vec<String>`，每个元素为对应歌曲在库中的实际存储 ID。
+    pub fn add_songs_batch(&self, songs: &[Song]) -> Result<Vec<String>, String> {
+        let mut all_songs = songs::get_all(&self.store);
+        let mut all_artists = artists::get_all(&self.store);
+        let mut all_albums = albums::get_all(&self.store);
+
+        let mut song_index = build_song_index(&all_songs);
+        let mut artist_name_index = build_artist_name_index(&all_artists);
+        let mut album_index = build_album_index(&all_albums);
+
+        let mut songs_changed = false;
+        let mut artists_changed = false;
+        let mut albums_changed = false;
+        let mut stored_ids = Vec::with_capacity(songs.len());
+
+        for song in songs {
+            let (stored_id, sc, ac, alc) = merge_or_init_song_in_memory(
+                song,
+                &mut all_songs,
+                &mut all_artists,
+                &mut all_albums,
+                &mut song_index,
+                &mut artist_name_index,
+                &mut album_index,
+            );
+            stored_ids.push(stored_id);
+            songs_changed |= sc;
+            artists_changed |= ac;
+            albums_changed |= alc;
+        }
+
+        if songs_changed {
+            self.store.set("songs", &all_songs)?;
+        }
+        if artists_changed {
+            self.store.set("artists", &all_artists)?;
+        }
+        if albums_changed {
+            self.store.set("albums", &all_albums)?;
+        }
+
+        Ok(stored_ids)
+    }
+
     // ── 私有辅助 ─────────────────────────────────────
 
-    /// 合并或初始化一组艺人：按 ID 查找 → 按名称查找 → 新建。
-    fn merge_or_init_artists(
-        &self,
-        artist_ids: &[String],
-        artist_names: &[String],
-        song_source_ids: &[SourceId],
-    ) -> Result<(), String> {
-        let artist_sids: Vec<SourceId> = song_source_ids
-            .iter()
-            .map(|s| s.with_entity_type(EntityType::Artist))
-            .collect();
+}
 
-        for (i, artist_id) in artist_ids.iter().enumerate() {
-            let artist_name = artist_names.get(i).map(|s| s.as_str()).unwrap_or("");
+/// 在内存中合并或插入一首歌。
+///
+/// 使用预建索引实现 O(1) 去重查找。索引在新建条目时会同步更新。
+///
+/// 返回 `(stored_id, songs_changed, artists_changed, albums_changed)`。
+fn merge_or_init_song_in_memory(
+    song: &Song,
+    all_songs: &mut HashMap<String, Song>,
+    all_artists: &mut HashMap<String, Artist>,
+    all_albums: &mut HashMap<String, Album>,
+    song_index: &mut HashMap<(String, Vec<String>), String>,
+    artist_name_index: &mut HashMap<String, String>,
+    album_index: &mut HashMap<(String, String), String>,
+) -> (String, bool, bool, bool) {
+    let title_lower = song.title.to_lowercase();
+    let mut names_sorted: Vec<String> = song.artist_names.iter().map(|n| n.to_lowercase()).collect();
+    names_sorted.sort();
+    let lookup_key = (title_lower, names_sorted);
 
-            if let Some(mut artist) = artists::get(&self.store, artist_id) {
-                // 按 ID 找到 → 合并 source_ids
+    if let Some(existing_id) = song_index.get(&lookup_key).cloned() {
+        // ── 合并模式 ──
+        let mut songs_changed = false;
+
+        if let Some(existing) = all_songs.get_mut(&existing_id) {
+            let sid_before = existing.source_ids.len();
+            merge_source_ids(&mut existing.source_ids, &song.source_ids);
+            if existing.source_ids.len() > sid_before {
+                songs_changed = true;
+            }
+            for aid in &song.artist_ids {
+                if !existing.artist_ids.contains(aid) {
+                    existing.artist_ids.push(aid.clone());
+                    songs_changed = true;
+                }
+            }
+            if existing.album_id.is_none() {
+                existing.album_id = song.album_id.clone();
+                existing.album_title = song.album_title.clone();
+                songs_changed = true;
+            }
+        }
+
+        let artists_changed = merge_artists_in_memory(
+            &song.artist_ids,
+            &song.artist_names,
+            &song.source_ids,
+            all_artists,
+            artist_name_index,
+        );
+
+        let mut albums_changed = false;
+        if let (Some(album_id), Some(album_title)) = (&song.album_id, &song.album_title) {
+            albums_changed = merge_album_in_memory(
+                album_id,
+                album_title,
+                &song.artist_ids,
+                &song.source_ids,
+                &existing_id,
+                all_albums,
+                album_index,
+            );
+        }
+
+        (existing_id, songs_changed, artists_changed, albums_changed)
+    } else {
+        // ── 新建模式 ──
+        all_songs.insert(song.id.clone(), song.clone());
+        song_index.insert(lookup_key, song.id.clone());
+
+        let artists_changed = merge_artists_in_memory(
+            &song.artist_ids,
+            &song.artist_names,
+            &song.source_ids,
+            all_artists,
+            artist_name_index,
+        );
+
+        let mut albums_changed = false;
+        if let (Some(album_id), Some(album_title)) = (&song.album_id, &song.album_title) {
+            albums_changed = merge_album_in_memory(
+                album_id,
+                album_title,
+                &song.artist_ids,
+                &song.source_ids,
+                &song.id,
+                all_albums,
+                album_index,
+            );
+        }
+
+        (song.id.clone(), true, artists_changed, albums_changed)
+    }
+}
+
+/// 在内存中合并或创建艺人，使用名称索引 O(1) 查找。返回是否有变化。
+fn merge_artists_in_memory(
+    artist_ids: &[String],
+    artist_names: &[String],
+    song_source_ids: &[SourceId],
+    all_artists: &mut HashMap<String, Artist>,
+    artist_name_index: &mut HashMap<String, String>,
+) -> bool {
+    let artist_sids: Vec<SourceId> = song_source_ids
+        .iter()
+        .map(|s| s.with_entity_type(EntityType::Artist))
+        .collect();
+    let mut changed = false;
+
+    for (i, artist_id) in artist_ids.iter().enumerate() {
+        let artist_name = artist_names.get(i).map(|s| s.as_str()).unwrap_or("");
+
+        if let Some(artist) = all_artists.get_mut(artist_id) {
+            let sid_before = artist.source_ids.len();
+            merge_source_ids(&mut artist.source_ids, &artist_sids);
+            if artist.source_ids.len() > sid_before {
+                changed = true;
+            }
+        } else if let Some(aid) = artist_name_index.get(&artist_name.to_lowercase()).cloned() {
+            if let Some(artist) = all_artists.get_mut(&aid) {
+                let sid_before = artist.source_ids.len();
                 merge_source_ids(&mut artist.source_ids, &artist_sids);
-                artists::update(&self.store, &artist)?;
-            } else if let Some(mut artist) = artists::find_by_name(&self.store, artist_name) {
-                // 按名称找到（不同 ID）→ 合并 source_ids
-                merge_source_ids(&mut artist.source_ids, &artist_sids);
-                artists::update(&self.store, &artist)?;
-            } else {
-                // 不存在 → 新建
-                let artist = Artist {
+                if artist.source_ids.len() > sid_before {
+                    changed = true;
+                }
+            }
+        } else {
+            all_artists.insert(
+                artist_id.clone(),
+                Artist {
                     id: artist_id.clone(),
                     name: artist_name.to_string(),
                     bio: None,
                     source_ids: artist_sids.clone(),
-                };
-                artists::add(&self.store, &artist)?;
-            }
+                },
+            );
+            artist_name_index.insert(artist_name.to_lowercase(), artist_id.clone());
+            changed = true;
         }
-        Ok(())
     }
 
-    /// 合并或初始化专辑：按 ID 查找 → 按标题+艺人查找 → 新建。
-    fn merge_or_init_album(
-        &self,
-        album_id: &str,
-        album_title: &str,
-        artist_id: &str,
-        song_source_ids: &[SourceId],
-        song_id: &str,
-    ) -> Result<(), String> {
-        let album_sids: Vec<SourceId> = song_source_ids
-            .iter()
-            .map(|s| s.with_entity_type(EntityType::Album))
-            .collect();
+    changed
+}
 
-        if let Some(mut album) = albums::get(&self.store, album_id) {
+/// 在内存中合并或创建专辑，使用 (title, artist_id) 索引 O(1) 查找。返回是否有变化。
+fn merge_album_in_memory(
+    album_id: &str,
+    album_title: &str,
+    artist_ids: &[String],
+    song_source_ids: &[SourceId],
+    song_id: &str,
+    all_albums: &mut HashMap<String, Album>,
+    album_index: &mut HashMap<(String, String), String>,
+) -> bool {
+    let album_sids: Vec<SourceId> = song_source_ids
+        .iter()
+        .map(|s| s.with_entity_type(EntityType::Album))
+        .collect();
+    let artist_id = artist_ids.first().map(|s| s.as_str()).unwrap_or("");
+    let lookup_key = (album_title.to_lowercase(), artist_id.to_string());
+    let mut changed = false;
+
+    if let Some(album) = all_albums.get_mut(album_id) {
+        let sid_before = album.source_ids.len();
+        merge_source_ids(&mut album.source_ids, &album_sids);
+        if album.source_ids.len() > sid_before {
+            changed = true;
+        }
+        if !album.song_ids.contains(&song_id.to_string()) {
+            album.song_ids.push(song_id.to_string());
+            changed = true;
+        }
+    } else if let Some(aid) = album_index.get(&lookup_key).cloned() {
+        if let Some(album) = all_albums.get_mut(&aid) {
+            let sid_before = album.source_ids.len();
             merge_source_ids(&mut album.source_ids, &album_sids);
+            if album.source_ids.len() > sid_before {
+                changed = true;
+            }
             if !album.song_ids.contains(&song_id.to_string()) {
                 album.song_ids.push(song_id.to_string());
+                changed = true;
             }
-            albums::update(&self.store, &album)?;
-        } else if let Some(mut album) =
-            albums::find_by_title_and_artist(&self.store, album_title, artist_id)
-        {
-            merge_source_ids(&mut album.source_ids, &album_sids);
-            if !album.song_ids.contains(&song_id.to_string()) {
-                album.song_ids.push(song_id.to_string());
-            }
-            albums::update(&self.store, &album)?;
-        } else {
-            let album = Album {
+        }
+    } else {
+        all_albums.insert(
+            album_id.to_string(),
+            Album {
                 id: album_id.to_string(),
                 title: album_title.to_string(),
                 artist_id: artist_id.to_string(),
                 cover_url: None,
                 song_ids: vec![song_id.to_string()],
                 source_ids: album_sids,
-            };
-            albums::add(&self.store, &album)?;
-        }
-        Ok(())
+            },
+        );
+        album_index.insert(lookup_key, album_id.to_string());
+        changed = true;
     }
+
+    changed
+}
+
+/// 构建歌曲去重索引：(title_lower, sorted_artist_names_lower) → song_id。
+fn build_song_index(all_songs: &HashMap<String, Song>) -> HashMap<(String, Vec<String>), String> {
+    let mut index = HashMap::new();
+    for (id, song) in all_songs {
+        let title_lower = song.title.to_lowercase();
+        let mut names: Vec<String> = song.artist_names.iter().map(|n| n.to_lowercase()).collect();
+        names.sort();
+        index.insert((title_lower, names), id.clone());
+    }
+    index
+}
+
+/// 构建艺人名称索引：name_lower → artist_id。
+fn build_artist_name_index(all_artists: &HashMap<String, Artist>) -> HashMap<String, String> {
+    let mut index = HashMap::new();
+    for (id, artist) in all_artists {
+        index.insert(artist.name.to_lowercase(), id.clone());
+    }
+    index
+}
+
+/// 构建专辑索引：(title_lower, artist_id) → album_id。
+fn build_album_index(all_albums: &HashMap<String, Album>) -> HashMap<(String, String), String> {
+    let mut index = HashMap::new();
+    for (id, album) in all_albums {
+        index.insert((album.title.to_lowercase(), album.artist_id.clone()), id.clone());
+    }
+    index
 }
 
 /// 将 `incoming` 中不存在于 `existing` 的 SourceId 追加进去（去重合并）。

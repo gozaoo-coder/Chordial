@@ -19,6 +19,7 @@ use crate::module::music_library::models::{Album, Artist, Lyric, Song};
 use crate::module::music_source::traits::MusicSource;
 use crate::module::music_source::types::{EntityType, SourceId, SourceType};
 use crate::module::platform::{self, PlatformPath};
+use crate::module::storage::persistent::PersistentStore;
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -40,7 +41,12 @@ pub struct LocalMusicSource {
     /// 文件索引：规范路径 → 库内 Song ID，供命令层访问
     pub file_index: RwLock<HashMap<PlatformPath, String>>,
     /// 反向索引：库内 Song ID → 规范路径
-    id_to_path: RwLock<HashMap<String, PlatformPath>>,
+    pub id_to_path: RwLock<HashMap<String, PlatformPath>>,
+    /// 文件 mtime 缓存：规范路径字符串 → (modified_secs, file_size, song_id)
+    /// 启动时对比文件系统 mtime，跳过未变化文件的重扫描
+    pub file_mtimes: RwLock<HashMap<String, (u64, u64, String)>>,
+    /// 独立的 mtime 持久化存储（与 library 分离，避免每次保存都序列化全部歌曲数据）
+    mtime_store: PersistentStore,
 }
 
 impl LocalMusicSource {
@@ -49,13 +55,19 @@ impl LocalMusicSource {
     /// # 参数
     /// - `folder_manager`: 文件夹管理器（持久化 + 运行时文件夹集合）
     /// - `library`: 音乐库引用
-    pub fn new(folder_manager: Arc<FolderManager>, library: Arc<MusicLibrary>) -> Self {
+    pub fn new(
+        folder_manager: Arc<FolderManager>,
+        library: Arc<MusicLibrary>,
+        mtime_store: PersistentStore,
+    ) -> Self {
         Self {
             name: LOCAL_SOURCE_NAME.to_string(),
             folder_manager,
             library,
             file_index: RwLock::new(HashMap::new()),
             id_to_path: RwLock::new(HashMap::new()),
+            file_mtimes: RwLock::new(HashMap::new()),
+            mtime_store,
         }
     }
 
@@ -84,16 +96,16 @@ impl LocalMusicSource {
         // 构建 Song
         let song = self.build_song(&canonical, &meta);
 
-        // 添加到音乐库（自动去重合并）
-        self.library.add_song(&song)?;
+        // 添加到音乐库（自动去重合并），获取实际存储的 ID
+        let stored_id = self.library.add_song(&song)?;
 
-        // 更新索引
+        // 更新索引（使用库中实际存储的 ID）
         self.file_index
             .write()
-            .insert(canonical.clone(), song.id.clone());
+            .insert(canonical.clone(), stored_id.clone());
         self.id_to_path
             .write()
-            .insert(song.id.clone(), canonical);
+            .insert(stored_id, canonical);
 
         Ok(true)
     }
@@ -138,7 +150,7 @@ impl LocalMusicSource {
     }
 
     /// 从 AudioMeta 构建 Song 模型。
-    fn build_song(&self, file_path: &PlatformPath, meta: &AudioMeta) -> Song {
+    pub fn build_song(&self, file_path: &PlatformPath, meta: &AudioMeta) -> Song {
         let entity_id = platform::path_to_string(file_path);
         let song_id = Uuid::new_v4().to_string();
         let artist_name = meta.artist.clone().unwrap_or_else(|| "未知艺术家".to_string());
@@ -187,31 +199,89 @@ impl LocalMusicSource {
         })
     }
 
-    /// 从持久化的 MusicLibrary 重建内存索引（启动时调用）。
+    /// 从持久化的 MusicLibrary 重建内存索引并加载 mtime 缓存（启动时调用）。
     ///
     /// 遍历库中所有带 `"local"` SourceId 的歌曲，以 `entity_id`（即文件路径）
-    /// 重建 `file_index` 和 `id_to_path`。文件已不存在的条目自动从库中移除。
+    /// 重建 `file_index` 和 `id_to_path`。同时从持久存储加载文件 mtime 缓存，
+    /// 用于启动时跳过未变化文件的重扫描。文件已不存在的条目自动从库中和 mtime 缓存中移除。
     ///
     /// # 返回
     /// `(restored, removed)` — 成功恢复的条目数和因文件丢失而移除的条目数。
     pub fn restore_index_from_library(&self) -> (usize, usize) {
-        let all_songs = self.library.get_all_songs();
-        let mut restored = 0usize;
-        let mut removed_paths: HashSet<String> = HashSet::new();
+        use std::time::Instant;
 
+        let _t0 = Instant::now();
+        let all_songs = self.library.get_all_songs();
+        let t0 = _t0.elapsed();
+        eprintln!(
+            "[local_source] ⏱ 4a. 从库加载 {} 首歌曲: {:?}",
+            all_songs.len(),
+            t0
+        );
+
+        // 从独立 mtime 存储加载
+        let _t1 = Instant::now();
+        let mut mtimes: HashMap<String, (u64, u64, String)> = self
+            .mtime_store
+            .get("file_mtimes")
+            .unwrap_or_default();
+        let t1 = _t1.elapsed();
+        eprintln!(
+            "[local_source] ⏱ 4b. 加载 mtime 缓存 ({} 条): {:?}",
+            mtimes.len(),
+            t1
+        );
+
+        // 收集需要 canonicalize 的路径
+        let mut to_canonicalize: Vec<(String, String)> = Vec::new();
         for (song_id, song) in &all_songs {
-            // 找到属于本地来源的 SourceId
             let local_sid = song.source_ids.iter().find(|sid| {
                 sid.source_name == LOCAL_SOURCE_NAME && sid.entity_type == EntityType::Song
             });
+            if let Some(sid) = local_sid {
+                to_canonicalize.push((song_id.clone(), sid.entity_id.clone()));
+            }
+        }
 
-            let Some(sid) = local_sid else { continue };
+        let _t2 = Instant::now();
+        let mut restored = 0usize;
+        let mut removed_paths: HashSet<String> = HashSet::new();
+        let canonicalize_count = to_canonicalize.len();
 
-            let path = PlatformPath::from(sid.entity_id.as_str());
+        // 并行 canonicalize
+        let num_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .min(canonicalize_count.max(1));
+        let chunk_size = (canonicalize_count + num_threads - 1) / num_threads;
 
-            if platform::exists(&path) {
-                let canonical = platform::canonicalize(&path)
-                    .unwrap_or_else(|_| path.clone());
+        let mut results: Vec<(String, String, bool)> = Vec::with_capacity(canonicalize_count);
+
+        std::thread::scope(|s| {
+            let mut handles = Vec::new();
+            for chunk in to_canonicalize.chunks(chunk_size) {
+                let chunk: Vec<(String, String)> = chunk.to_vec();
+                handles.push(s.spawn(move || {
+                    let mut chunk_results = Vec::with_capacity(chunk.len());
+                    for (song_id, path_str) in &chunk {
+                        let path = PlatformPath::from(path_str.as_str());
+                        let ok = platform::canonicalize(&path).is_ok();
+                        chunk_results.push((song_id.clone(), path_str.clone(), ok));
+                    }
+                    chunk_results
+                }));
+            }
+            for handle in handles {
+                if let Ok(chunk_results) = handle.join() {
+                    results.extend(chunk_results);
+                }
+            }
+        });
+
+        // 串行写入索引
+        for (song_id, path_str, ok) in &results {
+            if *ok {
+                let canonical = PlatformPath::from(path_str.as_str());
                 self.file_index
                     .write()
                     .insert(canonical.clone(), song_id.clone());
@@ -220,13 +290,34 @@ impl LocalMusicSource {
                     .insert(song_id.clone(), canonical);
                 restored += 1;
             } else {
-                // 文件已不存在，标记待清理
-                removed_paths.insert(sid.entity_id.clone());
+                removed_paths.insert(path_str.clone());
             }
         }
 
-        // 批量移除已不存在的文件引用
+        let t2 = _t2.elapsed();
+        eprintln!(
+            "[local_source] ⏱ 4c. 并行 canonicalize {} 首 ({} 线程, {} 个丢失): {:?}",
+            canonicalize_count,
+            num_threads,
+            removed_paths.len(),
+            t2
+        );
+
+        let _t3 = Instant::now();
+        // 清理不存在的文件对应的 mtime 条目
+        mtimes.retain(|path_str, _| {
+            let p = PlatformPath::from(path_str.as_str());
+            platform::exists(&p)
+        });
+        *self.file_mtimes.write() = mtimes;
+        let t3 = _t3.elapsed();
+        eprintln!(
+            "[local_source] ⏱ 4d. 清理 mtime 缓存: {:?}",
+            t3
+        );
+
         if !removed_paths.is_empty() {
+            let _t4 = Instant::now();
             if let Err(e) = self
                 .library
                 .remove_specific_song_source_ids(LOCAL_SOURCE_NAME, &removed_paths)
@@ -236,7 +327,13 @@ impl LocalMusicSource {
                     e
                 );
             }
+            let t4 = _t4.elapsed();
             let removed = removed_paths.len();
+            eprintln!(
+                "[local_source] ⏱ 4e. 批量移除 {} 个丢失文件: {:?}",
+                removed,
+                t4
+            );
             eprintln!(
                 "[local_source] 索引恢复: {} 首歌曲, {} 个已删除文件已清理",
                 restored, removed
@@ -246,6 +343,54 @@ impl LocalMusicSource {
 
         eprintln!("[local_source] 索引恢复: {} 首歌曲已从库中恢复", restored);
         (restored, 0)
+    }
+
+    /// 检查文件 mtime+size 是否与缓存一致，返回缓存的 song_id（若未变化）。
+    ///
+    /// `path` 应为已规范化的路径。
+    pub fn check_file_unchanged(&self, path: &PlatformPath) -> Option<String> {
+        let path_str = platform::path_to_string(path);
+        let mtimes = self.file_mtimes.read();
+        let (cached_mtime, cached_size, song_id) = mtimes.get(&path_str)?;
+
+        let current_mtime = platform::file_modified_secs(
+            &PlatformPath::from(path_str.as_str()),
+        )
+        .ok()?;
+        let current_size = platform::file_size(
+            &PlatformPath::from(path_str.as_str()),
+        )
+        .ok()?;
+
+        if current_mtime == *cached_mtime && current_size == *cached_size {
+            Some(song_id.clone())
+        } else {
+            None
+        }
+    }
+
+    /// 更新文件的 mtime 缓存条目。
+    ///
+    /// `path` 应为已规范化的路径。
+    pub fn update_file_mtime(&self, path: &PlatformPath, song_id: &str) {
+        let path_str = platform::path_to_string(path);
+        let platform_path = PlatformPath::from(path_str.as_str());
+        if let (Ok(mtime), Ok(size)) = (
+            platform::file_modified_secs(&platform_path),
+            platform::file_size(&platform_path),
+        ) {
+            self.file_mtimes.write().insert(
+                path_str,
+                (mtime, size, song_id.to_string()),
+            );
+        }
+    }
+
+    /// 将 mtime 缓存持久化到独立存储（与 library 分离，避免每次保存都序列化全部歌曲）。
+    pub fn save_mtime_cache(&self) -> Result<(), String> {
+        let mtimes = self.file_mtimes.read().clone();
+        self.mtime_store.set("file_mtimes", &mtimes)?;
+        self.mtime_store.save()
     }
 }
 

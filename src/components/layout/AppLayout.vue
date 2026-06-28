@@ -1,8 +1,15 @@
 <script setup>
+import { computed } from 'vue'
 import AppHeader from './AppHeader.vue';
 import AppSidebar from './AppSidebar.vue';
 import AppBottomNav from './AppBottomNav.vue';
 import { PlayerControlBar } from '@/components/player';
+import { PlayerStore } from '@/stores/player.js'
+import { useCoverImage } from '@/composables/useCoverImage';
+
+const currentTrack = computed(() => PlayerStore.state.currentTrack)
+const { coverUrl: albumCoverUrl } = useCoverImage(currentTrack, 'small')
+const isPlaying = computed(() => PlayerStore.state.isPlaying)
 </script>
 
 <template>
@@ -26,7 +33,13 @@ import { PlayerControlBar } from '@/components/player';
     <AppBottomNav />
     
     <!-- 播放器控制栏 -->
-    <PlayerControlBar />
+    <PlayerControlBar
+      :album-cover-url="albumCoverUrl"
+      :is-playing="isPlaying"
+      @play="PlayerStore.resume"
+      @pause="PlayerStore.pause"
+      @next="PlayerStore.playNext"
+    />
   </div>
 </template>
 
@@ -86,8 +99,8 @@ import { PlayerControlBar } from '@/components/player';
 
   .main-content {
     margin-left: 0;
-    /* 移动端需要同时考虑底栏和播放器的高度 */
-    padding-bottom: calc(var(--bottom-nav-height) + var(--player-bar-height));
+    /* 移动端需要同时考虑底栏、播放器和系统导航栏的高度 */
+    padding-bottom: calc(var(--bottom-nav-height) + var(--player-bar-height) + var(--safe-area-bottom));
   }
 
   .content-wrapper {

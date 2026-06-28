@@ -45,13 +45,8 @@ const isActive = (path) => {
 
 <template>
   <nav class="app-bottom-nav" :class="{ 'with-player': hasCurrentTrack }">
-    <router-link
-      v-for="item in navItems"
-      :key="item.path"
-      :to="item.path"
-      class="bottom-nav-item"
-      :class="{ active: isActive(item.path) }"
-    >
+    <router-link v-for="item in navItems" :key="item.path" :to="item.path" class="bottom-nav-item"
+      :class="{ active: isActive(item.path) }">
       <i :class="item.icon" class="bottom-nav-icon"></i>
       <span class="bottom-nav-text">{{ item.name }}</span>
     </router-link>
@@ -62,7 +57,8 @@ const isActive = (path) => {
 .app-bottom-nav {
   position: fixed;
   bottom: 1.5rem;
-  left: 2rem;  border-radius: calc(var(--bottom-nav-height) * 0.5);
+  left: 2rem;
+  border-radius: calc(var(--bottom-nav-height) * 0.5);
   background: var(--bg-glass);
   border: 1px solid var(--border-light);
   /* right: 0; */
@@ -73,14 +69,24 @@ const isActive = (path) => {
   align-items: center;
   z-index: 100;
   padding: 0 16px;
+  padding-bottom: var(--safe-area-bottom);
   transition: bottom var(--transition-slow);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
-/* 当播放器显示时，底部导航向上移动 */
-.app-bottom-nav.with-player {
-  /* bottom: var(--player-bar-height, 100px); */
+
+@media (max-width: 767px) {
+  .app-bottom-nav {
+    /* 当播放器显示时，底部导航向上移动 */
+    right: 1rem;
+    left: 1rem;
+    /* bottom: calc(var(--bottom-nav-height) + 0.5rem); */
+    /* border-radius: 1rem; */
+    /* padding: 0.4rem 0.75rem; */
+
+    bottom: var(--player-bar-height, 100px);
+  }
 }
 
 .bottom-nav-item {
@@ -104,7 +110,7 @@ const isActive = (path) => {
 
 .bottom-nav-item.active {
   color: var(--primary-color);
-  text-shadow: var(--primary-color)  0 0 2em;
+  text-shadow: var(--primary-color) 0 0 2em;
   /* background: var(--primary-light); */
 }
 

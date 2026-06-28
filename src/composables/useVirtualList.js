@@ -21,6 +21,7 @@ export function useVirtualList(itemsRef, options = {}) {
     itemHeight = 64, // 默认每项高度
     bufferSize = 5, // 缓冲区大小（上下各多渲染几项）
     containerRef = null, // 容器 ref
+    columns = 1, // 列数：>1 时启用网格模式
   } = options;
 
   // 滚动状态
@@ -28,10 +29,33 @@ export function useVirtualList(itemsRef, options = {}) {
   const containerHeight = ref(0);
   const rafId = ref(null);
 
+  // 计算行高（网格模式下每行高度 = 单项高度）
+  const rowHeight = computed(() => {
+    if (typeof itemHeight === 'function') {
+      // 函数模式：取第一项的高度作为行高近似值
+      return itemsRef.value && itemsRef.value.length > 0
+        ? itemHeight(itemsRef.value[0], 0)
+        : 64;
+    }
+    return itemHeight;
+  });
+
+  // 计算总行数
+  const totalRows = computed(() => {
+    if (!itemsRef.value || !itemsRef.value.length) return 0;
+    return Math.ceil(itemsRef.value.length / columns);
+  });
+
   // 计算总高度
   const totalHeight = computed(() => {
     if (!itemsRef.value) return 0;
 
+    if (columns > 1) {
+      // 网格模式：按行计算
+      return totalRows.value * rowHeight.value;
+    }
+
+    // 单列模式：按项累加
     if (typeof itemHeight === 'function') {
       return itemsRef.value.reduce((sum, item, index) => {
         return sum + itemHeight(item, index);
@@ -45,6 +69,16 @@ export function useVirtualList(itemsRef, options = {}) {
   const prefixSum = computed(() => {
     if (!itemsRef.value) return [];
 
+    if (columns > 1) {
+      // 网格模式：按行前缀和
+      const sums = new Float64Array(totalRows.value);
+      for (let row = 0; row < totalRows.value; row++) {
+        sums[row] = (row + 1) * rowHeight.value;
+      }
+      return sums;
+    }
+
+    // 单列模式：按项前缀和
     const sums = new Float64Array(itemsRef.value.length);
     let sum = 0;
 
@@ -84,6 +118,40 @@ export function useVirtualList(itemsRef, options = {}) {
   const visibleItems = computed(() => {
     if (!itemsRef.value || !itemsRef.value.length) return [];
 
+    if (columns > 1) {
+      // 网格模式：按行渲染
+      const startRow = Math.max(0, findStartIndex(scrollTop.value) - bufferSize);
+      const endRow = Math.min(
+        totalRows.value,
+        findStartIndex(scrollTop.value + containerHeight.value) + bufferSize
+      );
+
+      const items = [];
+      for (let row = startRow; row < endRow; row++) {
+        const startCol = row * columns;
+        for (let col = 0; col < columns; col++) {
+          const idx = startCol + col;
+          if (idx >= itemsRef.value.length) break;
+
+          const offsetY = row * rowHeight.value;
+          const colWidth = 100 / columns; // 百分比宽度
+
+          items.push({
+            item: itemsRef.value[idx],
+            index: idx,
+            offsetY,
+            offsetX: col * colWidth,
+            width: colWidth,
+            height: rowHeight.value,
+            col,
+          });
+        }
+      }
+
+      return items;
+    }
+
+    // 单列模式
     const startIdx = Math.max(0, findStartIndex(scrollTop.value) - bufferSize);
     const endIdx = Math.min(
       itemsRef.value.length,
@@ -127,7 +195,11 @@ export function useVirtualList(itemsRef, options = {}) {
     if (!containerRef?.value) return;
 
     let offsetY = 0;
-    if (typeof itemHeight === 'function') {
+    if (columns > 1) {
+      // 网格模式：索引所在行 * 行高
+      const row = Math.floor(index / columns);
+      offsetY = row * rowHeight.value;
+    } else if (typeof itemHeight === 'function') {
       for (let i = 0; i < index && i < itemsRef.value.length; i++) {
         offsetY += itemHeight(itemsRef.value[i], i);
       }

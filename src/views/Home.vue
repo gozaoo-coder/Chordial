@@ -3,7 +3,6 @@ import { ref, onMounted, onActivated, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import TrackList from '../components/common/TrackList.vue';
 import ArtistList from '../components/common/ArtistList.vue';
-import AlbumList from '../components/common/AlbumList.vue';
 import CoverImage from '../components/common/CoverImage.vue';
 import AlbumCollageBackground from '../components/common/AlbumCollageBackground.vue';
 import { library } from '../api/musicSource';
@@ -198,7 +197,7 @@ const shufflePlay = () => {
             v-for="album in featuredAlbums" 
             :key="album.id"
             class="album-card"
-            @click="router.push(`/album/${album.id}`)"
+            @click="router.push(`/albums/${album.id}`)"
           >
             <div class="album-cover-wrapper">
               <CoverImage

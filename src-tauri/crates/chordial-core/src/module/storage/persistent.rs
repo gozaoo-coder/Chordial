@@ -91,6 +91,11 @@ impl PersistentStore {
         }
     }
 
+    /// 返回持久化文件的路径。
+    pub fn path(&self) -> &PathBuf {
+        self.backend.path()
+    }
+
     /// 扫描 Blob 目录，返回已有文件的 key 集合。
     fn scan_blob_keys(blob_dir: &std::path::Path) -> HashSet<String> {
         let keys = HashSet::new();
