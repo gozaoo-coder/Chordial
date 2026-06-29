@@ -7,6 +7,9 @@ import { getArtist } from '../api/artist';
 import { getAlbumsByIds } from '../api/album';
 import { getTracksByIds } from '../api/musicSource/musicResource';
 import { useCoverImage } from '@/composables/useCoverImage';
+import { usePerf } from '@/utils/performanceMonitor.js';
+
+const { start, end, log } = usePerf('ArtistDetail');
 
 const route = useRoute();
 const router = useRouter();
@@ -25,19 +28,24 @@ onMounted(async () => {
   }
 
   try {
+    start('loadArtist');
     artist.value = await getArtist(artistId);
 
     // 加载歌手的专辑和歌曲详情
     if (artist.value) {
+      start('loadArtistDetails');
       const [albums, tracks] = await Promise.all([
         artist.value.albumIds?.length > 0 ? getAlbumsByIds(artist.value.albumIds) : Promise.resolve([]),
         artist.value.trackIds?.length > 0 ? getTracksByIds(artist.value.trackIds) : Promise.resolve([])
       ]);
       artist.value.albums = albums;
       artist.value.tracks = tracks;
+      end('loadArtistDetails', { albumCount: albums.length, trackCount: tracks.length });
     }
+    end('loadArtist', { albumIds: artist.value?.albumIds?.length ?? 0, trackIds: artist.value?.trackIds?.length ?? 0 });
   } catch (error) {
     console.error('Failed to load artist:', error);
+    end('loadArtist', { error: error.message });
   } finally {
     isLoading.value = false;
   }

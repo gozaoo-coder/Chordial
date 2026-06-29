@@ -7,10 +7,10 @@
 
     <div class="controls-section">
       <!-- 专辑封面 -->
-      <div class="album-cover-thumb" v-if="albumCoverUrl">
+      <div class="album-cover-thumb" v-if="albumCoverUrl" @click="openPlayerView">
         <img :src="albumCoverUrl" alt="专辑封面" />
       </div>
-      <div class="album-cover-thumb placeholder" v-else>
+      <div class="album-cover-thumb placeholder" v-else @click="openPlayerView">
         <i class="bi bi-disc-fill"></i>
       </div>
 
@@ -39,7 +39,13 @@
  * 从 PlayerStore 读取当前播放状态和歌曲元数据。
  */
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { PlayerStore } from '@/stores/player.js'
+import { usePerf } from '@/utils/performanceMonitor.js'
+
+const { log } = usePerf('PlayerControlBar')
+
+const router = useRouter()
 
 const props = defineProps({
   currentTime: {
@@ -114,11 +120,18 @@ const volumeIcon = computed(() => {
   return 'bi bi-volume-up-fill'
 })
 
+// 点击封面打开播放详情页
+const openPlayerView = () => {
+  router.push('/player')
+}
+
 // 切换播放/暂停
 const togglePlay = () => {
   if (props.isPlaying) {
+    log('togglePlay', { action: 'pause' });
     emit('pause')
   } else {
+    log('togglePlay', { action: 'play' });
     emit('play')
   }
 }
@@ -232,6 +245,16 @@ const formatTime = (seconds) => {
   overflow: hidden;
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.album-cover-thumb:hover {
+  transform: scale(1.08);
+}
+
+.album-cover-thumb:active {
+  transform: scale(0.95);
 }
 
 .album-cover-thumb img {

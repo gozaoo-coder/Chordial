@@ -3,6 +3,9 @@ import { ref, onMounted, onActivated } from 'vue';
 import { useRouter } from 'vue-router';
 import TrackList from '../components/common/TrackList.vue';
 import { library } from '../api/musicSource';
+import { usePerf } from '@/utils/performanceMonitor.js';
+
+const { start, end } = usePerf('Tracks');
 
 const router = useRouter();
 
@@ -11,13 +14,16 @@ const isLoading = ref(true);
 
 const loadTracks = async () => {
   isLoading.value = true;
+  start('loadTracks');
   try {
     const data = await library.getCached();
     if (data) {
       tracks.value = data.tracks;
     }
+    end('loadTracks', { count: tracks.value.length });
   } catch (error) {
     console.error('Failed to load tracks:', error);
+    end('loadTracks', { error: error.message });
   } finally {
     isLoading.value = false;
   }

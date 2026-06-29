@@ -327,11 +327,14 @@
 
 <script>
 import { ref, watch, onMounted } from 'vue';
-import { 
-  getAnalysisCacheStats, 
+import {
+  getAnalysisCacheStats,
   clearAnalysisCache,
-  AnalysisCache 
+  AnalysisCache
 } from '@/api/automix.js';
+import { usePerf } from '@/utils/performanceMonitor.js';
+
+const { start, end, log } = usePerf('SettingsView');
 
 export default {
   name: 'SettingsView',
@@ -364,6 +367,7 @@ export default {
     
     // 保存设置到 localStorage
     const saveSettings = () => {
+      start('saveSettings');
       const settings = {
         defaultVolume: defaultVolume.value,
         autoPlay: autoPlay.value,
@@ -382,10 +386,12 @@ export default {
         fps: fps.value
       };
       localStorage.setItem('chordial_settings', JSON.stringify(settings));
+      end('saveSettings');
     };
     
     // 加载设置
     const loadSettings = () => {
+      start('loadSettings');
       try {
         const saved = localStorage.getItem('chordial_settings');
         if (saved) {
@@ -406,31 +412,41 @@ export default {
           backgroundBrightness.value = settings.backgroundBrightness ?? 50;
           fps.value = settings.fps ?? '60';
         }
+        end('loadSettings');
       } catch (e) {
         console.error('加载设置失败:', e);
+        end('loadSettings', { error: e.message });
       }
     };
     
     // 查看缓存统计
     const showCacheStats = async () => {
+      log('showCacheStats');
+      start('getCacheStats');
       try {
         const stats = await getAnalysisCacheStats();
         cacheStats.value = stats;
+        end('getCacheStats', { entryCount: stats.entry_count });
         alert(`分析缓存统计：\n条目数: ${stats.entry_count}\n总大小: ${AnalysisCache.formatSize(stats.total_data_size)}`);
       } catch (error) {
         console.error('获取缓存统计失败:', error);
+        end('getCacheStats', { error: error.message });
         alert('获取缓存统计失败');
       }
     };
-    
+
     // 清空缓存
     const clearCache = async () => {
       if (confirm('确定要清空所有 BPM 分析缓存吗？这将导致下次播放时需要重新分析。')) {
+        log('clearCache');
+        start('clearCache');
         try {
           await clearAnalysisCache();
+          end('clearCache');
           alert('缓存已清空');
         } catch (error) {
           console.error('清空缓存失败:', error);
+          end('clearCache', { error: error.message });
           alert('清空缓存失败');
         }
       }

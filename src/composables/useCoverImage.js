@@ -178,12 +178,10 @@ export function useCoverImages(itemsRef, size = 'medium') {
 
     isLoading.value = true;
 
-    // 释放旧的资源
-    releaseFns.forEach((release) => release());
-    releaseFns.clear();
-    coverUrls.value.clear();
+    // 加载新的封面（带并发控制），先收集到临时 Map，最后一次性替换（避免 N+1 次重渲染）
+    const newCoverUrls = new Map();
+    const newReleaseFns = new Map();
 
-    // 加载新的封面（带并发控制）
     const promises = itemsRef.value.map(async (item) => {
       if (!item) return;
 
@@ -194,8 +192,8 @@ export function useCoverImages(itemsRef, size = 'medium') {
         // 使用统一的资源获取函数
         const resource = await acquireCoverResource(item, size);
         if (resource && resource.url) {
-          coverUrls.value.set(item.id, resource.url);
-          releaseFns.set(item.id, resource.release);
+          newCoverUrls.set(item.id, resource.url);
+          newReleaseFns.set(item.id, resource.release);
         }
       } catch (err) {
         console.warn(`Failed to load cover for ${item.id}:`, err);
@@ -206,6 +204,17 @@ export function useCoverImages(itemsRef, size = 'medium') {
     });
 
     await Promise.all(promises);
+
+    // 释放旧的资源
+    releaseFns.forEach((release) => release());
+    releaseFns.clear();
+
+    // 一次性替换整个 Map，只触发一次响应式更新
+    coverUrls.value = newCoverUrls;
+    // 更新 releaseFns 引用
+    releaseFns.clear();
+    newReleaseFns.forEach((fn, id) => releaseFns.set(id, fn));
+
     isLoading.value = false;
   };
 

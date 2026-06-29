@@ -7,6 +7,9 @@ import CoverImage from '../components/common/CoverImage.vue';
 import AlbumCollageBackground from '../components/common/AlbumCollageBackground.vue';
 import { library } from '../api/musicSource';
 import PlayerStore from '@/stores/player.js';
+import { usePerf } from '@/utils/performanceMonitor.js';
+
+const { start, end, log } = usePerf('Home');
 
 const router = useRouter();
 
@@ -45,6 +48,7 @@ const featuredAlbums = computed(() => {
 
 const loadHomeData = async () => {
   isLoading.value = true;
+  start('loadHomeData');
   try {
     const data = await library.getCached();
     if (data) {
@@ -57,8 +61,10 @@ const loadHomeData = async () => {
         tracks: data.tracks.length
       };
     }
+    end('loadHomeData', { tracks: recentTracks.value.length, artists: featuredArtists.value.length, albums: recentAlbums.value.length });
   } catch (error) {
     console.error('Failed to load home data:', error);
+    end('loadHomeData', { error: error.message });
   } finally {
     isLoading.value = false;
   }
@@ -77,17 +83,20 @@ const handleTrackSelect = (track) => {
 };
 
 const handleTrackPlay = (track) => {
+  log('handleTrackPlay', { trackId: track.id, title: track.title });
   PlayerStore.play(track, recentTracks.value);
 };
 
 const playAllTracks = () => {
   if (recentTracks.value.length > 0) {
+    log('playAllTracks', { count: recentTracks.value.length });
     PlayerStore.play(recentTracks.value[0], recentTracks.value);
   }
 };
 
 const shufflePlay = () => {
   if (recentTracks.value.length > 0) {
+    log('shufflePlay', { count: recentTracks.value.length });
     const shuffled = [...recentTracks.value].sort(() => 0.5 - Math.random());
     PlayerStore.play(shuffled[0], shuffled);
   }

@@ -6,6 +6,7 @@ import { initWindowState } from '@/api/window.js';
 import './style.css'
 import './app.css'
 import 'bootstrap-icons/font/bootstrap-icons.css';
+import '@applemusic-like-lyrics/core/style.css';
 
 const app = createApp(App);
 

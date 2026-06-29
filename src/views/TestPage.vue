@@ -1,10 +1,15 @@
 <script setup>
 import { ref } from 'vue';
+import { usePerf } from '@/utils/performanceMonitor.js';
+
+const { start, end, log } = usePerf('TestPage');
 
 const testResults = ref([]);
 
 const runTests = () => {
   testResults.value = [];
+  log('runTests');
+  start('runTests');
   
   // Test 1: Check if API modules are available
   try {
@@ -46,6 +51,8 @@ const runTests = () => {
   } catch (error) {
     addResult('LocalStorage', '失败', error.message);
   }
+
+  end('runTests', { passed: testResults.value.filter(r => r.status === '通过').length, total: testResults.value.length });
 };
 
 const addResult = (name, status, message) => {

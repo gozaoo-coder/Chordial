@@ -2,19 +2,25 @@
 import { ref, onMounted, onActivated } from 'vue';
 import AlbumList from '../components/common/AlbumList.vue';
 import { library } from '../api/musicSource';
+import { usePerf } from '@/utils/performanceMonitor.js';
+
+const { start, end } = usePerf('Albums');
 
 const albums = ref([]);
 const isLoading = ref(true);
 
 const loadAlbums = async () => {
   isLoading.value = true;
+  start('loadAlbums');
   try {
     const data = await library.getCached();
     if (data) {
       albums.value = data.albums;
     }
+    end('loadAlbums', { count: albums.value.length });
   } catch (error) {
     console.error('Failed to load albums:', error);
+    end('loadAlbums', { error: error.message });
   } finally {
     isLoading.value = false;
   }

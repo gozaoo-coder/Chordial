@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { perf } from '@/utils/performanceMonitor.js'
 
 // 定义路由组件
 const Home = () => import('../views/Home.vue')
@@ -97,14 +98,28 @@ const router = createRouter({
   routes
 })
 
-// 路由守卫 - 更新页面标题
+// 路由守卫 - 更新页面标题 + 性能监控
 router.beforeEach((to, from, next) => {
   if (to.meta && to.meta.title) {
     document.title = `${to.meta.title} - Chordial`
   } else {
     document.title = 'Chordial'
   }
+
+  // 页面导航性能计时
+  if (from.name) {
+    perf.start(`route:${from.name}→${to.name}`)
+  } else {
+    perf.start(`route:→${to.name}`)
+  }
   next()
+})
+
+router.afterEach((to, from) => {
+  const label = from.name
+    ? `route:${from.name}→${to.name}`
+    : `route:→${to.name}`
+  perf.end(label)
 })
 
 export default router

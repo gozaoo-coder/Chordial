@@ -6,6 +6,9 @@ import { getSong } from '../api/musicSource/library';
 import TrackList from '../components/common/TrackList.vue';
 import { useCoverImage } from '@/composables/useCoverImage';
 import PlayerStore from '@/stores/player.js';
+import { usePerf } from '@/utils/performanceMonitor.js';
+
+const { start, end, log } = usePerf('TrackDetail');
 
 const route = useRoute();
 const router = useRouter();
@@ -25,10 +28,13 @@ onMounted(async () => {
   }
 
   try {
+    start('loadTrack');
     track.value = await getSong(trackId);
     // 歌曲数据加载后，封面会自动加载
+    end('loadTrack', { trackId });
   } catch (error) {
     console.error('Failed to load track:', error);
+    end('loadTrack', { error: error.message });
   } finally {
     isLoading.value = false;
   }
@@ -43,6 +49,7 @@ watch(() => track.value?.id, (newId) => {
 
 const handlePlay = () => {
   if (track.value) {
+    log('handlePlay', { trackId: track.value.id, title: track.value.title });
     PlayerStore.play(track.value);
   }
 };

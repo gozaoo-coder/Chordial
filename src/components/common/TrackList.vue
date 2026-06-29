@@ -5,6 +5,9 @@ import { useCoverImages } from '@/composables/useCoverImage';
 import { useVirtualList } from '@/composables/useVirtualList';
 import CoverImage from './CoverImage.vue';
 import PlayerStore from '@/stores/player.js';
+import { usePerf } from '@/utils/performanceMonitor.js';
+
+const { start, end, log } = usePerf('TrackList');
 
 const props = defineProps({
   tracks: {
@@ -63,6 +66,7 @@ const handleTrackClick = (track) => {
 
 const handlePlayClick = (track, event) => {
   event.stopPropagation();
+  log('playTrack', { trackId: track.id, source: 'button' });
   emit('play', track);
   // 使用 PlayerStore 播放
   PlayerStore.play(track, props.tracks);
@@ -70,6 +74,7 @@ const handlePlayClick = (track, event) => {
 
 const handleTrackDoubleClick = (track) => {
   // 双击播放
+  log('playTrack', { trackId: track.id, source: 'dblclick' });
   PlayerStore.play(track, props.tracks);
 };
 

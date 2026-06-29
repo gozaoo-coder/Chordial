@@ -5,6 +5,9 @@ import TrackList from '../components/common/TrackList.vue';
 import { getAlbum } from '../api/album';
 import { getTracksByIds } from '../api/musicSource/musicResource';
 import { useCoverImage } from '@/composables/useCoverImage';
+import { usePerf } from '@/utils/performanceMonitor.js';
+
+const { start, end, log } = usePerf('AlbumDetail');
 
 const route = useRoute();
 const router = useRouter();
@@ -38,15 +41,20 @@ onMounted(async () => {
   }
 
   try {
+    start('loadAlbum');
     album.value = await getAlbum(albumId);
     // 专辑数据加载后，封面会自动加载
 
     // 获取专辑中的歌曲列表
     if (album.value?.trackIds?.length > 0) {
+      start('loadAlbumTracks');
       tracks.value = await getTracksByIds(album.value.trackIds);
+      end('loadAlbumTracks', { count: tracks.value.length });
     }
+    end('loadAlbum', { trackCount: album.value?.trackIds?.length ?? 0 });
   } catch (error) {
     console.error('Failed to load album:', error);
+    end('loadAlbum', { error: error.message });
   } finally {
     isLoading.value = false;
   }

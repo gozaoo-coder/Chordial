@@ -8,6 +8,9 @@ import {
   getLocalStats,
   rescanAll,
 } from '../api/musicSource';
+import { usePerf } from '@/utils/performanceMonitor.js';
+
+const { start, end, log } = usePerf('MusicSourceManager');
 
 // ── State ──────────────────────────────────────────────────────────────────
 const folders = ref([]);
@@ -24,6 +27,7 @@ onMounted(async () => {
 
 // ── Data loading ───────────────────────────────────────────────────────────
 const loadData = async () => {
+  start('loadData');
   try {
     const [paths, s] = await Promise.all([getFolders(), getLocalStats()]);
     folders.value = (paths || []).map((p) => ({
@@ -32,8 +36,10 @@ const loadData = async () => {
       name: p.split(/[/\\]/).filter(Boolean).pop() || p,
     }));
     stats.value = s || { folder_count: 0, indexed_files: 0 };
+    end('loadData', { folderCount: folders.value.length, indexedFiles: stats.value.indexed_files });
   } catch (error) {
     console.error('Failed to load sources:', error);
+    end('loadData', { error: error.message });
   } finally {
     isLoading.value = false;
   }
@@ -42,11 +48,15 @@ const loadData = async () => {
 // ── Actions ────────────────────────────────────────────────────────────────
 const handleScanAll = async () => {
   isScanning.value = true;
+  log('handleScanAll');
+  start('scanAll');
   try {
     await rescanAll();
     await loadData();
+    end('scanAll');
   } catch (error) {
     console.error('Failed to scan sources:', error);
+    end('scanAll', { error: error.message });
   } finally {
     isScanning.value = false;
   }
@@ -62,8 +72,11 @@ const handleAddSource = async () => {
 
     if (selected) {
       isAdding.value = true;
+      log('handleAddSource', { path: selected });
+      start('addSource');
       await addLocalFolder(selected);
       await loadData();
+      end('addSource');
     }
   } catch (error) {
     console.error('Failed to add source:', error);
@@ -78,11 +91,15 @@ const handleDeleteSource = async (folder) => {
   if (!confirmed) return;
 
   isRemoving.value = true;
+  log('handleDeleteSource', { path: folder.path });
+  start('deleteSource');
   try {
     await removeLocalFolder(folder.path);
     await loadData();
+    end('deleteSource');
   } catch (error) {
     console.error('Failed to remove source:', error);
+    end('deleteSource', { error: error.message });
     alert('移除音乐源失败: ' + error.message);
   } finally {
     isRemoving.value = false;
