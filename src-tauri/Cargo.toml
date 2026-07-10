@@ -53,6 +53,10 @@ serde_json = "1"
 
 # 平台路径类型 + base64
 parking_lot = "0.12.5"
+tauri-plugin-notification = "2"
+
+# P2P 事件桥接（mpsc 通道）
+tokio = { version = "1", features = ["sync", "rt"] }
 
 # Android JNI 桥接（仅 Android 目标）
 [target.'cfg(target_os = "android")'.dependencies]

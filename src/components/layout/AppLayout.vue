@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import AppHeader from './AppHeader.vue';
 import AppSidebar from './AppSidebar.vue';
 import AppBottomNav from './AppBottomNav.vue';
+import P2pMatchDialog from '@/components/p2p/P2pMatchDialog.vue';
 import { PlayerControlBar } from '@/components/player';
 import { PlayerStore } from '@/stores/player.js'
 import { useCoverImage } from '@/composables/useCoverImage';
@@ -40,6 +41,9 @@ const isPlaying = computed(() => PlayerStore.state.isPlaying)
       @pause="PlayerStore.pause"
       @next="PlayerStore.playNext"
     />
+
+    <!-- P2P 匹配对话框 + 事件桥接 -->
+    <P2pMatchDialog />
   </div>
 </template>
 

@@ -27,6 +27,7 @@ use crate::module::music_localSource;
 use crate::module::music_localSource::source::LocalMusicSource;
 use crate::module::music_source::manager::SourceManager;
 use crate::module::music_source::registrar::{SourceCleanup, SourceRegistrar};
+use crate::module::p2p::P2pManager;
 use crate::module::storage::persistent::PersistentStore;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -49,6 +50,8 @@ pub struct AppContext {
     pub registrar: Arc<SourceRegistrar>,
     /// 本地音乐来源实现。
     pub local_source: Arc<LocalMusicSource>,
+    /// P2P 资源共享管理器。
+    pub p2p: Arc<P2pManager>,
 }
 
 impl AppContext {
@@ -92,6 +95,9 @@ impl AppContext {
             format!("初始化本地音乐来源失败: {}", e)
         })?;
 
+        // ── P2P 资源共享管理器 ──
+        let p2p = P2pManager::new(library.clone(), registrar.clone());
+
         Ok(Self {
             config,
             store,
@@ -100,6 +106,7 @@ impl AppContext {
             manager,
             registrar,
             local_source,
+            p2p,
         })
     }
 

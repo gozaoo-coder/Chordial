@@ -4,7 +4,7 @@
       <h1 class="settings-title">设置</h1>
       <p class="settings-subtitle">自定义您的音乐播放体验</p>
     </div>
-    
+
     <div class="settings-content">
       <!-- 播放器设置 -->
       <div class="settings-section">
@@ -16,24 +16,24 @@
           </svg>
           播放器设置
         </h2>
-        
+
         <div class="setting-item">
           <div class="setting-info">
             <label class="setting-label">默认音量</label>
             <span class="setting-desc">设置播放器启动时的默认音量</span>
           </div>
           <div class="setting-control">
-            <input 
-              type="range" 
-              min="0" 
-              max="100" 
+            <input
+              type="range"
+              min="0"
+              max="100"
               v-model="defaultVolume"
               class="slider"
             />
             <span class="setting-value">{{ defaultVolume }}%</span>
           </div>
         </div>
-        
+
         <div class="setting-item">
           <div class="setting-info">
             <label class="setting-label">自动播放</label>
@@ -46,7 +46,7 @@
             </label>
           </div>
         </div>
-        
+
         <div class="setting-item">
           <div class="setting-info">
             <label class="setting-label">默认播放模式</label>
@@ -62,234 +62,104 @@
           </div>
         </div>
       </div>
-      
-      <!-- Automix 设置 -->
+
+      <!-- P2P 资源共享 -->
       <div class="settings-section">
         <h2 class="section-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v6m0 10v6M4.22 4.22l4.24 4.24m7.08 7.08l4.24 4.24M1 12h6m10 0h6M4.22 19.78l4.24-4.24m7.08-7.08l4.24-4.24"/>
           </svg>
-          Automix 智能混音
+          P2P 资源共享
         </h2>
-        
+
         <div class="setting-item">
           <div class="setting-info">
-            <label class="setting-label">默认启用 Automix</label>
-            <span class="setting-desc">启动播放器时自动开启智能混音功能</span>
+            <label class="setting-label">启用共享服务</label>
+            <span class="setting-desc">启动 P2P 服务器，允许其他 Chordial 实例连接</span>
           </div>
           <div class="setting-control">
             <label class="toggle">
-              <input type="checkbox" v-model="automixDefaultEnabled" />
+              <input type="checkbox" v-model="p2pEnabled" @change="onToggleP2p" />
               <span class="toggle-slider"></span>
             </label>
           </div>
         </div>
-        
+
         <div class="setting-item">
           <div class="setting-info">
-            <label class="setting-label">交叉淡化时长</label>
-            <span class="setting-desc">设置两首歌曲之间的交叉淡化时间</span>
+            <label class="setting-label">允许广播发现</label>
+            <span class="setting-desc">开启后局域网内其他 Chordial 可发现本机；关闭后只能通过 IP:端口+匹配码连接</span>
           </div>
           <div class="setting-control">
-            <input 
-              type="range" 
-              min="1" 
-              max="30" 
-              v-model="crossfadeDuration"
-              class="slider"
-            />
-            <span class="setting-value">{{ crossfadeDuration }}s</span>
+            <label class="toggle">
+              <input type="checkbox" v-model="p2pBroadcast" @change="onToggleBroadcast" :disabled="!p2pEnabled" />
+              <span class="toggle-slider"></span>
+            </label>
           </div>
         </div>
-        
+
         <div class="setting-item">
           <div class="setting-info">
-            <label class="setting-label">交叉淡化曲线</label>
-            <span class="setting-desc">选择音量淡入淡出的曲线类型</span>
+            <label class="setting-label">本机共享权限</label>
+            <span class="setting-desc">决定对方拿到本库的权限。默认只读</span>
           </div>
           <div class="setting-control">
-            <select v-model="crossfadeCurve" class="select">
-              <option value="linear">线性</option>
-              <option value="logarithmic">对数</option>
-              <option value="s_curve">S型（推荐）</option>
+            <select v-model="p2pPermission" @change="onPermissionChange" :disabled="!p2pEnabled" class="select">
+              <option value="readonly">仅可读</option>
+              <option value="editable">可编辑</option>
             </select>
           </div>
         </div>
-        
+
         <div class="setting-item">
           <div class="setting-info">
-            <label class="setting-label">默认 BPM 同步</label>
-            <span class="setting-desc">自动匹配不同歌曲的播放速度</span>
+            <label class="setting-label">本机监听地址</label>
+            <span class="setting-desc">将此地址与匹配码告知对方以建立连接</span>
           </div>
           <div class="setting-control">
-            <label class="toggle">
-              <input type="checkbox" v-model="bpmSyncDefaultEnabled" />
-              <span class="toggle-slider"></span>
-            </label>
+            <code v-if="p2pStatus.listening" class="match-code">{{ p2pStatus.listen_addr }}</code>
+            <span v-else class="setting-value">未启动</span>
           </div>
         </div>
-        
+
         <div class="setting-item">
           <div class="setting-info">
-            <label class="setting-label">分析缓存管理</label>
-            <span class="setting-desc">查看和管理 BPM 分析结果的缓存</span>
+            <label class="setting-label">匹配码</label>
+            <span class="setting-desc">6 位数字，对方连接时需提供；可随时重新生成</span>
           </div>
           <div class="setting-control">
-            <button class="cache-btn" @click="showCacheStats">
-              查看缓存
-            </button>
-            <button class="cache-btn danger" @click="clearCache">
-              清空缓存
-            </button>
+            <code v-if="p2pStatus.match_code" class="match-code">{{ p2pStatus.match_code }}</code>
+            <span v-else class="setting-value">未启动</span>
+            <button class="cache-btn" @click="onRegenerateCode" :disabled="!p2pEnabled">重新生成</button>
           </div>
         </div>
-      </div>
-      
-      <!-- 歌词设置 -->
-      <div class="settings-section">
-        <h2 class="section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-          </svg>
-          歌词设置
-        </h2>
-        
+
         <div class="setting-item">
           <div class="setting-info">
-            <label class="setting-label">歌词字体大小</label>
-            <span class="setting-desc">调整歌词显示的字体大小</span>
+            <label class="setting-label">主动发起匹配</label>
+            <span class="setting-desc">输入对方的 IP:端口 与匹配码以发起握手</span>
           </div>
-          <div class="setting-control">
-            <input 
-              type="range" 
-              min="16" 
-              max="48" 
-              v-model="lyricFontSize"
-              class="slider"
-            />
-            <span class="setting-value">{{ lyricFontSize }}px</span>
+          <div class="setting-control p2p-connect">
+            <input v-model="remoteAddr" placeholder="192.168.1.10:58008" class="text-input" :disabled="!p2pEnabled" />
+            <input v-model="remoteCode" placeholder="匹配码" maxlength="6" class="text-input code-input" :disabled="!p2pEnabled" />
+            <button class="cache-btn" @click="onRequestMatch" :disabled="!p2pEnabled || !remoteAddr || !remoteCode">连接</button>
           </div>
         </div>
-        
-        <div class="setting-item">
-          <div class="setting-info">
-            <label class="setting-label">歌词动画效果</label>
-            <span class="setting-desc">启用歌词切换的弹簧动画效果</span>
-          </div>
-          <div class="setting-control">
-            <label class="toggle">
-              <input type="checkbox" v-model="lyricSpring" />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-        
-        <div class="setting-item">
-          <div class="setting-info">
-            <label class="setting-label">歌词模糊效果</label>
-            <span class="setting-desc">启用歌词边缘模糊效果（需要较好的 GPU 性能）</span>
-          </div>
-          <div class="setting-control">
-            <label class="toggle">
-              <input type="checkbox" v-model="lyricBlur" />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-        
-        <div class="setting-item">
-          <div class="setting-info">
-            <label class="setting-label">歌词对齐方式</label>
-            <span class="setting-desc">选择歌词在屏幕中的对齐位置</span>
-          </div>
-          <div class="setting-control">
-            <select v-model="lyricAlign" class="select">
-              <option value="0">顶部</option>
-              <option value="0.3">偏上</option>
-              <option value="0.5">居中</option>
-              <option value="0.7">偏下</option>
-              <option value="1">底部</option>
-            </select>
+
+        <div v-if="p2pStatus.peers && p2pStatus.peers.length" class="peer-list">
+          <div class="setting-item" v-for="peer in p2pStatus.peers" :key="peer.id">
+            <div class="setting-info">
+              <label class="setting-label">{{ peer.name }} ({{ peer.addr }})</label>
+              <span class="setting-desc">权限：{{ peer.permission === 'editable' ? '可编辑' : '只读' }}</span>
+            </div>
+            <div class="setting-control">
+              <button class="cache-btn danger" @click="onDisconnect(peer.id)">断开</button>
+            </div>
           </div>
         </div>
       </div>
-      
-      <!-- 背景效果设置 -->
-      <div class="settings-section">
-        <h2 class="section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
-          </svg>
-          背景效果设置
-        </h2>
-        
-        <div class="setting-item">
-          <div class="setting-info">
-            <label class="setting-label">背景效果强度</label>
-            <span class="setting-desc">调整流体背景效果的强度</span>
-          </div>
-          <div class="setting-control">
-            <input 
-              type="range" 
-              min="0" 
-              max="100" 
-              v-model="backgroundIntensity"
-              class="slider"
-            />
-            <span class="setting-value">{{ backgroundIntensity }}%</span>
-          </div>
-        </div>
-        
-        <div class="setting-item">
-          <div class="setting-info">
-            <label class="setting-label">背景模糊程度</label>
-            <span class="setting-desc">调整背景模糊的程度</span>
-          </div>
-          <div class="setting-control">
-            <input 
-              type="range" 
-              min="0" 
-              max="200" 
-              v-model="backgroundBlur"
-              class="slider"
-            />
-            <span class="setting-value">{{ backgroundBlur }}px</span>
-          </div>
-        </div>
-        
-        <div class="setting-item">
-          <div class="setting-info">
-            <label class="setting-label">背景亮度</label>
-            <span class="setting-desc">调整背景效果的亮度</span>
-          </div>
-          <div class="setting-control">
-            <input 
-              type="range" 
-              min="0" 
-              max="100" 
-              v-model="backgroundBrightness"
-              class="slider"
-            />
-            <span class="setting-value">{{ backgroundBrightness }}%</span>
-          </div>
-        </div>
-        
-        <div class="setting-item">
-          <div class="setting-info">
-            <label class="setting-label">帧率限制</label>
-            <span class="setting-desc">设置背景动画的最大帧率（降低可节省电量）</span>
-          </div>
-          <div class="setting-control">
-            <select v-model="fps" class="select">
-              <option value="30">30 FPS</option>
-              <option value="60">60 FPS</option>
-            </select>
-          </div>
-        </div>
-      </div>
-      
+
       <!-- 关于 -->
       <div class="settings-section">
         <h2 class="section-title">
@@ -300,7 +170,7 @@
           </svg>
           关于
         </h2>
-        
+
         <div class="about-content">
           <div class="app-info">
             <h3 class="app-name">Chordial</h3>
@@ -309,7 +179,7 @@
               一个现代化的本地音乐播放器，支持多种音频格式和歌词显示。
             </p>
           </div>
-          
+
           <div class="credits">
             <p>使用了以下开源项目：</p>
             <ul>
@@ -326,15 +196,8 @@
 </template>
 
 <script>
-import { ref, watch, onMounted } from 'vue';
-import {
-  getAnalysisCacheStats,
-  clearAnalysisCache,
-  AnalysisCache
-} from '@/api/automix.js';
-import { usePerf } from '@/utils/performanceMonitor.js';
-
-const { start, end, log } = usePerf('SettingsView');
+import { ref, watch, onMounted, onUnmounted } from 'vue';
+import { p2pApi } from '@/api/p2p.js';
 
 export default {
   name: 'SettingsView',
@@ -343,145 +206,140 @@ export default {
     const defaultVolume = ref(80);
     const autoPlay = ref(true);
     const defaultPlayMode = ref('sequence');
-    
-    // Automix 设置
-    const automixDefaultEnabled = ref(false);
-    const crossfadeDuration = ref(10);
-    const crossfadeCurve = ref('s_curve');
-    const bpmSyncDefaultEnabled = ref(false);
-    
-    // 歌词设置
-    const lyricFontSize = ref(24);
-    const lyricSpring = ref(true);
-    const lyricBlur = ref(true);
-    const lyricAlign = ref('0.5');
-    
-    // 背景效果设置
-    const backgroundIntensity = ref(50);
-    const backgroundBlur = ref(100);
-    const backgroundBrightness = ref(50);
-    const fps = ref('60');
-    
-    // 缓存管理
-    const cacheStats = ref(null);
-    
-    // 保存设置到 localStorage
+
+    // P2P 设置
+    const p2pEnabled = ref(false);
+    const p2pBroadcast = ref(false);
+    const p2pPermission = ref('readonly');
+    const p2pStatus = ref({ listening: false, listen_addr: '', match_code: '', peers: [] });
+    const remoteAddr = ref('');
+    const remoteCode = ref('');
+
     const saveSettings = () => {
-      start('saveSettings');
       const settings = {
         defaultVolume: defaultVolume.value,
         autoPlay: autoPlay.value,
         defaultPlayMode: defaultPlayMode.value,
-        automixDefaultEnabled: automixDefaultEnabled.value,
-        crossfadeDuration: crossfadeDuration.value,
-        crossfadeCurve: crossfadeCurve.value,
-        bpmSyncDefaultEnabled: bpmSyncDefaultEnabled.value,
-        lyricFontSize: lyricFontSize.value,
-        lyricSpring: lyricSpring.value,
-        lyricBlur: lyricBlur.value,
-        lyricAlign: lyricAlign.value,
-        backgroundIntensity: backgroundIntensity.value,
-        backgroundBlur: backgroundBlur.value,
-        backgroundBrightness: backgroundBrightness.value,
-        fps: fps.value
       };
       localStorage.setItem('chordial_settings', JSON.stringify(settings));
-      end('saveSettings');
     };
-    
-    // 加载设置
+
     const loadSettings = () => {
-      start('loadSettings');
       try {
         const saved = localStorage.getItem('chordial_settings');
         if (saved) {
-          const settings = JSON.parse(saved);
-          defaultVolume.value = settings.defaultVolume ?? 80;
-          autoPlay.value = settings.autoPlay ?? true;
-          defaultPlayMode.value = settings.defaultPlayMode ?? 'sequence';
-          automixDefaultEnabled.value = settings.automixDefaultEnabled ?? false;
-          crossfadeDuration.value = settings.crossfadeDuration ?? 10;
-          crossfadeCurve.value = settings.crossfadeCurve ?? 's_curve';
-          bpmSyncDefaultEnabled.value = settings.bpmSyncDefaultEnabled ?? false;
-          lyricFontSize.value = settings.lyricFontSize ?? 24;
-          lyricSpring.value = settings.lyricSpring ?? true;
-          lyricBlur.value = settings.lyricBlur ?? true;
-          lyricAlign.value = settings.lyricAlign ?? '0.5';
-          backgroundIntensity.value = settings.backgroundIntensity ?? 50;
-          backgroundBlur.value = settings.backgroundBlur ?? 100;
-          backgroundBrightness.value = settings.backgroundBrightness ?? 50;
-          fps.value = settings.fps ?? '60';
+          const s = JSON.parse(saved);
+          defaultVolume.value = s.defaultVolume ?? 80;
+          autoPlay.value = s.autoPlay ?? true;
+          defaultPlayMode.value = s.defaultPlayMode ?? 'sequence';
         }
-        end('loadSettings');
       } catch (e) {
         console.error('加载设置失败:', e);
-        end('loadSettings', { error: e.message });
-      }
-    };
-    
-    // 查看缓存统计
-    const showCacheStats = async () => {
-      log('showCacheStats');
-      start('getCacheStats');
-      try {
-        const stats = await getAnalysisCacheStats();
-        cacheStats.value = stats;
-        end('getCacheStats', { entryCount: stats.entry_count });
-        alert(`分析缓存统计：\n条目数: ${stats.entry_count}\n总大小: ${AnalysisCache.formatSize(stats.total_data_size)}`);
-      } catch (error) {
-        console.error('获取缓存统计失败:', error);
-        end('getCacheStats', { error: error.message });
-        alert('获取缓存统计失败');
       }
     };
 
-    // 清空缓存
-    const clearCache = async () => {
-      if (confirm('确定要清空所有 BPM 分析缓存吗？这将导致下次播放时需要重新分析。')) {
-        log('clearCache');
-        start('clearCache');
-        try {
-          await clearAnalysisCache();
-          end('clearCache');
-          alert('缓存已清空');
-        } catch (error) {
-          console.error('清空缓存失败:', error);
-          end('clearCache', { error: error.message });
-          alert('清空缓存失败');
-        }
+    // ── P2P 控制 ────────────────────────────────
+    const refreshStatus = async () => {
+      try {
+        p2pStatus.value = await p2pApi.status();
+      } catch (e) {
+        console.error('P2P 状态查询失败:', e);
       }
     };
-    
-    // 监听设置变化并保存
-    watch([
-      defaultVolume, autoPlay, defaultPlayMode,
-      automixDefaultEnabled, crossfadeDuration, crossfadeCurve, bpmSyncDefaultEnabled,
-      lyricFontSize, lyricSpring, lyricBlur, lyricAlign,
-      backgroundIntensity, backgroundBlur, backgroundBrightness, fps
-    ], saveSettings, { deep: true });
-    
-    onMounted(() => {
+
+    const onToggleP2p = async () => {
+      try {
+        if (p2pEnabled.value) {
+          await p2pApi.startServer({ broadcast: p2pBroadcast.value, permission: p2pPermission.value });
+        } else {
+          await p2pApi.stopServer();
+          p2pBroadcast.value = false;
+        }
+        await refreshStatus();
+      } catch (e) {
+        console.error('P2P 切换失败:', e);
+        p2pEnabled.value = !p2pEnabled.value;
+      }
+    };
+
+    const onToggleBroadcast = async () => {
+      try {
+        await p2pApi.setBroadcast(p2pBroadcast.value);
+        await refreshStatus();
+      } catch (e) {
+        console.error('切换广播失败:', e);
+        p2pBroadcast.value = !p2pBroadcast.value;
+      }
+    };
+
+    const onPermissionChange = async () => {
+      try {
+        await p2pApi.setPermission(p2pPermission.value);
+      } catch (e) {
+        console.error('设置权限失败:', e);
+      }
+    };
+
+    const onRegenerateCode = async () => {
+      try {
+        await p2pApi.regenerateMatchCode();
+        await refreshStatus();
+      } catch (e) {
+        console.error('重新生成匹配码失败:', e);
+      }
+    };
+
+    const onRequestMatch = async () => {
+      try {
+        await p2pApi.requestMatch(remoteAddr.value, remoteCode.value);
+        remoteAddr.value = '';
+        remoteCode.value = '';
+        await refreshStatus();
+      } catch (e) {
+        console.error('发起匹配失败:', e);
+        alert('匹配失败: ' + e);
+      }
+    };
+
+    const onDisconnect = async (peerId) => {
+      try {
+        await p2pApi.disconnectPeer(peerId);
+        await refreshStatus();
+      } catch (e) {
+        console.error('断开连接失败:', e);
+      }
+    };
+
+    watch([defaultVolume, autoPlay, defaultPlayMode], saveSettings, { deep: true });
+
+    let statusTimer = null;
+    onMounted(async () => {
       loadSettings();
+      await refreshStatus();
+      p2pEnabled.value = p2pStatus.value.listening;
+      statusTimer = setInterval(refreshStatus, 3000);
     });
-    
+
+    onUnmounted(() => {
+      if (statusTimer) clearInterval(statusTimer);
+    });
+
     return {
       defaultVolume,
       autoPlay,
       defaultPlayMode,
-      automixDefaultEnabled,
-      crossfadeDuration,
-      crossfadeCurve,
-      bpmSyncDefaultEnabled,
-      lyricFontSize,
-      lyricSpring,
-      lyricBlur,
-      lyricAlign,
-      backgroundIntensity,
-      backgroundBlur,
-      backgroundBrightness,
-      fps,
-      showCacheStats,
-      clearCache
+      p2pEnabled,
+      p2pBroadcast,
+      p2pPermission,
+      p2pStatus,
+      remoteAddr,
+      remoteCode,
+      onToggleP2p,
+      onToggleBroadcast,
+      onPermissionChange,
+      onRegenerateCode,
+      onRequestMatch,
+      onDisconnect,
     };
   }
 };
@@ -667,6 +525,11 @@ export default {
   transform: translateX(24px);
 }
 
+.toggle input:disabled + .toggle-slider {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* 下拉选择 */
 .select {
   padding: 8px 32px 8px 12px;
@@ -686,6 +549,60 @@ export default {
 
 .select:focus {
   border-color: var(--primary-color, #0078d7);
+}
+
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 文本输入 */
+.text-input {
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid var(--border-color, #e8e8e8);
+  border-radius: 8px;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #333);
+  outline: none;
+  min-width: 180px;
+}
+
+.text-input:focus {
+  border-color: var(--primary-color, #0078d7);
+}
+
+.text-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.code-input {
+  min-width: 90px;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 2px;
+}
+
+.p2p-connect {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.match-code {
+  font-family: ui-monospace, monospace;
+  font-size: 14px;
+  background: var(--bg-primary, #f5f5f5);
+  border: 1px solid var(--border-color, #e8e8e8);
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--text-primary, #333);
+  letter-spacing: 1px;
+}
+
+.peer-list {
+  margin-top: 8px;
+  border-top: 1px dashed var(--border-color, #e8e8e8);
+  padding-top: 8px;
 }
 
 /* 关于部分 */
@@ -747,15 +664,20 @@ export default {
   transition: all 0.2s ease;
 }
 
-.cache-btn:hover {
+.cache-btn:hover:not(:disabled) {
   background: var(--primary-color-dark, #005a9e);
+}
+
+.cache-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .cache-btn.danger {
   background: #dc3545;
 }
 
-.cache-btn.danger:hover {
+.cache-btn.danger:hover:not(:disabled) {
   background: #c82333;
 }
 
@@ -766,7 +688,7 @@ export default {
   .setting-label {
     color: var(--text-primary, #f0f0f0);
   }
-  
+
   .settings-subtitle,
   .setting-desc,
   .setting-value,
@@ -775,25 +697,32 @@ export default {
   .credits {
     color: var(--text-secondary, #aaa);
   }
-  
+
   .settings-section {
     background: var(--bg-secondary, #3a3a3a);
   }
-  
+
   .setting-item {
     border-color: var(--border-color, #4a4a4a);
   }
-  
+
   .slider {
     background: var(--border-color, #4a4a4a);
   }
-  
+
   .toggle-slider {
     background-color: var(--border-color, #4a4a4a);
   }
-  
-  .select {
+
+  .select,
+  .text-input {
     background-color: var(--bg-primary, #2a2a2a);
+    border-color: var(--border-color, #4a4a4a);
+    color: var(--text-primary, #f0f0f0);
+  }
+
+  .match-code {
+    background: var(--bg-primary, #2a2a2a);
     border-color: var(--border-color, #4a4a4a);
     color: var(--text-primary, #f0f0f0);
   }
@@ -804,26 +733,26 @@ export default {
   .settings-view {
     padding: 16px;
   }
-  
+
   .settings-title {
     font-size: 24px;
   }
-  
+
   .settings-section {
     padding: 16px;
   }
-  
+
   .setting-item {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
-  
+
   .setting-control {
     width: 100%;
     justify-content: space-between;
   }
-  
+
   .slider {
     flex: 1;
   }

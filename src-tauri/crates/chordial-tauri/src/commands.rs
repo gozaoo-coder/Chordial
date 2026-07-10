@@ -678,3 +678,86 @@ pub fn library_get_source_ids_of_song(
     let ids = ctx.library.get_source_ids_of_song(&song_id);
     serde_json::to_value(&ids).map_err(|e| format!("序列化失败: {}", e))
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// P2P 资源共享命令
+// ══════════════════════════════════════════════════════════════════════════════
+
+use chordial_core::module::p2p::{Permission, P2pStatus};
+
+#[tauri::command]
+pub fn p2p_status(ctx: State<'_, Arc<AppContext>>) -> Result<P2pStatus, String> {
+    Ok(ctx.p2p.status())
+}
+
+#[tauri::command]
+pub fn p2p_start_server(
+    ctx: State<'_, Arc<AppContext>>,
+    broadcast: bool,
+    permission: String,
+) -> Result<(), String> {
+    let perm = match permission.as_str() {
+        "editable" => Permission::Editable,
+        _ => Permission::ReadOnly,
+    };
+    ctx.p2p.start_server(broadcast, perm)
+}
+
+#[tauri::command]
+pub fn p2p_stop_server(ctx: State<'_, Arc<AppContext>>) -> Result<(), String> {
+    ctx.p2p.stop_server();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn p2p_request_match(
+    ctx: State<'_, Arc<AppContext>>,
+    addr: String,
+    match_code: String,
+) -> Result<(), String> {
+    ctx.p2p.request_match(addr, match_code)
+}
+
+#[tauri::command]
+pub fn p2p_respond_match(
+    ctx: State<'_, Arc<AppContext>>,
+    request_id: String,
+    accepted: bool,
+) -> Result<(), String> {
+    ctx.p2p.respond_match(request_id, accepted)
+}
+
+#[tauri::command]
+pub fn p2p_disconnect_peer(
+    ctx: State<'_, Arc<AppContext>>,
+    peer_id: String,
+) -> Result<(), String> {
+    ctx.p2p.disconnect_peer(peer_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn p2p_set_permission(
+    ctx: State<'_, Arc<AppContext>>,
+    permission: String,
+) -> Result<(), String> {
+    let perm = match permission.as_str() {
+        "editable" => Permission::Editable,
+        _ => Permission::ReadOnly,
+    };
+    ctx.p2p.set_permission(perm);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn p2p_set_broadcast(
+    ctx: State<'_, Arc<AppContext>>,
+    enabled: bool,
+) -> Result<(), String> {
+    ctx.p2p.set_broadcast(enabled)
+}
+
+#[tauri::command]
+pub fn p2p_regenerate_match_code(ctx: State<'_, Arc<AppContext>>) -> Result<String, String> {
+    Ok(ctx.p2p.regenerate_match_code())
+}

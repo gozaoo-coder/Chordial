@@ -15,6 +15,7 @@
 //! | [`music_source`] | 来源接口 + 注册器 + 资源调度 |
 //! | [`music_localSource`] | 本地文件系统来源实现 |
 //! | [`music_library`] | 音乐库（Song/Artist/Album/Lyric CRUD + 关系） |
+//! | [`p2p`] | P2P 资源共享（实例间对等交换曲库） |
 
 pub mod cache;
 pub mod config;
@@ -22,5 +23,6 @@ pub mod config;
 pub mod music_localSource;
 pub mod music_library;
 pub mod music_source;
+pub mod p2p;
 pub mod platform;
 pub mod storage;

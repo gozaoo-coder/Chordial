@@ -9,22 +9,24 @@
 mod commands;
 mod media_protocol;
 
+use chordial_core::module::p2p::P2pEvent;
 use chordial_core::AppContext;
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init());
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
 
     builder
         .setup(|app| {
-            // 构建 server 层上下文（音乐库 + 来源系统 + 缓存 + 配置）
+            // 构建 server 层上下文（音乐库 + 来源系统 + 缓存 + 配置 + P2P）
             let ctx = Arc::new(
                 AppContext::new_default_dir()
                     .expect("初始化 Chordial server 层上下文失败"),
@@ -32,6 +34,16 @@ pub fn run() {
 
             // 媒体协议桥接：注入来源注册器
             media_protocol::init(ctx.registrar.clone());
+
+            // P2P 事件桥接：core 的 mpsc → Tauri 前端事件
+            let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<P2pEvent>();
+            ctx.p2p.set_event_channel(event_tx);
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                while let Some(evt) = event_rx.recv().await {
+                    let _ = app_handle.emit("p2p-event", &evt);
+                }
+            });
 
             // 注入为 Tauri State，供各命令通过 State<'_, Arc<AppContext>> 提取
             app.manage(ctx);
@@ -130,6 +142,16 @@ pub fn run() {
             commands::library_get_albums_by_artist,
             commands::library_get_songs_in_album,
             commands::library_get_source_ids_of_song,
+            // P2P 资源共享
+            commands::p2p_status,
+            commands::p2p_start_server,
+            commands::p2p_stop_server,
+            commands::p2p_request_match,
+            commands::p2p_respond_match,
+            commands::p2p_disconnect_peer,
+            commands::p2p_set_permission,
+            commands::p2p_set_broadcast,
+            commands::p2p_regenerate_match_code,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
