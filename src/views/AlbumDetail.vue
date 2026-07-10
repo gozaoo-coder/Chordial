@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue';
+import { ref, shallowRef, onMounted, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import TrackList from '../components/common/TrackList.vue';
 import { getAlbum } from '../api/album';
@@ -12,8 +12,9 @@ const { start, end, log } = usePerf('AlbumDetail');
 const route = useRoute();
 const router = useRouter();
 
-const album = ref(null);
-const tracks = ref([]);
+// shallowRef：业务类实例避免深代理开销
+const album = shallowRef(null);
+const tracks = shallowRef([]);
 const isLoading = ref(true);
 
 // 使用 composable 加载封面

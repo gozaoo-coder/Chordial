@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, shallowRef, onMounted } from 'vue';
 import ArtistList from '../components/common/ArtistList.vue';
 import { library } from '../api/musicSource';
 import { usePerf } from '@/utils/performanceMonitor.js';
@@ -7,7 +7,8 @@ import { usePerf } from '@/utils/performanceMonitor.js';
 const { start, end } = usePerf('Artists');
 
 const PAGE_SIZE = 50;
-const artists = ref([]);
+// shallowRef：列表数据为业务类实例，避免深代理开销
+const artists = shallowRef([]);
 const totalCount = ref(0);
 const isLoading = ref(true);
 const isLoadingMore = ref(false);

@@ -34,4 +34,22 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+
+  // 构建优化：Tauri WebView (Chromium) 支持现代 ES 语法，跳过转译降级
+  // 拆分 vendor chunk 降低首屏体积
+  // 注意：AMLL/pixi 含 WASM，由 rollup 默认 chunking 处理，避免 manualChunks 干扰
+  build: {
+    target: "esnext",
+    minify: "esbuild",
+    sourcemap: false,
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vue-vendor": ["vue", "vue-router"],
+          "tauri": ["@tauri-apps/api", "@tauri-apps/plugin-dialog", "@tauri-apps/plugin-notification", "@tauri-apps/plugin-opener", "@tauri-apps/plugin-window-state"],
+        },
+      },
+    },
+  },
 }));

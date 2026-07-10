@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, shallowRef, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import TrackList from '../components/common/TrackList.vue';
 import { library } from '../api/musicSource';
@@ -10,7 +10,8 @@ const { start, end } = usePerf('Tracks');
 const router = useRouter();
 
 const PAGE_SIZE = 100;
-const tracks = ref([]);
+// shallowRef：列表数据为业务类实例，避免深代理开销
+const tracks = shallowRef([]);
 const totalCount = ref(0);
 const isLoading = ref(true);
 const isLoadingMore = ref(false);

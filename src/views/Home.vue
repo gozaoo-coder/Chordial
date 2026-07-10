@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, shallowRef, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import TrackList from '../components/common/TrackList.vue';
 import ArtistList from '../components/common/ArtistList.vue';
@@ -13,9 +13,10 @@ const { start, end, log } = usePerf('Home');
 
 const router = useRouter();
 
-const recentTracks = ref([]);
-const featuredArtists = ref([]);
-const recentAlbums = ref([]);
+// shallowRef：列表数据为业务类实例，写入后只读，避免深代理开销
+const recentTracks = shallowRef([]);
+const featuredArtists = shallowRef([]);
+const recentAlbums = shallowRef([]);
 const stats = ref({
   artists: 0,
   albums: 0,

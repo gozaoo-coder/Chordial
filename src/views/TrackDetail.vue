@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, shallowRef, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Track } from '../class';
 import { getSong } from '../api/musicSource/library';
@@ -13,7 +13,8 @@ const { start, end, log } = usePerf('TrackDetail');
 const route = useRoute();
 const router = useRouter();
 
-const track = ref(null);
+// shallowRef：业务类实例避免深代理开销
+const track = shallowRef(null);
 const albumTracks = ref([]);
 const isLoading = ref(true);
 

@@ -93,6 +93,8 @@ const handleError = () => {
       :alt="alt"
       class="cover-image"
       :class="{ 'cover-hidden': hasImgError || (isLoading && displaySrc) }"
+      loading="lazy"
+      decoding="async"
       @load="handleLoad"
       @error="handleError"
     />
