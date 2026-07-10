@@ -229,13 +229,17 @@ pub fn serve_audio_file(path_str: &str, request: &Request<Vec<u8>>) -> Response<
 pub fn handle(registrar: &SourceRegistrar, path: &str, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     let _scope = perf::scope("media.handle");
     match parse_url(path) {
-        Ok(parsed) => match parsed.resource_type.as_str() {
+        // 解构 parsed，后续分支可直接 move source_name / entity_id，
+        // 避免每个分支 clone 两个 String（音频/图片分支还需要 entity_id 做 mime 推断，
+        // 所以先算 mime 再 move）
+        Ok(ParsedUrl { resource_type, source_name, entity_id }) => match resource_type.as_str() {
             "audio" => {
+                let mime = platform::mime_from_path(&entity_id);
                 let source_id = SourceId {
-                    source_name: parsed.source_name.clone(),
+                    source_name,
                     source_type: SourceType::Local,
                     entity_type: EntityType::Song,
-                    entity_id: parsed.entity_id.clone(),
+                    entity_id,
                 };
 
                 match resource::get_song_file_path(registrar, &source_id) {
@@ -244,7 +248,7 @@ pub fn handle(registrar: &SourceRegistrar, path: &str, request: &Request<Vec<u8>
                         // 回退：通过 trait 方法获取完整数据
                         match resource::get_song_file(registrar, &source_id) {
                             Ok(data) => Response::builder()
-                                .header(header::CONTENT_TYPE, platform::mime_from_path(&parsed.entity_id))
+                                .header(header::CONTENT_TYPE, mime)
                                 .header(header::CONTENT_LENGTH, data.len().to_string())
                                 .body(data)
                                 .unwrap(),
@@ -254,16 +258,16 @@ pub fn handle(registrar: &SourceRegistrar, path: &str, request: &Request<Vec<u8>
                 }
             }
             "image" => {
+                let mime = platform::mime_from_path(&entity_id);
                 let source_id = SourceId {
-                    source_name: parsed.source_name.clone(),
+                    source_name,
                     source_type: SourceType::Local,
                     entity_type: EntityType::Album,
-                    entity_id: parsed.entity_id.clone(),
+                    entity_id,
                 };
 
                 match resource::get_album_picture(registrar, &source_id) {
                     Ok(data) => {
-                        let mime = platform::mime_from_path(&parsed.entity_id);
                         Response::builder()
                             .header(header::CONTENT_TYPE, mime)
                             .header(header::CONTENT_LENGTH, data.len().to_string())
@@ -275,10 +279,10 @@ pub fn handle(registrar: &SourceRegistrar, path: &str, request: &Request<Vec<u8>
             }
             "lyric" => {
                 let source_id = SourceId {
-                    source_name: parsed.source_name,
+                    source_name,
                     source_type: SourceType::Local,
                     entity_type: EntityType::Lyric,
-                    entity_id: parsed.entity_id,
+                    entity_id,
                 };
 
                 match resource::get_lyric_text(registrar, &source_id) {
@@ -292,7 +296,7 @@ pub fn handle(registrar: &SourceRegistrar, path: &str, request: &Request<Vec<u8>
             }
             _ => error_response(
                 StatusCode::BAD_REQUEST,
-                &format!("未知的资源类型: {}", parsed.resource_type),
+                &format!("未知的资源类型: {}", resource_type),
             ),
         },
         Err(e) => error_response(StatusCode::BAD_REQUEST, &e),
