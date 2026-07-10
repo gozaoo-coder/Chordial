@@ -163,15 +163,21 @@ pub fn serve_audio_file(path_str: &str, request: &Request<Vec<u8>>) -> Response<
                     );
                 }
 
-                let mut buf = vec![0u8; length as usize];
-                if let Err(e) = file.read_exact(&mut buf) {
+                let mut buf = Vec::with_capacity(length as usize);
+                if let Err(e) = file.take(length).read_to_end(&mut buf) {
                     return error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         &format!("读取文件失败: {}", e),
                     );
                 }
 
-                perf::end(&_token, Some(&format!("bytes={}", length)));
+                // 仅在 perf 启用时构建 meta 字符串，避免 release 中无谓分配
+                let meta = if perf::enabled() {
+                    Some(format!("bytes={}", length))
+                } else {
+                    None
+                };
+                perf::end(&_token, meta.as_deref());
                 return Response::builder()
                     .status(StatusCode::PARTIAL_CONTENT)
                     .header(header::CONTENT_TYPE, mime)
@@ -198,7 +204,13 @@ pub fn serve_audio_file(path_str: &str, request: &Request<Vec<u8>>) -> Response<
         );
     }
 
-    perf::end(&_token, Some(&format!("bytes={}", file_size)));
+    // 仅在 perf 启用时构建 meta 字符串
+    let meta = if perf::enabled() {
+        Some(format!("bytes={}", file_size))
+    } else {
+        None
+    };
+    perf::end(&_token, meta.as_deref());
     Response::builder()
         .header(header::CONTENT_TYPE, mime)
         .header(header::CONTENT_LENGTH, file_size.to_string())

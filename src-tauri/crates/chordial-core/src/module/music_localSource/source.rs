@@ -237,8 +237,8 @@ impl LocalMusicSource {
             t1
         );
 
-        // 收集需要 canonicalize 的路径
-        let mut to_canonicalize: Vec<(String, String)> = Vec::new();
+        // 收集需要 canonicalize 的路径（预分配上界避免多次扩容）
+        let mut to_canonicalize: Vec<(String, String)> = Vec::with_capacity(all_songs.len());
         for (song_id, song) in &all_songs {
             let local_sid = song.source_ids.iter().find(|sid| {
                 sid.source_name == LOCAL_SOURCE_NAME && sid.entity_type == EntityType::Song
@@ -263,7 +263,7 @@ impl LocalMusicSource {
         let mut results: Vec<(String, String, bool)> = Vec::with_capacity(canonicalize_count);
 
         std::thread::scope(|s| {
-            let mut handles = Vec::new();
+            let mut handles = Vec::with_capacity(num_threads);
             for chunk in to_canonicalize.chunks(chunk_size) {
                 let chunk: Vec<(String, String)> = chunk.to_vec();
                 handles.push(s.spawn(move || {
@@ -410,22 +410,19 @@ impl MusicSource for LocalMusicSource {
 
     fn search_songs(&self, query: &str) -> Result<Vec<Song>, String> {
         let _scope = perf::scope("source.search_songs");
-        let query_lower = query.to_lowercase();
-        let mut results = Vec::new();
-
-        let paths: Vec<PlatformPath> = self.file_index.read().keys().cloned().collect();
-        for path in paths {
-            if let Ok(meta) = scanner::probe_file(&path) {
-                let title = meta.title.as_deref().unwrap_or("");
-                let artist = meta.artist.as_deref().unwrap_or("");
-                if title.to_lowercase().contains(&query_lower)
-                    || artist.to_lowercase().contains(&query_lower)
-                {
-                    let song = self.build_song(&path, &meta);
-                    results.push(song);
-                }
-            }
-        }
+        // 优化：委托给 library 内存搜索，避免每次查询重新探测文件（O(n) 磁盘 I/O）
+        // 旧实现：`self.file_index.read().keys().cloned()` + 循环 `scanner::probe_file()`
+        // 每次查询触发 N 次磁盘读取，对 1000 首歌 = 1000 次 I/O。
+        let results: Vec<Song> = self
+            .library
+            .search_songs(query)
+            .into_iter()
+            .filter(|song| {
+                song.source_ids
+                    .iter()
+                    .any(|sid| sid.source_name == LOCAL_SOURCE_NAME)
+            })
+            .collect();
         Ok(results)
     }
 

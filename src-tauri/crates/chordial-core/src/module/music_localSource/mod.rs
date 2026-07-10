@@ -136,7 +136,7 @@ pub fn init_local_source(
         let mut results = Vec::with_capacity(canonicalize_count);
 
         std::thread::scope(|s| {
-            let mut handles = Vec::new();
+            let mut handles = Vec::with_capacity(num_threads);
             for chunk in all_files.chunks(chunk_size) {
                 let chunk: Vec<PlatformPath> = chunk.to_vec();
                 handles.push(s.spawn(move || {
@@ -209,16 +209,17 @@ pub fn init_local_source(
             .min(needs_probe.len());
         let chunk_size = (needs_probe.len() + num_threads - 1) / num_threads;
 
-        let mut results: Vec<(PlatformPath, Result<scanner::AudioMeta, String>)> = Vec::new();
+        let mut results: Vec<(PlatformPath, Result<scanner::AudioMeta, String>)> =
+            Vec::with_capacity(needs_probe.len());
 
         let _t_probe = Instant::now();
         std::thread::scope(|s| {
-            let mut handles = Vec::new();
+            let mut handles = Vec::with_capacity(num_threads);
 
             for chunk in needs_probe.chunks(chunk_size) {
                 let chunk: Vec<PlatformPath> = chunk.to_vec();
                 handles.push(s.spawn(move || {
-                    let mut chunk_results = Vec::new();
+                    let mut chunk_results = Vec::with_capacity(chunk.len());
                     for path in &chunk {
                         let result = scanner::probe_file(path);
                         chunk_results.push((path.clone(), result));

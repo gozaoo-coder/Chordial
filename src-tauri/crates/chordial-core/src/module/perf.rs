@@ -79,11 +79,17 @@ fn fmt_duration(ms: u128) -> String {
 // ── 核心 API ──────────────────────────────────────────────────────────────
 
 /// 手动启动计时，返回 token。配合 [`end`] 使用。
+///
+/// 优化：perf 关闭时跳过 `label.to_string()` 分配，返回空 token。
+/// `enabled()` 仅一次 AtomicBool load，开销可忽略。
 pub fn start(label: &str) -> PerfToken {
+    if !enabled() {
+        return PerfToken::disabled();
+    }
     PerfToken {
         label: label.to_string(),
         start: Instant::now(),
-        enabled: enabled(),
+        enabled: true,
     }
 }
 
@@ -103,11 +109,16 @@ pub fn end(token: &PerfToken, meta: Option<&str>) {
 }
 
 /// RAII scope 计时。返回 guard，drop 时自动输出。
+///
+/// 优化：perf 关闭时跳过 `label.to_string()` 分配。
 pub fn scope(label: &str) -> PerfScope {
+    if !enabled() {
+        return PerfScope::disabled();
+    }
     PerfScope {
         label: label.to_string(),
         start: Instant::now(),
-        enabled: enabled(),
+        enabled: true,
     }
 }
 
@@ -147,11 +158,33 @@ pub struct PerfToken {
     enabled: bool,
 }
 
+impl PerfToken {
+    /// 构造一个已禁用的 token（perf 关闭时使用，避免 label 分配）
+    fn disabled() -> Self {
+        Self {
+            label: String::new(),
+            start: Instant::now(),
+            enabled: false,
+        }
+    }
+}
+
 /// RAII scope guard
 pub struct PerfScope {
     label: String,
     start: Instant,
     enabled: bool,
+}
+
+impl PerfScope {
+    /// 构造一个已禁用的 scope（perf 关闭时使用，避免 label 分配）
+    fn disabled() -> Self {
+        Self {
+            label: String::new(),
+            start: Instant::now(),
+            enabled: false,
+        }
+    }
 }
 
 impl Drop for PerfScope {
