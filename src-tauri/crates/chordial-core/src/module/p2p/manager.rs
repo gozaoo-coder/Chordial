@@ -9,6 +9,7 @@
 //!
 //! 所有公共方法均为同步方法，内部通过自有的 tokio 运行时驱动异步任务。
 
+use crate::module::config::store::ConfigStore;
 use crate::module::music_library::library::MusicLibrary;
 use crate::module::music_library::models::Song;
 use crate::module::music_source::registrar::SourceRegistrar;
@@ -17,12 +18,12 @@ use crate::module::music_source::traits::MusicSource;
 use crate::module::music_source::types::{EntityType, SourceType};
 use crate::module::p2p::broadcast::{Beacon, BroadcastDiscovery, DiscoveredPeer};
 use crate::module::p2p::protocol::{
-    generate_match_code, read_frame, write_frame, Frame, Op, Permission, DEFAULT_PORT,
-    PROTOCOL_VERSION,
+    generate_match_code, generate_match_code_excluding, read_frame, write_frame, Frame, Op,
+    Permission, DEFAULT_PORT, PROTOCOL_VERSION,
 };
 use crate::module::p2p::source::{PeerCommand, P2pSource};
 use parking_lot::RwLock;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -31,6 +32,23 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
+
+/// 可信设备记录 — 用户曾手动同意的 peer，后续自动连接。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrustedDevice {
+    /// 对端持久实例 ID
+    pub instance_id: String,
+    pub name: String,
+    pub addr: String,
+    pub permission: Permission,
+    pub added_at: u64,
+}
+
+const TRUSTED_CONFIG_KEY: &str = "p2p.trusted_devices";
+const INSTANCE_ID_CONFIG_KEY: &str = "p2p.instance_id";
+const MATCH_CODE_HISTORY_LEN: usize = 10;
+const MATCH_CODE_ROTATE_INTERVAL: Duration = Duration::from_secs(60);
+const AUTO_CONNECT_SCAN_INTERVAL: Duration = Duration::from_secs(5);
 
 /// P2P 事件 — 通过外部注入的事件通道送出，由 Tauri 层转发为前端事件。
 #[derive(Debug, Clone, Serialize)]
@@ -60,6 +78,15 @@ pub enum P2pEvent {
         accepted: bool,
         reason: Option<String>,
     },
+    /// 匹配码已自动轮换（防撞码机制，每 60s 一次）
+    MatchCodeRotated {
+        new_code: String,
+    },
+    /// 可信设备自动连接成功
+    TrustedAutoConnected {
+        peer_name: String,
+        addr: String,
+    },
 }
 
 /// 已连接的对端信息（用于 status() 输出）。
@@ -81,6 +108,10 @@ pub struct P2pStatus {
     pub broadcast_enabled: bool,
     pub peers: Vec<PeerInfo>,
     pub discovered: Vec<DiscoveredPeer>,
+    pub trusted_devices: Vec<TrustedDevice>,
+    pub instance_id: String,
+    /// 匹配码下次轮换的 Unix 时间戳（秒）
+    pub match_code_rotates_at: u64,
 }
 
 struct PeerEntry {
@@ -100,7 +131,9 @@ struct PendingRequest {
 pub struct P2pManager {
     library: Arc<MusicLibrary>,
     registrar: Arc<SourceRegistrar>,
+    config: Arc<ConfigStore>,
     server_name: String,
+    instance_id: String,
 
     inner: RwLock<Inner>,
     discovery: BroadcastDiscovery,
@@ -118,11 +151,25 @@ struct Inner {
     event_tx: Option<mpsc::UnboundedSender<P2pEvent>>,
     /// 关闭整个监听 accept 循环
     server_shutdown: Option<oneshot::Sender<()>>,
+    /// 可信设备列表（持久化到 ConfigStore）
+    trusted_devices: Vec<TrustedDevice>,
+    /// 最近用过的匹配码（防撞码）
+    match_code_history: Vec<String>,
+    /// 匹配码下次轮换的 Unix 时间戳（秒）
+    match_code_rotates_at: u64,
+    /// 自动任务（轮换 + 自动连接）关闭信号
+    auto_task_shutdown: Option<oneshot::Sender<()>>,
+    /// 已发起自动连接的 instance_id 集合（防止重复连接）
+    auto_connecting: HashMap<String, ()>,
 }
 
 impl P2pManager {
     /// 创建管理器。不会立即启动监听。
-    pub fn new(library: Arc<MusicLibrary>, registrar: Arc<SourceRegistrar>) -> Arc<Self> {
+    pub fn new(
+        library: Arc<MusicLibrary>,
+        registrar: Arc<SourceRegistrar>,
+        config: Arc<ConfigStore>,
+    ) -> Arc<Self> {
         let runtime = Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -135,21 +182,48 @@ impl P2pManager {
             .unwrap_or_else(|_| "chordial".to_string());
         let server_name = format!("{}-{}", server_name, &Uuid::new_v4().to_string()[..4]);
 
+        // 持久化 instance_id（首次生成后存入 ConfigStore）
+        let instance_id: String = config
+            .get::<String>(INSTANCE_ID_CONFIG_KEY)
+            .unwrap_or_else(|| {
+                let id = Uuid::new_v4().to_string();
+                let _ = config.set(INSTANCE_ID_CONFIG_KEY, &id);
+                id
+            });
+
+        // 加载可信设备列表
+        let trusted_devices: Vec<TrustedDevice> = config
+            .get::<Vec<TrustedDevice>>(TRUSTED_CONFIG_KEY)
+            .unwrap_or_default();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let initial_code = generate_match_code();
+
         let inner = Inner {
             listening: false,
             listen_addr: String::new(),
-            match_code: generate_match_code(),
+            match_code: initial_code.clone(),
             permission: Permission::ReadOnly,
             peers: HashMap::new(),
             pending_requests: HashMap::new(),
             event_tx: None,
             server_shutdown: None,
+            trusted_devices,
+            match_code_history: vec![initial_code],
+            match_code_rotates_at: now + 60,
+            auto_task_shutdown: None,
+            auto_connecting: HashMap::new(),
         };
 
         Arc::new(Self {
             library,
             registrar,
+            config,
             server_name,
+            instance_id,
             inner: RwLock::new(inner),
             discovery: BroadcastDiscovery::new(),
             runtime,
@@ -210,6 +284,9 @@ impl P2pManager {
             let _ = self.start_broadcast();
         }
 
+        // 启动自动任务：匹配码轮换 + 可信设备自动连接
+        self.start_auto_tasks();
+
         Ok(())
     }
 
@@ -221,6 +298,11 @@ impl P2pManager {
         if let Some(tx) = g.server_shutdown.take() {
             let _ = tx.send(());
         }
+        // 停止自动任务
+        if let Some(tx) = g.auto_task_shutdown.take() {
+            let _ = tx.send(());
+        }
+        g.auto_connecting.clear();
         // 关闭所有对端
         let peers: Vec<(String, PeerEntry)> = g.peers.drain().collect();
         let pending: Vec<(String, PendingRequest)> = g.pending_requests.drain().collect();
@@ -298,24 +380,37 @@ impl P2pManager {
         self.inner.write().permission = permission;
     }
 
-    /// 重新生成匹配码。
+    /// 重新生成匹配码（使用防撞历史）。
     pub fn regenerate_match_code(&self) -> String {
-        let code = generate_match_code();
-        self.inner.write().match_code = code.clone();
+        let mut g = self.inner.write();
+        let code = generate_match_code_excluding(&g.match_code_history);
+        g.match_code = code.clone();
+        g.match_code_history.push(code.clone());
+        if g.match_code_history.len() > MATCH_CODE_HISTORY_LEN {
+            g.match_code_history.remove(0);
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        g.match_code_rotates_at = now + 60;
+        let port = g
+            .listen_addr
+            .rsplit(':')
+            .next()
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(DEFAULT_PORT);
+        let beacon_name = self.server_name.clone();
+        let instance_id = self.instance_id.clone();
+        drop(g);
+
         // 同步广播信标
         if self.discovery.is_enabled() {
-            let port = self
-                .inner
-                .read()
-                .listen_addr
-                .rsplit(':')
-                .next()
-                .and_then(|s| s.parse::<u16>().ok())
-                .unwrap_or(DEFAULT_PORT);
             self.discovery.update_beacon(Beacon {
-                name: self.server_name.clone(),
+                name: beacon_name,
                 port,
                 match_code: code.clone(),
+                instance_id: Some(instance_id),
             });
         }
         code
@@ -332,19 +427,20 @@ impl P2pManager {
     }
 
     fn start_broadcast(self: &Arc<Self>) -> Result<(), String> {
-        let port = self
-            .inner
-            .read()
+        let g = self.inner.read();
+        let port = g
             .listen_addr
             .rsplit(':')
             .next()
             .and_then(|s| s.parse::<u16>().ok())
             .unwrap_or(DEFAULT_PORT);
-        let code = self.inner.read().match_code.clone();
+        let code = g.match_code.clone();
+        drop(g);
         let beacon = Beacon {
             name: self.server_name.clone(),
             port,
             match_code: code,
+            instance_id: Some(self.instance_id.clone()),
         };
         self.runtime
             .block_on(self.discovery.enable(beacon))
@@ -353,6 +449,188 @@ impl P2pManager {
 
     fn stop_broadcast(&self) {
         self.discovery.disable();
+    }
+
+    // ── 可信设备管理 ────────────────────────────────────
+
+    /// 内部方法：握手成功后自动存为可信设备（若尚未存在）。
+    fn add_trusted_internal(
+        &self,
+        instance_id: String,
+        name: String,
+        addr: String,
+        permission: Permission,
+    ) {
+        let mut g = self.inner.write();
+        if g.trusted_devices.iter().any(|t| t.instance_id == instance_id) {
+            return; // 已存在
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let device = TrustedDevice {
+            instance_id: instance_id.clone(),
+            name,
+            addr,
+            permission,
+            added_at: now,
+        };
+        g.trusted_devices.push(device.clone());
+        let devices = g.trusted_devices.clone();
+        drop(g);
+        let _ = self.config.set(TRUSTED_CONFIG_KEY, &devices);
+        eprintln!("[p2p] 新增可信设备: {instance_id}");
+    }
+
+    /// 手动添加可信设备。
+    pub fn add_trusted(&self, device: TrustedDevice) -> Result<(), String> {
+        let mut g = self.inner.write();
+        if g.trusted_devices.iter().any(|t| t.instance_id == device.instance_id) {
+            return Err("该设备已在可信列表中".into());
+        }
+        g.trusted_devices.push(device.clone());
+        let devices = g.trusted_devices.clone();
+        drop(g);
+        self.config.set(TRUSTED_CONFIG_KEY, &devices)
+    }
+
+    /// 移除可信设备。
+    pub fn remove_trusted(&self, instance_id: &str) -> Result<bool, String> {
+        let mut g = self.inner.write();
+        let before = g.trusted_devices.len();
+        g.trusted_devices.retain(|t| t.instance_id != instance_id);
+        let removed = g.trusted_devices.len() < before;
+        let devices = g.trusted_devices.clone();
+        drop(g);
+        if removed {
+            self.config.set(TRUSTED_CONFIG_KEY, &devices)?;
+        }
+        Ok(removed)
+    }
+
+    /// 列出所有可信设备。
+    pub fn list_trusted(&self) -> Vec<TrustedDevice> {
+        self.inner.read().trusted_devices.clone()
+    }
+
+    /// 获取匹配载荷（用于二维码生成）。
+    pub fn get_match_payload(&self) -> serde_json::Value {
+        let g = self.inner.read();
+        let port = g
+            .listen_addr
+            .rsplit(':')
+            .next()
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(DEFAULT_PORT);
+        serde_json::json!({
+            "instance_id": self.instance_id,
+            "name": self.server_name,
+            "port": port,
+            "match_code": g.match_code,
+            "listen_addr": g.listen_addr,
+        })
+    }
+
+    // ── 自动任务：匹配码轮换 + 可信设备自动连接 ──────────
+
+    fn start_auto_tasks(self: &Arc<Self>) {
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        self.inner.write().auto_task_shutdown = Some(shutdown_tx);
+
+        let this = self.clone();
+        self.runtime.spawn(async move {
+            Self::auto_task_loop(this, shutdown_rx).await;
+        });
+    }
+
+    async fn auto_task_loop(self: Arc<Self>, mut shutdown: oneshot::Receiver<()>) {
+        let mut code_timer = tokio::time::interval(MATCH_CODE_ROTATE_INTERVAL);
+        code_timer.tick().await; // 跳过首次立即触发
+        let mut connect_timer = tokio::time::interval(AUTO_CONNECT_SCAN_INTERVAL);
+        connect_timer.tick().await;
+
+        loop {
+            tokio::select! {
+                _ = &mut shutdown => {
+                    eprintln!("[p2p] 自动任务收到关闭信号");
+                    return;
+                }
+                _ = code_timer.tick() => {
+                    // 匹配码轮换
+                    let new_code = self.regenerate_match_code();
+                    let code_for_log = new_code.clone();
+                    self.emit(P2pEvent::MatchCodeRotated { new_code });
+                    eprintln!("[p2p] 匹配码已轮换: {code_for_log}");
+                }
+                _ = connect_timer.tick() => {
+                    // 可信设备自动连接扫描
+                    Arc::clone(&self).auto_connect_scan().await;
+                }
+            }
+        }
+    }
+
+    /// 扫描已发现的广播 peer，对可信设备自动发起握手。
+    async fn auto_connect_scan(self: Arc<Self>) {
+        let discovered = self.discovery.list_discovered();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        for peer in discovered {
+            // 必须有 instance_id 才能匹配可信
+            let Some(ref peer_iid) = peer.instance_id else { continue };
+
+            // 检查是否可信
+            let is_trusted = {
+                let g = self.inner.read();
+                g.trusted_devices.iter().any(|t| t.instance_id == *peer_iid)
+            };
+            if !is_trusted { continue; }
+
+            // 检查是否已连接
+            let already_connected = {
+                let g = self.inner.read();
+                g.peers.values().any(|e| e.name == peer.name)
+            };
+            if already_connected { continue; }
+
+            // 检查是否已在连接中
+            let already_connecting = {
+                let mut g = self.inner.write();
+                if g.auto_connecting.contains_key(peer_iid) {
+                    true
+                } else {
+                    g.auto_connecting.insert(peer_iid.clone(), ());
+                    false
+                }
+            };
+            if already_connecting { continue; }
+
+            let addr = format!("{}:{}", peer.addr, peer.port);
+            let match_code = peer.match_code.clone();
+            let peer_name = peer.name.clone();
+            let iid = peer_iid.clone();
+            let this = self.clone();
+
+            eprintln!("[p2p] 自动连接可信设备: {peer_name} ({addr})");
+            self.runtime.spawn(async move {
+                let result = Self::outgoing_handshake(this.clone(), addr.clone(), match_code).await;
+                this.inner.write().auto_connecting.remove(&iid);
+                if result.is_ok() {
+                    this.emit(P2pEvent::TrustedAutoConnected {
+                        peer_name,
+                        addr,
+                    });
+                } else if let Err(e) = result {
+                    eprintln!("[p2p] 自动连接失败 {addr}: {e}");
+                }
+            });
+
+            let _ = now; // 预留
+        }
     }
 
     /// 当前状态快照。
@@ -375,6 +653,9 @@ impl P2pManager {
                 })
                 .collect(),
             discovered: self.discovery.list_discovered(),
+            trusted_devices: g.trusted_devices.clone(),
+            instance_id: self.instance_id.clone(),
+            match_code_rotates_at: g.match_code_rotates_at,
         }
     }
 
@@ -416,132 +697,147 @@ impl P2pManager {
         peer_addr: SocketAddr,
     ) -> Result<(), String> {
         // 1. 读 Hello
-        let hello = match read_frame(&mut stream).await.map_err(|e| e.to_string())? {
-            Frame::Hello { version, match_code, client_name } => {
-                if version != PROTOCOL_VERSION {
-                    let perm = self.inner.read().permission;
-                    let _ = write_frame(
-                        &mut stream,
-                        &Frame::HelloAck {
-                            accepted: false,
-                            server_name: self.server_name.clone(),
-                            offered_permission: perm,
-                            session_id: String::new(),
-                            reason: Some(format!("协议版本不匹配: 本机 {PROTOCOL_VERSION}, 对端 {version}")),
-                        },
-                    )
-                    .await;
-                    return Err(format!("协议版本不匹配: {version}"));
+        let (match_code, client_name, client_instance_id) =
+            match read_frame(&mut stream).await.map_err(|e| e.to_string())? {
+                Frame::Hello { version, match_code, client_name, instance_id } => {
+                    if version != PROTOCOL_VERSION {
+                        let perm = self.inner.read().permission;
+                        let _ = write_frame(
+                            &mut stream,
+                            &Frame::HelloAck {
+                                accepted: false,
+                                server_name: self.server_name.clone(),
+                                offered_permission: perm,
+                                session_id: String::new(),
+                                reason: Some(format!(
+                                    "协议版本不匹配: 本机 {PROTOCOL_VERSION}, 对端 {version}"
+                                )),
+                            },
+                        )
+                        .await;
+                        return Err(format!("协议版本不匹配: {version}"));
+                    }
+                    (match_code, client_name, instance_id)
                 }
-                (match_code, client_name)
-            }
-            _ => return Err("期望 Hello 帧".into()),
-        };
+                _ => return Err("期望 Hello 帧".into()),
+            };
 
-        // 2. 校验匹配码
-        let (code_ok, our_code) = {
-            let g = self.inner.read();
-            (hello.0 == g.match_code, g.match_code.clone())
-        };
-        if !code_ok {
-            let perm = self.inner.read().permission;
-            let _ = write_frame(
-                &mut stream,
-                &Frame::HelloAck {
-                    accepted: false,
-                    server_name: self.server_name.clone(),
-                    offered_permission: perm,
-                    session_id: String::new(),
-                    reason: Some("匹配码错误".into()),
-                },
-            )
-            .await;
-            return Err(format!("匹配码错误 (对端 {})", hello.0));
-        }
-        let _ = our_code; // 仅用于明确语义
+        // 2. 检查是否为可信设备（by instance_id）→ 自动接受，跳过匹配码 + 用户确认
+        let is_trusted = client_instance_id
+            .as_ref()
+            .map(|id| self.inner.read().trusted_devices.iter().any(|t| t.instance_id == *id))
+            .unwrap_or(false);
 
-        // 3. 请求本机用户确认
-        let request_id = Uuid::new_v4().to_string();
-        let (tx, rx) = oneshot::channel::<bool>();
-        self.inner.write().pending_requests.insert(
-            request_id.clone(),
-            PendingRequest {
-                reply: tx,
-            },
-        );
-        self.emit(P2pEvent::MatchRequested {
-            request_id: request_id.clone(),
-            peer_addr: peer_addr.to_string(),
-            peer_name: hello.1.clone(),
-        });
-
-        // 通知对端：等待用户确认
-        let _ = write_frame(
-            &mut stream,
-            &Frame::MatchPending {
-                request_id: request_id.clone(),
-                server_name: self.server_name.clone(),
-            },
-        )
-        .await;
-
-        // 4. 等待本机用户响应（超时 60 秒）
-        let accepted = match tokio::time::timeout(Duration::from_secs(60), rx).await {
-            Ok(Ok(b)) => b,
-            _ => {
-                self.inner.write().pending_requests.remove(&request_id);
+        let accepted = if is_trusted {
+            // 可信设备：直接接受，无需匹配码校验和用户确认
+            true
+        } else {
+            // 3. 非可信：校验匹配码
+            let code_ok = match_code == self.inner.read().match_code;
+            if !code_ok {
+                let perm = self.inner.read().permission;
                 let _ = write_frame(
                     &mut stream,
-                    &Frame::MatchResult {
-                        request_id: request_id.clone(),
+                    &Frame::HelloAck {
                         accepted: false,
-                        permission: None,
-                        session_id: None,
-                        reason: Some("超时或取消".into()),
+                        server_name: self.server_name.clone(),
+                        offered_permission: perm,
+                        session_id: String::new(),
+                        reason: Some("匹配码错误".into()),
                     },
                 )
                 .await;
-                return Err("等待用户确认超时".into());
+                return Err(format!("匹配码错误 (对端 {})", match_code));
+            }
+
+            // 4. 请求本机用户确认
+            let request_id = Uuid::new_v4().to_string();
+            let (tx, rx) = oneshot::channel::<bool>();
+            self.inner.write().pending_requests.insert(
+                request_id.clone(),
+                PendingRequest { reply: tx },
+            );
+            self.emit(P2pEvent::MatchRequested {
+                request_id: request_id.clone(),
+                peer_addr: peer_addr.to_string(),
+                peer_name: client_name.clone(),
+            });
+
+            let _ = write_frame(
+                &mut stream,
+                &Frame::MatchPending {
+                    request_id: request_id.clone(),
+                    server_name: self.server_name.clone(),
+                },
+            )
+            .await;
+
+            // 等待本机用户响应（超时 60 秒）
+            match tokio::time::timeout(Duration::from_secs(60), rx).await {
+                Ok(Ok(b)) => {
+                    if !b {
+                        let _ = write_frame(
+                            &mut stream,
+                            &Frame::MatchResult {
+                                request_id: request_id.clone(),
+                                accepted: false,
+                                permission: None,
+                                session_id: None,
+                                reason: Some("本机用户拒绝".into()),
+                                server_instance_id: None,
+                            },
+                        )
+                        .await;
+                        self.emit(P2pEvent::MatchResult {
+                            request_id,
+                            accepted: false,
+                            reason: Some("本机用户拒绝".into()),
+                        });
+                        return Ok(());
+                    }
+                    true
+                }
+                _ => {
+                    self.inner.write().pending_requests.remove(&request_id);
+                    let _ = write_frame(
+                        &mut stream,
+                        &Frame::MatchResult {
+                            request_id: request_id.clone(),
+                            accepted: false,
+                            permission: None,
+                            session_id: None,
+                            reason: Some("超时或取消".into()),
+                            server_instance_id: None,
+                        },
+                    )
+                    .await;
+                    return Err("等待用户确认超时".into());
+                }
             }
         };
 
         if !accepted {
-            let _ = write_frame(
-                &mut stream,
-                &Frame::MatchResult {
-                    request_id: request_id.clone(),
-                    accepted: false,
-                    permission: None,
-                    session_id: None,
-                    reason: Some("本机用户拒绝".into()),
-                },
-            )
-            .await;
-            self.emit(P2pEvent::MatchResult {
-                request_id,
-                accepted: false,
-                reason: Some("本机用户拒绝".into()),
-            });
             return Ok(());
         }
 
-        // 5. 接受 → 发送 MatchResult，开始对端 IO
+        // 5. 接受 → 发送 MatchResult（含本机 instance_id），开始对端 IO
         let permission = self.inner.read().permission;
         let session_id = Uuid::new_v4().to_string();
         let _ = write_frame(
             &mut stream,
             &Frame::MatchResult {
-                request_id: request_id.clone(),
+                request_id: String::new(),
                 accepted: true,
                 permission: Some(permission),
                 session_id: Some(session_id.clone()),
                 reason: None,
+                server_instance_id: Some(self.instance_id.clone()),
             },
         )
         .await;
 
         self.emit(P2pEvent::MatchResult {
-            request_id,
+            request_id: String::new(),
             accepted: true,
             reason: None,
         });
@@ -550,7 +846,7 @@ impl P2pManager {
         self.spawn_peer_task(
             stream,
             session_id,
-            hello.1,
+            client_name.clone(),
             peer_addr.to_string(),
             permission,
             /* incoming = */ true,
@@ -571,20 +867,20 @@ impl P2pManager {
             .await
             .map_err(|e| format!("连接 {addr} 失败: {e}"))?;
 
-        // 发 Hello
+        // 发 Hello（携带本机 instance_id，对端可据此判断可信）
         write_frame(
             &mut stream,
             &Frame::Hello {
                 version: PROTOCOL_VERSION,
                 match_code,
                 client_name: self.server_name.clone(),
+                instance_id: Some(self.instance_id.clone()),
             },
         )
         .await
         .map_err(|e| format!("发送 Hello 失败: {e}"))?;
 
         // 读回复：可能是 HelloAck（对端自动接受/拒绝）或 MatchPending + MatchResult
-        let mut pending_request_id: Option<String> = None;
         let mut peer_name = String::from("unknown");
         loop {
             let frame = read_frame(&mut stream).await.map_err(|e| format!("读握手响应失败: {e}"))?;
@@ -594,22 +890,21 @@ impl P2pManager {
                     if !accepted {
                         return Err(reason.unwrap_or_else(|| "对端拒绝握手".into()));
                     }
-                    // 对端自动接受（无需用户确认）— 但本协议规范下对端总是要求用户确认，
-                    // 所以这条分支理论上只在对端实现快捷路径时到达。直接结束握手。
                     break;
                 }
-                Frame::MatchPending { request_id, server_name } => {
-                    pending_request_id = Some(request_id);
+                Frame::MatchPending { server_name, .. } => {
                     peer_name = server_name;
-                    // 继续等 MatchResult
                 }
-                Frame::MatchResult { accepted, permission, session_id, reason, .. } => {
+                Frame::MatchResult { accepted, permission, session_id, reason, server_instance_id, .. } => {
                     if !accepted {
                         return Err(reason.unwrap_or_else(|| "对端用户拒绝".into()));
                     }
                     let session_id = session_id.unwrap_or_else(|| Uuid::new_v4().to_string());
                     let permission = permission.unwrap_or(Permission::ReadOnly);
-                    let _ = pending_request_id; // 仅用于去重
+                    // 收到对端 instance_id → 存为可信设备（自动信任）
+                    if let Some(ref sid) = server_instance_id {
+                        self.add_trusted_internal(sid.clone(), peer_name.clone(), addr.clone(), permission);
+                    }
                     self.spawn_peer_task(
                         stream,
                         session_id,
@@ -627,9 +922,9 @@ impl P2pManager {
             }
         }
 
-        // 走到此处说明对端用 HelloAck 直接接受（无 MatchResult）
+        // 对端用 HelloAck 直接接受（无 MatchResult，无 instance_id 交换）
         let session_id = Uuid::new_v4().to_string();
-        let permission = self.inner.read().permission; // 对端未告知，用本机默认推断
+        let permission = self.inner.read().permission;
         self.spawn_peer_task(
             stream,
             session_id,

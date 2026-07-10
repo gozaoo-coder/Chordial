@@ -72,6 +72,9 @@ pub enum Frame {
         version: u32,
         match_code: String,
         client_name: String,
+        /// 客户端持久实例 ID（用于可信设备识别）
+        #[serde(default)]
+        instance_id: Option<String>,
     },
     /// 服务器 → 客户端：直接接受或拒绝（无需用户确认时）
     HelloAck {
@@ -97,6 +100,9 @@ pub enum Frame {
         session_id: Option<String>,
         #[serde(default)]
         reason: Option<String>,
+        /// 服务器持久实例 ID（接受时返回，客户端可存为可信设备）
+        #[serde(default)]
+        server_instance_id: Option<String>,
     },
     /// 客户端 → 服务器：查询请求
     Query {
@@ -179,14 +185,26 @@ pub async fn read_frame<R: AsyncReadExt + Unpin>(reader: &mut R) -> io::Result<F
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-/// 生成 6 位数字匹配码。
+/// 生成 6 位数字匹配码（防撞：跳过 history 中最近的码）。
 pub fn generate_match_code() -> String {
+    generate_match_code_excluding(&[])
+}
+
+/// 生成 6 位数字匹配码，排除 history 中的最近码（防撞码机制）。
+pub fn generate_match_code_excluding(history: &[String]) -> String {
     // 简单 LCG，避免引入 rand 依赖；种子用系统时间
     let seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0x1234_5678);
-    let state = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    let n = (state >> 33) % 1_000_000;
-    format!("{n:06}")
+    let mut state = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    loop {
+        let n = (state >> 33) % 1_000_000;
+        let code = format!("{n:06}");
+        if !history.iter().any(|h| h == &code) {
+            return code;
+        }
+        // 撞了就推进状态再试
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    }
 }

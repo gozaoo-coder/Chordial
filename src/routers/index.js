@@ -11,6 +11,8 @@ const MusicSourceManager = () => import('../views/MusicSourceManager.vue')
 const TrackDetail = () => import('../views/TrackDetail.vue')
 const PlayerView = () => import('../views/PlayerView.vue')
 const SettingsView = () => import('../views/SettingsView.vue')
+const GeneralSettingsView = () => import('../views/settings/GeneralSettingsView.vue')
+const P2pSettingsView = () => import('../views/settings/P2pSettingsView.vue')
 const TestPage = () => import('../views/TestPage.vue')
 
 // 定义路由
@@ -74,9 +76,29 @@ const routes = [
   },
   {
     path: '/settings',
-    name: 'SettingsView',
+    name: 'Settings',
     component: SettingsView,
-    meta: { title: '设置' }
+    meta: { title: '设置' },
+    children: [
+      {
+        path: '',
+        name: 'SettingsIndex',
+        component: () => import('../views/settings/SettingsIndex.vue'),
+        meta: { title: '设置' }
+      },
+      {
+        path: 'general',
+        name: 'SettingsGeneral',
+        component: GeneralSettingsView,
+        meta: { title: '通用设置' }
+      },
+      {
+        path: 'p2p',
+        name: 'SettingsP2p',
+        component: P2pSettingsView,
+        meta: { title: 'P2P 资源共享' }
+      }
+    ]
   },
   {
     path: '/about',

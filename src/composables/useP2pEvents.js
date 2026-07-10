@@ -82,6 +82,15 @@ function handleEvent(payload) {
       );
       break;
     }
+    case 'match_code_rotated': {
+      // 匹配码自动轮换；提示用户更新展示
+      pushToast('info', '匹配码已更新', `新匹配码：${evt.new_code}`);
+      break;
+    }
+    case 'trusted_auto_connected': {
+      pushToast('success', '可信设备已连接', `${evt.peer_name} (${evt.addr}) 已自动连接`);
+      break;
+    }
     default:
       console.warn('[p2p] 未知事件:', evt);
   }

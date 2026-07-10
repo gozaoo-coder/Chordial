@@ -96,7 +96,7 @@ impl AppContext {
         })?;
 
         // ── P2P 资源共享管理器 ──
-        let p2p = P2pManager::new(library.clone(), registrar.clone());
+        let p2p = P2pManager::new(library.clone(), registrar.clone(), config.clone());
 
         Ok(Self {
             config,

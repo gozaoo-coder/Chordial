@@ -92,6 +92,40 @@ export async function regenerateMatchCode() {
   return transport.command('p2p_regenerate_match_code');
 }
 
+// ── 可信设备管理 ─────────────────────────────────────
+
+/**
+ * 列出所有可信设备（用户曾同意过的 peer，会自动重连）。
+ * @returns {Promise<Array<{instance_id: string, name: string, addr: string, permission: string, added_at: number}>>}
+ */
+export async function listTrusted() {
+  return transport.command('p2p_list_trusted');
+}
+
+/**
+ * 手动添加可信设备。
+ * @param {{instance_id: string, name: string, addr: string, permission: 'readonly'|'editable', added_at?: number}} device
+ */
+export async function addTrusted(device) {
+  return transport.command('p2p_add_trusted', { device });
+}
+
+/**
+ * 移除可信设备。
+ * @param {string} instanceId
+ */
+export async function removeTrusted(instanceId) {
+  return transport.command('p2p_remove_trusted', { instanceId });
+}
+
+/**
+ * 获取匹配载荷（用于生成二维码）。
+ * @returns {Promise<{instance_id: string, name: string, port: number, match_code: string, listen_addr: string}>}
+ */
+export async function getMatchPayload() {
+  return transport.command('p2p_get_match_payload');
+}
+
 export const p2pApi = {
   status,
   startServer,
@@ -102,6 +136,10 @@ export const p2pApi = {
   setPermission,
   setBroadcast,
   regenerateMatchCode,
+  listTrusted,
+  addTrusted,
+  removeTrusted,
+  getMatchPayload,
 };
 
 export default p2pApi;

@@ -31,6 +31,6 @@ pub mod manager;
 pub mod protocol;
 pub mod source;
 
-pub use manager::{P2pEvent, P2pManager, P2pStatus, PeerInfo};
+pub use manager::{P2pEvent, P2pManager, P2pStatus, PeerInfo, TrustedDevice};
 pub use protocol::Permission;
 pub use source::P2pSource;

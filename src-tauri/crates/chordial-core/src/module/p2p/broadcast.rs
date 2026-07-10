@@ -28,6 +28,9 @@ pub struct Beacon {
     pub port: u16,
     /// 当前匹配码
     pub match_code: String,
+    /// 持久实例 ID（用于可信设备识别）
+    #[serde(default)]
+    pub instance_id: Option<String>,
 }
 
 /// 已发现的设备。
@@ -37,6 +40,8 @@ pub struct DiscoveredPeer {
     pub addr: String,
     pub port: u16,
     pub match_code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instance_id: Option<String>,
     pub last_seen_secs: u64,
 }
 
@@ -176,6 +181,7 @@ impl BroadcastDiscovery {
                     addr: ip.to_string(),
                     port: beacon.port,
                     match_code: beacon.match_code.clone(),
+                    instance_id: beacon.instance_id.clone(),
                     last_seen_secs: now.duration_since(*seen).as_secs(),
                 })
             })

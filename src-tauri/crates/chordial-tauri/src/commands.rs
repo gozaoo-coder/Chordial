@@ -683,7 +683,7 @@ pub fn library_get_source_ids_of_song(
 // P2P 资源共享命令
 // ══════════════════════════════════════════════════════════════════════════════
 
-use chordial_core::module::p2p::{Permission, P2pStatus};
+use chordial_core::module::p2p::{Permission, P2pStatus, TrustedDevice};
 
 #[tauri::command]
 pub fn p2p_status(ctx: State<'_, Arc<AppContext>>) -> Result<P2pStatus, String> {
@@ -760,4 +760,33 @@ pub fn p2p_set_broadcast(
 #[tauri::command]
 pub fn p2p_regenerate_match_code(ctx: State<'_, Arc<AppContext>>) -> Result<String, String> {
     Ok(ctx.p2p.regenerate_match_code())
+}
+
+// ── 可信设备管理 ─────────────────────────────────────
+
+#[tauri::command]
+pub fn p2p_list_trusted(ctx: State<'_, Arc<AppContext>>) -> Result<Vec<TrustedDevice>, String> {
+    Ok(ctx.p2p.list_trusted())
+}
+
+#[tauri::command]
+pub fn p2p_add_trusted(
+    ctx: State<'_, Arc<AppContext>>,
+    device: TrustedDevice,
+) -> Result<(), String> {
+    ctx.p2p.add_trusted(device)
+}
+
+#[tauri::command]
+pub fn p2p_remove_trusted(
+    ctx: State<'_, Arc<AppContext>>,
+    instance_id: String,
+) -> Result<bool, String> {
+    ctx.p2p.remove_trusted(&instance_id)
+}
+
+/// 获取匹配载荷（用于前端二维码生成）。
+#[tauri::command]
+pub fn p2p_get_match_payload(ctx: State<'_, Arc<AppContext>>) -> Result<serde_json::Value, String> {
+    Ok(ctx.p2p.get_match_payload())
 }

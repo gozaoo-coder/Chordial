@@ -152,6 +152,10 @@ pub fn run() {
             commands::p2p_set_permission,
             commands::p2p_set_broadcast,
             commands::p2p_regenerate_match_code,
+            commands::p2p_list_trusted,
+            commands::p2p_add_trusted,
+            commands::p2p_remove_trusted,
+            commands::p2p_get_match_payload,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
