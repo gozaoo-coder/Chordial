@@ -44,6 +44,17 @@ impl FileBackend {
             Ok(())
         }
     }
+
+    /// 直接写入已序列化的 JSON 字符串到磁盘。
+    ///
+    /// 性能优化路径：调用方在 read lock 内序列化（快，~10ms）后释放锁，
+    /// 再调用此方法写入磁盘（慢，~500ms）。避免 `cache.read().clone()`
+    /// 导致的全量 HashMap clone。
+    pub fn write_str(&self, content: &str) -> Result<(), String> {
+        self.ensure_dir()?;
+        fs::write(&self.path, content)
+            .map_err(|e| format!("写文件失败: {}", e))
+    }
 }
 
 impl StorageBackend for FileBackend {

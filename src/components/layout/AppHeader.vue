@@ -72,10 +72,13 @@ const goToSettings = () => {
   position: sticky;
   top: 0;
   z-index: 100;
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
   background: var(--bg-glass);
   border-bottom: 1px solid var(--border-light);
+  /* GPU: 限制重绘范围，减少合成器开销 */
+  contain: layout paint;
+  will-change: backdrop-filter;
 }
 
 /* 窗口拖动区域 */
@@ -149,8 +152,11 @@ const goToSettings = () => {
   font-weight: 400;
   transition: all var(--transition-normal);
   -webkit-app-region: no-drag;
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  /* GPU: 输入框 backdrop 独立合成层 */
+  will-change: backdrop-filter;
+  contain: paint;
 }
 
 .search-box input:focus {
@@ -183,11 +189,14 @@ const goToSettings = () => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
   border: 1px solid var(--border-light);
   transition: all var(--transition-fast);
   -webkit-app-region: no-drag;
+  /* GPU: 小图标 backdrop 最小化模糊半径 */
+  will-change: backdrop-filter;
+  contain: paint;
 }
 
 .icon-btn:hover {

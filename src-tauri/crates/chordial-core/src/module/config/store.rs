@@ -154,9 +154,15 @@ impl ConfigStore {
     /// 立即同步落盘，跳过防抖定时器。
     ///
     /// 适合在应用退出前调用，确保所有修改已持久化。
+    ///
+    /// 优化：在读锁内序列化为字符串，释放锁后写盘，
+    /// 避免 `cache.read().clone()` 全量 HashMap clone。
     pub fn flush(&self) -> Result<(), String> {
-        let snapshot = self.inner.cache.read().clone();
-        self.backend.write(&snapshot)
+        let content = {
+            let guard = self.inner.cache.read();
+            serde_json::to_string(&*guard).map_err(|e| format!("序列化失败: {}", e))?
+        };
+        self.backend.write_str(&content)
     }
 
     /// 从磁盘重新加载数据，**丢弃内存中所有未落盘的修改**。

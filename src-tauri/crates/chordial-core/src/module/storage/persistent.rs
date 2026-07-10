@@ -199,10 +199,16 @@ impl PersistentStore {
     /// 立即将内存中所有数据写入磁盘。
     ///
     /// 写入成功后清除脏标记。
+    ///
+    /// 优化：在读锁内序列化为字符串（~10ms for 10k entries），释放锁后写盘，
+    /// 避免 `cache.read().clone()` 导致的全量 HashMap clone（O(n) 内存+时间）。
     pub fn save(&self) -> Result<(), String> {
         let _scope = perf::scope("persistent.save");
-        let data = self.cache.read().clone();
-        self.backend.write(&data)?;
+        let content = {
+            let guard = self.cache.read();
+            serde_json::to_string(&*guard).map_err(|e| format!("序列化失败: {}", e))?
+        };
+        self.backend.write_str(&content)?;
         *self.dirty.write() = false;
         Ok(())
     }

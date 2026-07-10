@@ -164,7 +164,7 @@ const formatTime = (seconds) => {
   right: 0.9rem;
   height: var(--bottom-nav-height);
   padding: 0.5rem 1rem;
-  backdrop-filter:saturate(180%) blur(20px) ;
+  backdrop-filter:saturate(180%) blur(16px) ;
   transition: bottom var(--transition-slow);
   border-radius: calc(var(--bottom-nav-height) * 0.6);
   background: var(--bg-glass);
@@ -172,6 +172,9 @@ const formatTime = (seconds) => {
   justify-content: center;
   overflow: hidden;
   isolation: isolate;
+  /* GPU: 悬浮控制条 backdrop 降模糊半径+合成层 */
+  will-change: backdrop-filter;
+  contain: layout paint;
 }
 
 /* 模糊封面背景层 */
@@ -187,8 +190,11 @@ const formatTime = (seconds) => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(22px) brightness(0.55) saturate(1.3);
+  filter: blur(18px) brightness(0.55) saturate(1.3);
   transform: scale(1.15);
+  /* GPU: 封面模糊层固定合成，限制重绘 */
+  will-change: filter;
+  contain: paint;
 }
 
 .bar-bg::after {

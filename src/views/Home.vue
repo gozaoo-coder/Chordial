@@ -314,6 +314,9 @@ const shufflePlay = () => {
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 16px;
+  /* GPU: badge backdrop 独立合成 */
+  will-change: backdrop-filter;
+  contain: paint;
 }
 
 .hero-badge i {
@@ -370,6 +373,9 @@ const shufflePlay = () => {
   background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(10px);
   color: white;
+  /* GPU: hero 按钮通常静态，hints 提示合成器 */
+  will-change: backdrop-filter;
+  contain: paint;
 }
 
 .hero-btn.secondary:hover {
@@ -388,9 +394,12 @@ const shufflePlay = () => {
   gap: 20px;
   padding: 20px 24px;
   background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(20px);
+  backdrop-filter: blur(16px);
   border-radius: var(--radius-lg);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  /* GPU: stats 区 backdrop 高开销，降模糊+合成层 */
+  will-change: backdrop-filter;
+  contain: layout paint;
 }
 
 .hero-stat {
