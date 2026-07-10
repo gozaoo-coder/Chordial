@@ -111,10 +111,13 @@ pub fn probe_file(path: &PlatformPath) -> Result<AudioMeta, String> {
         meta.title = platform::path_file_stem(path);
     }
 
-    perf::end(
-        &_token,
-        Some(&format!("path={}", platform::path_to_string(path))),
-    );
+    // 仅在 perf 启用时构建 meta 字符串，避免 release 中无谓 format! 分配
+    let meta_str = if perf::enabled() {
+        Some(format!("path={}", platform::path_to_string(path)))
+    } else {
+        None
+    };
+    perf::end(&_token, meta_str.as_deref());
     Ok(meta)
 }
 

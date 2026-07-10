@@ -323,10 +323,10 @@ onUnmounted(() => {
   position: absolute; inset: -60px;
   width: calc(100% + 120px); height: calc(100% + 120px);
   object-fit: cover;
-  filter: blur(80px) brightness(0.28) saturate(1.8);
+  filter: blur(60px) brightness(0.28) saturate(1.8);
   transform: scale(1.05);
   pointer-events: none; user-select: none;
-  /* GPU 合成层提示，避免 80px 全屏 blur 触发主线程重绘 */
+  /* GPU 合成层提示，避免全屏 blur 触发主线程重绘 */
   will-change: transform, filter;
   backface-visibility: hidden;
 }
