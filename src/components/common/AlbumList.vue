@@ -92,6 +92,13 @@ onMounted(() => {
 .album-card {
   cursor: pointer;
   transition: transform var(--transition-spring);
+  /* CSS 虚拟化：跳过屏幕外卡片的渲染（布局+绘制），
+     仅在进入视口时渲染。配合 contain-intrinsic-size 预留空间避免滚动跳动。
+     比手动 JS 虚拟滚动更轻量，且兼容现有 CSS Grid 布局。 */
+  content-visibility: auto;
+  contain-intrinsic-size: 200px 280px;
+  /* contain 进一步隔离重绘 */
+  contain: layout style paint;
 }
 
 .album-card:hover {
