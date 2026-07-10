@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted } from 'vue';
 import CoverImage from './CoverImage.vue';
 import { perf } from '@/utils/performanceMonitor.js';
 
@@ -55,48 +55,19 @@ const backgroundAlbums = computed(() => {
 // 是否有足够的封面
 const hasEnoughCovers = computed(() => backgroundAlbums.value.length >= 3);
 
-// 动画偏移量
-const offsetX = ref(0);
-const offsetY = ref(0);
-let animationId = null;
+// perf: 旧实现用 requestAnimationFrame 每帧更新 offsetX/offsetY，
+// 导致 animationStyle computed 每帧重算，9 个 collage-item 的 :style 各触发一次。
+// 改用纯 CSS keyframes 动画，完全交给 GPU 合成器，零主线程开销。
+// animationEnabled 通过 animation-play-state 控制暂停/恢复。
+
 let stopFps = null;
 
-// 缓慢漂移动画
-const startAnimation = () => {
-  if (!props.animationEnabled) return;
-  
-  let startTime = null;
-  const duration = 60000; // 60秒一个周期
-  
-  const animate = (timestamp) => {
-    if (!startTime) startTime = timestamp;
-    const elapsed = timestamp - startTime;
-    const progress = (elapsed % duration) / duration;
-    
-    // 缓慢的正弦波动
-    offsetX.value = Math.sin(progress * Math.PI * 2) * 10; // ±10px
-    offsetY.value = Math.cos(progress * Math.PI * 2) * 8;  // ±8px
-    
-    animationId = requestAnimationFrame(animate);
-  };
-  
-  animationId = requestAnimationFrame(animate);
-};
-
-const stopAnimation = () => {
-  if (animationId) {
-    cancelAnimationFrame(animationId);
-    animationId = null;
-  }
-};
-
 onMounted(() => {
-  startAnimation();
-  stopFps = perf.startFpsMonitor('AlbumCollageBackground.raf', 2000);
+  // 保留 FPS 监控以验证 CSS 动画后的帧率
+  stopFps = perf.startFpsMonitor('AlbumCollageBackground.css', 2000);
 });
 
 onUnmounted(() => {
-  stopAnimation();
   if (stopFps) stopFps();
 });
 
@@ -120,29 +91,21 @@ const gridStyle = computed(() => {
     };
   }
 });
-
-// 动画样式
-const animationStyle = computed(() => {
-  if (!props.animationEnabled) return {};
-  return {
-    transform: `translate(${offsetX.value}px, ${offsetY.value}px) scale(1.1)`
-  };
-});
 </script>
 
 <template>
   <div class="album-collage-background">
     <!-- 多专辑封面网格 -->
-    <div 
-      v-if="hasEnoughCovers" 
+    <div
+      v-if="hasEnoughCovers"
       class="collage-grid"
+      :class="{ 'animation-paused': !animationEnabled }"
       :style="gridStyle"
     >
-      <div 
-        v-for="(album, index) in backgroundAlbums" 
+      <div
+        v-for="(album, index) in backgroundAlbums"
         :key="`${album.id}-${index}`"
         class="collage-item"
-        :style="animationStyle"
       >
         <CoverImage
           :item="album"
@@ -180,6 +143,22 @@ const animationStyle = computed(() => {
   display: grid;
   gap: 4px;
   transform: scale(1.1);
+  /* CSS 动画替代 JS RAF：60s 缓慢正弦漂移，纯 GPU 合成，零主线程开销 */
+  animation: collage-drift 60s linear infinite;
+  will-change: transform;
+}
+
+/* 动画暂停（animationEnabled=false 时） */
+.collage-grid.animation-paused {
+  animation-play-state: paused;
+}
+
+@keyframes collage-drift {
+  0%   { transform: scale(1.1) translate(0, 0); }
+  25%  { transform: scale(1.1) translate(10px, 8px); }
+  50%  { transform: scale(1.1) translate(0, 16px); }
+  75%  { transform: scale(1.1) translate(-10px, 8px); }
+  100% { transform: scale(1.1) translate(0, 0); }
 }
 
 .collage-item {

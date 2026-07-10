@@ -97,7 +97,8 @@ const loadSettings = () => {
   }
 };
 
-watch([defaultVolume, autoPlay, defaultPlayMode], saveSettings, { deep: true });
+// 这些 ref 均为基本类型，无需 deep: true（旧写法对基本类型做深度遍历是浪费）
+watch([defaultVolume, autoPlay, defaultPlayMode], saveSettings);
 
 onMounted(loadSettings);
 </script>
