@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onActivated, computed } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import TrackList from '../components/common/TrackList.vue';
 import ArtistList from '../components/common/ArtistList.vue';
@@ -50,16 +50,12 @@ const loadHomeData = async () => {
   isLoading.value = true;
   start('loadHomeData');
   try {
-    const data = await library.getCached();
+    const data = await library.homeStats();
     if (data) {
-      recentTracks.value = data.tracks.slice(0, 10);
-      featuredArtists.value = data.artists.slice(0, 6);
-      recentAlbums.value = data.albums.slice(0, 8);
-      stats.value = {
-        artists: data.artists.length,
-        albums: data.albums.length,
-        tracks: data.tracks.length
-      };
+      recentTracks.value = data.recentTracks;
+      featuredArtists.value = data.featuredArtists;
+      recentAlbums.value = data.recentAlbums;
+      stats.value = data.stats;
     }
     end('loadHomeData', { tracks: recentTracks.value.length, artists: featuredArtists.value.length, albums: recentAlbums.value.length });
   } catch (error) {
@@ -71,11 +67,11 @@ const loadHomeData = async () => {
 };
 
 onMounted(() => {
-  loadHomeData();
-});
-
-onActivated(() => {
-  loadHomeData();
+  if (recentTracks.value.length === 0) {
+    loadHomeData();
+  } else {
+    isLoading.value = false;
+  }
 });
 
 const handleTrackSelect = (track) => {

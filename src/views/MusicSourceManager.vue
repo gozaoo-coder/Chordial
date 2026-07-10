@@ -22,7 +22,11 @@ const isRemoving = ref(false);
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 onMounted(async () => {
-  await loadData();
+  if (folders.value.length === 0) {
+    await loadData();
+  } else {
+    isLoading.value = false;
+  }
 });
 
 // ── Data loading ───────────────────────────────────────────────────────────

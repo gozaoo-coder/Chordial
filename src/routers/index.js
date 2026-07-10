@@ -99,6 +99,8 @@ const router = createRouter({
 })
 
 // 路由守卫 - 更新页面标题 + 性能监控
+let _routeTimerLabel = null
+
 router.beforeEach((to, from, next) => {
   if (to.meta && to.meta.title) {
     document.title = `${to.meta.title} - Chordial`
@@ -106,20 +108,20 @@ router.beforeEach((to, from, next) => {
     document.title = 'Chordial'
   }
 
-  // 页面导航性能计时
+  // 页面导航性能计时 — 捕获 start() 返回值，避免同名路由重复计时
   if (from.name) {
-    perf.start(`route:${from.name}→${to.name}`)
+    _routeTimerLabel = perf.start(`route:${from.name}→${to.name}`)
   } else {
-    perf.start(`route:→${to.name}`)
+    _routeTimerLabel = perf.start(`route:→${to.name}`)
   }
   next()
 })
 
-router.afterEach((to, from) => {
-  const label = from.name
-    ? `route:${from.name}→${to.name}`
-    : `route:→${to.name}`
-  perf.end(label)
+router.afterEach(() => {
+  if (_routeTimerLabel) {
+    perf.end(_routeTimerLabel)
+    _routeTimerLabel = null
+  }
 })
 
 export default router

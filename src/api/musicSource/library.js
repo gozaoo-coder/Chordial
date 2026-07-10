@@ -46,6 +46,23 @@ export async function getAllSongs() {
   return map;
 }
 
+/**
+ * 分页获取歌曲，减少 IPC 载荷。
+ * @param {number} offset
+ * @param {number} limit
+ * @returns {Promise<{songs: Song[], total: number}>}
+ */
+export async function getSongsPage(offset = 0, limit = 50) {
+  const [songsData, total] = await Promise.all([
+    transport.command('library_get_songs_page', { offset, limit }),
+    transport.command('library_song_count'),
+  ]);
+  return {
+    songs: Song.fromDataArray(songsData),
+    total,
+  };
+}
+
 /** @param {string} query @returns {Promise<Song[]>} */
 export async function searchSongs(query) {
   const data = await transport.command('library_search_songs', { query });
@@ -77,6 +94,23 @@ export async function getAllArtists() {
   return map;
 }
 
+/**
+ * 分页获取艺术家。
+ * @param {number} offset
+ * @param {number} limit
+ * @returns {Promise<{artists: Artist[], total: number}>}
+ */
+export async function getArtistsPage(offset = 0, limit = 50) {
+  const [artistsData, total] = await Promise.all([
+    transport.command('library_get_artists_page', { offset, limit }),
+    transport.command('library_artist_count'),
+  ]);
+  return {
+    artists: Artist.fromDataArray(artistsData),
+    total,
+  };
+}
+
 /** @param {string} query @returns {Promise<Artist[]>} */
 export async function searchArtists(query) {
   const data = await transport.command('library_search_artists', { query });
@@ -106,6 +140,50 @@ export async function getAllAlbums() {
     map[id] = new Album(d);
   }
   return map;
+}
+
+/**
+ * 分页获取专辑。
+ * @param {number} offset
+ * @param {number} limit
+ * @returns {Promise<{albums: Album[], total: number}>}
+ */
+export async function getAlbumsPage(offset = 0, limit = 50) {
+  const [albumsData, total] = await Promise.all([
+    transport.command('library_get_albums_page', { offset, limit }),
+    transport.command('library_album_count'),
+  ]);
+  return {
+    albums: Album.fromDataArray(albumsData),
+    total,
+  };
+}
+
+// ── homeStats 缓存 ────────────────────────────────────────────────────────────
+let _homeStatsCache = null;
+let _homeStatsCacheTime = 0;
+const HOME_STATS_CACHE_TTL = 30_000; // 30 秒内复用
+
+/**
+ * 获取首页所需数据 — 一次轻量 IPC 调用替代三次全量加载。
+ * 内置 30 秒 TTL 缓存，避免每次导航到首页都重新请求。
+ * @param {boolean} [force=false] 设为 true 强制跳过缓存
+ * @returns {Promise<{stats: {tracks: number, artists: number, albums: number}, recentTracks: Song[], featuredArtists: Artist[], recentAlbums: Album[]}>}
+ */
+export async function homeStats(force = false) {
+  const now = Date.now();
+  if (!force && _homeStatsCache && (now - _homeStatsCacheTime) < HOME_STATS_CACHE_TTL) {
+    return _homeStatsCache;
+  }
+  const data = await transport.command('library_get_home_stats');
+  _homeStatsCache = {
+    stats: data.stats,
+    recentTracks: Song.fromDataArray(data.recentTracks || []),
+    featuredArtists: Artist.fromDataArray(data.featuredArtists || []),
+    recentAlbums: Album.fromDataArray(data.recentAlbums || []),
+  };
+  _homeStatsCacheTime = now;
+  return _homeStatsCache;
 }
 
 /** @param {string} query @returns {Promise<Album[]>} */
@@ -193,6 +271,24 @@ export async function getSourceIdsOfSong(songId) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Memory cache — avoids re-fetching the entire library on every navigation
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _cache = null;
+let _cacheTime = 0;
+const CACHE_TTL = 30_000; // 30 秒内重复导航不重新加载
+
+/**
+ * 使缓存失效。在数据变更（添加/删除歌曲、重新扫描等）后调用。
+ */
+export function invalidateCache() {
+  _cache = null;
+  _cacheTime = 0;
+  _homeStatsCache = null;
+  _homeStatsCacheTime = 0;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Backward compat aliases
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -209,9 +305,23 @@ export async function scanAll() {
   return { sources: [], tracks: songs, artists, albums };
 }
 
-/** @deprecated use {@link searchSongs} with source filter */
-export async function getCached() {
-  return scanAll();
+/**
+ * 获取缓存的库数据。
+ *
+ * 30 秒内重复调用会直接返回缓存结果，避免每次页面切换都全量
+ * 加载 921 首歌曲 + 全部艺术家 + 全部专辑。
+ *
+ * @param {boolean} [force=false] 设为 true 强制跳过缓存
+ * @deprecated use {@link searchSongs} with source filter
+ */
+export async function getCached(force = false) {
+  const now = Date.now();
+  if (!force && _cache && (now - _cacheTime) < CACHE_TTL) {
+    return _cache;
+  }
+  _cache = await scanAll();
+  _cacheTime = now;
+  return _cache;
 }
 
 /** @deprecated use {@link rescanAll} from sources.js */
@@ -227,15 +337,19 @@ export const library = {
   songCount,
   getSong,
   getAllSongs,
+  getSongsPage,
   searchSongs,
   artistCount,
   getArtist,
   getAllArtists,
+  getArtistsPage,
   searchArtists,
   albumCount,
   getAlbum,
   getAllAlbums,
+  getAlbumsPage,
   searchAlbums,
+  homeStats,
   lyricCount,
   getLyric,
   getAllLyrics,
@@ -247,6 +361,7 @@ export const library = {
   getAlbumsByArtist,
   getSongsInAlbum,
   getSourceIdsOfSong,
+  invalidateCache,
   // deprecated
   scanAll,
   getCached,

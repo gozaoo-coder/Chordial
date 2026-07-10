@@ -1,23 +1,29 @@
 <script setup>
-import { ref, onMounted, onActivated } from 'vue';
+import { ref, onMounted } from 'vue';
 import AlbumList from '../components/common/AlbumList.vue';
 import { library } from '../api/musicSource';
 import { usePerf } from '@/utils/performanceMonitor.js';
 
 const { start, end } = usePerf('Albums');
 
+const PAGE_SIZE = 50;
 const albums = ref([]);
+const totalCount = ref(0);
 const isLoading = ref(true);
+const isLoadingMore = ref(false);
+const hasMore = ref(true);
 
 const loadAlbums = async () => {
   isLoading.value = true;
   start('loadAlbums');
   try {
-    const data = await library.getCached();
+    const data = await library.getAlbumsPage(0, PAGE_SIZE);
     if (data) {
       albums.value = data.albums;
+      totalCount.value = data.total;
+      hasMore.value = data.albums.length < data.total;
     }
-    end('loadAlbums', { count: albums.value.length });
+    end('loadAlbums', { count: albums.value.length, total: totalCount.value });
   } catch (error) {
     console.error('Failed to load albums:', error);
     end('loadAlbums', { error: error.message });
@@ -26,14 +32,29 @@ const loadAlbums = async () => {
   }
 };
 
-// 页面挂载时获取数据
-onMounted(() => {
-  loadAlbums();
-});
+const loadMore = async () => {
+  if (isLoadingMore.value || !hasMore.value) return;
+  isLoadingMore.value = true;
+  try {
+    const data = await library.getAlbumsPage(albums.value.length, PAGE_SIZE);
+    if (data) {
+      albums.value = [...albums.value, ...data.albums];
+      hasMore.value = albums.value.length < data.total;
+    }
+  } catch (error) {
+    console.error('Failed to load more albums:', error);
+  } finally {
+    isLoadingMore.value = false;
+  }
+};
 
-// 页面重新激活时刷新数据（从其他页面返回）
-onActivated(() => {
-  loadAlbums();
+// 页面挂载时获取数据（已加载则跳过）
+onMounted(() => {
+  if (albums.value.length === 0) {
+    loadAlbums();
+  } else {
+    isLoading.value = false;
+  }
 });
 </script>
 
@@ -41,7 +62,7 @@ onActivated(() => {
   <div class="albums-page">
     <div class="page-header">
       <h1 class="page-title">专辑</h1>
-      <p class="page-subtitle">共 {{ albums.length }} 张专辑</p>
+      <p class="page-subtitle">共 {{ totalCount || albums.length }} 张专辑</p>
     </div>
 
     <div v-if="isLoading" class="loading-state">
@@ -51,7 +72,14 @@ onActivated(() => {
     <template v-else>
       <AlbumList v-if="albums.length > 0" :albums="albums" />
 
-      <div v-else class="empty-state">
+      <div v-if="hasMore" class="load-more">
+        <button class="btn btn-secondary" @click="loadMore" :disabled="isLoadingMore">
+          <span v-if="isLoadingMore" class="spinner-small"></span>
+          {{ isLoadingMore ? '加载中...' : `加载更多 (${albums.length}/${totalCount})` }}
+        </button>
+      </div>
+
+      <div v-else-if="albums.length === 0" class="empty-state">
         <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <circle cx="12" cy="12" r="10"/>
           <circle cx="12" cy="12" r="3"/>
@@ -70,5 +98,34 @@ onActivated(() => {
 .albums-page {
   max-width: 1200px;
   margin: 0 auto;
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0;
+}
+
+.spinner-small {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-light, rgba(0,0,0,0.1));
+  border-top-color: var(--primary-color, #0078d7);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-color-scheme: dark) {
+  .spinner-small {
+    border-color: rgba(255,255,255,0.15);
+    border-top-color: var(--primary-color, #0A84FF);
+  }
 }
 </style>

@@ -72,6 +72,14 @@ impl MusicLibrary {
         songs::get_all(&self.store)
     }
 
+    /// 分页获取歌曲。
+    ///
+    /// 当前存储为全量 HashMap，分页无法避免全量反序列化，
+    /// 但可显著减少通过 IPC 传往前端的 JSON 载荷。
+    pub fn get_songs_page(&self, offset: usize, limit: usize) -> Vec<Song> {
+        songs::get_page(&self.store, offset, limit)
+    }
+
     /// 添加一首歌曲（智能去重合并 + 自动初始化艺人/专辑）。
     ///
     /// 一次性加载 songs/artists/albums 到内存中处理，避免对每项实体反复反序列化。
@@ -136,6 +144,11 @@ impl MusicLibrary {
         artists::get_all(&self.store)
     }
 
+    /// 分页获取艺术家。
+    pub fn get_artists_page(&self, offset: usize, limit: usize) -> Vec<Artist> {
+        artists::get_page(&self.store, offset, limit)
+    }
+
     pub fn add_artist(&self, artist: &Artist) -> Result<(), String> {
         artists::add(&self.store, artist)
     }
@@ -164,6 +177,35 @@ impl MusicLibrary {
 
     pub fn get_all_albums(&self) -> HashMap<String, Album> {
         albums::get_all(&self.store)
+    }
+
+    /// 分页获取专辑。
+    pub fn get_albums_page(&self, offset: usize, limit: usize) -> Vec<Album> {
+        albums::get_page(&self.store, offset, limit)
+    }
+
+    /// 获取首页所需的数据：计数 + 少量示例条目。
+    ///
+    /// 用一次 IPC 调用返回首页全量所需信息，避免三次 `get_all_*` 的大载荷。
+    pub fn get_home_stats(&self) -> serde_json::Value {
+        let all_songs = songs::get_all(&self.store);
+        let all_artists = artists::get_all(&self.store);
+        let all_albums = albums::get_all(&self.store);
+
+        let recent_songs: Vec<&Song> = all_songs.values().take(10).collect();
+        let recent_artists: Vec<&Artist> = all_artists.values().take(6).collect();
+        let recent_albums: Vec<&Album> = all_albums.values().take(8).collect();
+
+        serde_json::json!({
+            "stats": {
+                "tracks": all_songs.len(),
+                "artists": all_artists.len(),
+                "albums": all_albums.len(),
+            },
+            "recentTracks": recent_songs,
+            "featuredArtists": recent_artists,
+            "recentAlbums": recent_albums,
+        })
     }
 
     pub fn add_album(&self, album: &Album) -> Result<(), String> {

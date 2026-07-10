@@ -1,25 +1,29 @@
 <script setup>
-import { ref, onMounted, onActivated } from 'vue';
+import { ref, onMounted } from 'vue';
 import ArtistList from '../components/common/ArtistList.vue';
 import { library } from '../api/musicSource';
 import { usePerf } from '@/utils/performanceMonitor.js';
 
 const { start, end } = usePerf('Artists');
 
+const PAGE_SIZE = 50;
 const artists = ref([]);
+const totalCount = ref(0);
 const isLoading = ref(true);
+const isLoadingMore = ref(false);
+const hasMore = ref(true);
 
 const loadArtists = async () => {
   isLoading.value = true;
   start('loadArtists');
   try {
-    const data = await library.getCached();
-    console.log('Cached data:', data);
-
+    const data = await library.getArtistsPage(0, PAGE_SIZE);
     if (data) {
       artists.value = data.artists;
+      totalCount.value = data.total;
+      hasMore.value = data.artists.length < data.total;
     }
-    end('loadArtists', { count: artists.value.length });
+    end('loadArtists', { count: artists.value.length, total: totalCount.value });
   } catch (error) {
     console.error('Failed to load artists:', error);
     end('loadArtists', { error: error.message });
@@ -28,14 +32,29 @@ const loadArtists = async () => {
   }
 };
 
-// 页面挂载时获取数据
-onMounted(() => {
-  loadArtists();
-});
+const loadMore = async () => {
+  if (isLoadingMore.value || !hasMore.value) return;
+  isLoadingMore.value = true;
+  try {
+    const data = await library.getArtistsPage(artists.value.length, PAGE_SIZE);
+    if (data) {
+      artists.value = [...artists.value, ...data.artists];
+      hasMore.value = artists.value.length < data.total;
+    }
+  } catch (error) {
+    console.error('Failed to load more artists:', error);
+  } finally {
+    isLoadingMore.value = false;
+  }
+};
 
-// 页面重新激活时刷新数据（从其他页面返回）
-onActivated(() => {
-  loadArtists();
+// 页面挂载时获取数据（已加载则跳过）
+onMounted(() => {
+  if (artists.value.length === 0) {
+    loadArtists();
+  } else {
+    isLoading.value = false;
+  }
 });
 </script>
 
@@ -43,7 +62,7 @@ onActivated(() => {
   <div class="artists-page">
     <div class="page-header">
       <h1 class="page-title">歌手</h1>
-      <p class="page-subtitle">共 {{ artists.length }} 位歌手</p>
+      <p class="page-subtitle">共 {{ totalCount || artists.length }} 位歌手</p>
     </div>
 
     <div v-if="isLoading" class="loading-state">
@@ -53,7 +72,14 @@ onActivated(() => {
     <template v-else>
       <ArtistList v-if="artists.length > 0" :artists="artists" />
 
-      <div v-else class="empty-state">
+      <div v-if="hasMore" class="load-more">
+        <button class="btn btn-secondary" @click="loadMore" :disabled="isLoadingMore">
+          <span v-if="isLoadingMore" class="spinner-small"></span>
+          {{ isLoadingMore ? '加载中...' : `加载更多 (${artists.length}/${totalCount})` }}
+        </button>
+      </div>
+
+      <div v-else-if="artists.length === 0" class="empty-state">
         <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
           <circle cx="12" cy="7" r="4"/>
@@ -72,5 +98,34 @@ onActivated(() => {
 .artists-page {
   max-width: 1200px;
   margin: 0 auto;
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0;
+}
+
+.spinner-small {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-light, rgba(0,0,0,0.1));
+  border-top-color: var(--primary-color, #0078d7);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-color-scheme: dark) {
+  .spinner-small {
+    border-color: rgba(255,255,255,0.15);
+    border-top-color: var(--primary-color, #0A84FF);
+  }
 }
 </style>

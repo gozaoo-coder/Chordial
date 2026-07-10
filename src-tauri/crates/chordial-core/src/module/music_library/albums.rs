@@ -75,6 +75,18 @@ pub fn find_by_title_and_artist(
         .find(|a| a.title.to_lowercase() == title_lower && a.artist_id == artist_id)
 }
 
+/// 分页获取专辑。
+///
+/// 注意：当前存储为全量 HashMap，分页仍需反序列化全部数据，
+/// 但可显著减少通过 IPC 传往前端的 JSON 载荷。
+pub fn get_page(store: &PersistentStore, offset: usize, limit: usize) -> Vec<Album> {
+    get_all(store)
+        .into_values()
+        .skip(offset)
+        .take(limit)
+        .collect()
+}
+
 /// 获取专辑总数。
 pub fn count(store: &PersistentStore) -> usize {
     get_all(store).len()

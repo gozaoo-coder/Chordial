@@ -406,13 +406,13 @@ const actions = {
       
       // 设置音频源
       state.audioElement.src = audioUrl;
-      
-      // 加载歌词
-      await actions.loadLyrics(track);
-      
-      // 播放
+
+      // 播放（先启动播放，歌词后台加载，不阻塞）
       await state.audioElement.play();
       state.isPlaying = true;
+
+      // 后台加载歌词，不阻塞播放启动
+      actions.loadLyrics(track);
       
       // Automix: 分析当前歌曲 BPM
       if (state.automixEnabled) {
@@ -558,13 +558,13 @@ const actions = {
       
       // 切换音频源
       state.audioElement.src = audioUrl;
-      
-      // 加载歌词
-      await actions.loadLyrics(track);
-      
-      // 播放
+
+      // 播放（先启动播放，歌词后台加载，不阻塞）
       await state.audioElement.play();
       state.isPlaying = true;
+
+      // 后台加载歌词，不阻塞播放启动
+      actions.loadLyrics(track);
       
       // 分析 BPM
       if (state.automixEnabled) {

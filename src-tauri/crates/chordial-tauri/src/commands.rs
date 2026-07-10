@@ -490,6 +490,16 @@ pub fn library_get_all_songs(ctx: State<'_, Arc<AppContext>>) -> Result<serde_js
 }
 
 #[tauri::command]
+pub fn library_get_songs_page(
+    ctx: State<'_, Arc<AppContext>>,
+    offset: usize,
+    limit: usize,
+) -> Result<serde_json::Value, String> {
+    let songs = ctx.library.get_songs_page(offset, limit);
+    serde_json::to_value(&songs).map_err(|e| format!("序列化失败: {}", e))
+}
+
+#[tauri::command]
 pub fn library_search_songs(ctx: State<'_, Arc<AppContext>>, query: String) -> Result<serde_json::Value, String> {
     let songs = ctx.library.search_songs(&query);
     serde_json::to_value(&songs).map_err(|e| format!("序列化失败: {}", e))
@@ -514,6 +524,16 @@ pub fn library_get_artist(ctx: State<'_, Arc<AppContext>>, id: String) -> Result
 #[tauri::command]
 pub fn library_get_all_artists(ctx: State<'_, Arc<AppContext>>) -> Result<serde_json::Value, String> {
     let artists = ctx.library.get_all_artists();
+    serde_json::to_value(&artists).map_err(|e| format!("序列化失败: {}", e))
+}
+
+#[tauri::command]
+pub fn library_get_artists_page(
+    ctx: State<'_, Arc<AppContext>>,
+    offset: usize,
+    limit: usize,
+) -> Result<serde_json::Value, String> {
+    let artists = ctx.library.get_artists_page(offset, limit);
     serde_json::to_value(&artists).map_err(|e| format!("序列化失败: {}", e))
 }
 
@@ -543,6 +563,21 @@ pub fn library_get_album(ctx: State<'_, Arc<AppContext>>, id: String) -> Result<
 pub fn library_get_all_albums(ctx: State<'_, Arc<AppContext>>) -> Result<serde_json::Value, String> {
     let albums = ctx.library.get_all_albums();
     serde_json::to_value(&albums).map_err(|e| format!("序列化失败: {}", e))
+}
+
+#[tauri::command]
+pub fn library_get_albums_page(
+    ctx: State<'_, Arc<AppContext>>,
+    offset: usize,
+    limit: usize,
+) -> Result<serde_json::Value, String> {
+    let albums = ctx.library.get_albums_page(offset, limit);
+    serde_json::to_value(&albums).map_err(|e| format!("序列化失败: {}", e))
+}
+
+#[tauri::command]
+pub fn library_get_home_stats(ctx: State<'_, Arc<AppContext>>) -> Result<serde_json::Value, String> {
+    Ok(ctx.library.get_home_stats())
 }
 
 #[tauri::command]
