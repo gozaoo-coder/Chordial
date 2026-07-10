@@ -9,7 +9,7 @@
  * - 自动处理音频资源生命周期
  */
 
-import { reactive, readonly, computed } from 'vue';
+import { reactive, readonly, computed, markRaw } from 'vue';
 import { perf } from '@/utils/performanceMonitor.js';
 
 // 播放模式枚举
@@ -262,9 +262,9 @@ const actions = {
       state.isLoading = true;
       state.error = null;
 
-      // 如果提供了播放列表，更新播放列表
+      // 如果提供了播放列表，更新播放列表（markRaw 避免深代理 Track 实例）
       if (playlist && Array.isArray(playlist)) {
-        state.playlist = playlist;
+        state.playlist = playlist.map(t => markRaw(t));
       }
 
       // 如果当前已经在播放这首歌，继续播放
@@ -288,8 +288,8 @@ const actions = {
         state.audioElement.currentTime = 0;
       }
 
-      // 更新当前歌曲
-      state.currentTrack = track;
+      // 更新当前歌曲（markRaw 避免 Vue 对 Track 业务类实例创建深代理）
+      state.currentTrack = markRaw(track);
       state.currentIndex = getTrackIndex(track);
       state.currentTime = 0;
       state.duration = track.duration || 0;
@@ -498,7 +498,8 @@ const actions = {
    */
   setPlaylist(playlist) {
     perf.start('PlayerStore.setPlaylist');
-    state.playlist = playlist || [];
+    // markRaw 每首 Track 实例，避免 Vue 对业务类（含方法）创建深代理
+    state.playlist = (playlist || []).map(t => markRaw(t));
     // 更新当前歌曲索引
     if (state.currentTrack) {
       state.currentIndex = getTrackIndex(state.currentTrack);
@@ -517,7 +518,7 @@ const actions = {
     // 检查是否已存在
     const exists = state.playlist.some(t => t.id === track.id);
     if (!exists) {
-      state.playlist.push(track);
+      state.playlist.push(markRaw(track));
     }
     perf.end('PlayerStore.addToPlaylist');
   },

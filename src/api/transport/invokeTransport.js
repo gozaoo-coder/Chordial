@@ -23,22 +23,27 @@ export async function command(name, args = {}) {
 
 // ── 媒体 URL 构建（复用 chordialUrl.js 逻辑）───────────────
 
-/**
- * 检测当前是否为 Windows 平台
- */
-function isWindows() {
+// 平台检测缓存：运行时平台不会变化，避免每次 streamUrl 都做字符串扫描
+const _isWindows = (() => {
   return navigator.platform?.toLowerCase().includes('win')
       || navigator.userAgent?.toLowerCase().includes('windows');
+})();
+
+// chordial 协议基础 URL 缓存
+const _baseUrl = _isWindows ? 'http://chordial.localhost' : 'chordial://localhost';
+
+/**
+ * 检测当前是否为 Windows 平台（返回缓存值）
+ */
+function isWindows() {
+  return _isWindows;
 }
 
 /**
- * 获取 chordial 协议的基础 URL
+ * 获取 chordial 协议的基础 URL（返回缓存值）
  */
 function getBaseUrl() {
-  if (isWindows()) {
-    return 'http://chordial.localhost';
-  }
-  return 'chordial://localhost';
+  return _baseUrl;
 }
 
 /**
