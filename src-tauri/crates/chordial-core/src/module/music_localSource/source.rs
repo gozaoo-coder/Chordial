@@ -21,10 +21,15 @@ use crate::module::music_source::traits::MusicSource;
 use crate::module::music_source::types::{EntityType, SourceId, SourceType};
 use crate::module::platform::{self, PlatformPath};
 use crate::module::storage::persistent::PersistentStore;
+use parking_lot::Mutex;
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use uuid::Uuid;
+
+/// 封面缓存容量上限（条目数）。
+/// 单条目平均 50-500KB，256 条 ≈ 12-128MB（最坏情况）。
+const COVER_CACHE_CAP: usize = 256;
 
 /// 本地音乐来源的名称常量。
 pub const LOCAL_SOURCE_NAME: &str = "local";
@@ -48,6 +53,9 @@ pub struct LocalMusicSource {
     pub file_mtimes: RwLock<HashMap<String, (u64, u64, String)>>,
     /// 独立的 mtime 持久化存储（与 library 分离，避免每次保存都序列化全部歌曲数据）
     mtime_store: PersistentStore,
+    /// 封面图内存缓存：entity_id（路径）→ 图片字节
+    /// 避免每次 chordial://image 请求都触发 extract_cover_art（5-50ms/次）
+    cover_cache: Mutex<HashMap<String, Arc<Vec<u8>>>>,
 }
 
 impl LocalMusicSource {
@@ -69,6 +77,7 @@ impl LocalMusicSource {
             id_to_path: RwLock::new(HashMap::new()),
             file_mtimes: RwLock::new(HashMap::new()),
             mtime_store,
+            cover_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -397,6 +406,61 @@ impl LocalMusicSource {
         self.mtime_store.set("file_mtimes", &mtimes)?;
         self.mtime_store.save()
     }
+
+    /// 从磁盘提取专辑封面字节（无缓存）。
+    ///
+    /// 提取顺序：
+    /// 1. 音频文件嵌入封面（FLAC / ID3v2）— symphonia 解析
+    /// 2. 同目录同名图片（.jpg/.png/.webp/.bmp）
+    /// 3. 目录下常见封面名（cover/folder/albumart/front）
+    fn extract_album_picture(&self, path: &PlatformPath) -> Result<Vec<u8>, String> {
+        // 1. 若为音频文件，尝试提取嵌入封面（FLAC / ID3v2）
+        if platform::is_file(path) && super::scanner::is_supported_audio(path) {
+            if let Ok(cover_data) = super::scanner::extract_cover_art(path) {
+                return Ok(cover_data);
+            }
+        }
+
+        // 2. 确定搜索目录
+        let search_dir = if platform::is_dir(path) {
+            path.clone()
+        } else if let Some(parent) = platform::path_parent(path) {
+            parent
+        } else {
+            return Err(format!("无法确定搜索目录: {}", platform::path_to_string(path)));
+        };
+
+        // 3. 同目录下与音频文件同名的图片文件
+        if !platform::is_dir(path) {
+            for ext in &["jpg", "jpeg", "png", "webp", "bmp"] {
+                let sibling = platform::path_with_extension(path, ext);
+                if platform::exists(&sibling) {
+                    return platform::read_bytes(&sibling)
+                        .map_err(|e| format!("读取封面文件失败 '{}': {}", platform::path_to_string(&sibling), e));
+                }
+            }
+        }
+
+        // 4. 目录下常见封面文件名
+        let candidates = [
+            platform::path_join(&search_dir, "cover.jpg"),
+            platform::path_join(&search_dir, "cover.png"),
+            platform::path_join(&search_dir, "folder.jpg"),
+            platform::path_join(&search_dir, "folder.png"),
+            platform::path_join(&search_dir, "albumart.jpg"),
+            platform::path_join(&search_dir, "albumart.png"),
+            platform::path_join(&search_dir, "front.jpg"),
+            platform::path_join(&search_dir, "front.png"),
+        ];
+        for candidate in &candidates {
+            if platform::exists(candidate) {
+                return platform::read_bytes(candidate)
+                    .map_err(|e| format!("读取封面文件失败 '{}': {}", platform::path_to_string(candidate), e));
+            }
+        }
+
+        Err(format!("未找到封面图片: {}", platform::path_to_string(path)))
+    }
 }
 
 impl MusicSource for LocalMusicSource {
@@ -479,54 +543,32 @@ impl MusicSource for LocalMusicSource {
     }
 
     fn album_picture_get(&self, entity_id: &str) -> Result<Vec<u8>, String> {
+        // 1. 命中内存缓存直接返回（典型命中：浏览/播放同一专辑时多次请求封面）
+        //    extract_cover_art 平均 5-50ms（symphonia 全文件解析），缓存命中 ~0.01ms
+        //    外层 resource::get_album_picture 已有 perf::scope 计时，命中时显示 ~0ms
+        {
+            let cache = self.cover_cache.lock();
+            if let Some(hit) = cache.get(entity_id) {
+                return Ok(hit.as_ref().clone());
+            }
+        }
+
         let path = PlatformPath::from(entity_id);
+        let data = self.extract_album_picture(&path)?;
 
-        // 1. 若为音频文件，尝试提取嵌入封面（FLAC / ID3v2）
-        if platform::is_file(&path) && super::scanner::is_supported_audio(&path) {
-            if let Ok(cover_data) = super::scanner::extract_cover_art(&path) {
-                return Ok(cover_data);
+        // 2. 写入缓存（容量上限简单淘汰策略：超出 cap 时清空一半）
+        let mut cache = self.cover_cache.lock();
+        if cache.len() >= COVER_CACHE_CAP {
+            // 简单 FIFO 半量淘汰（避免单条 LRU 链维护开销）
+            let drop_count = COVER_CACHE_CAP / 2;
+            let keys: Vec<String> = cache.keys().take(drop_count).cloned().collect();
+            for k in keys {
+                cache.remove(&k);
             }
         }
+        cache.insert(entity_id.to_string(), Arc::new(data.clone()));
 
-        // 2. 确定搜索目录
-        let search_dir = if platform::is_dir(&path) {
-            path.clone()
-        } else if let Some(parent) = platform::path_parent(&path) {
-            parent
-        } else {
-            return Err(format!("无法确定搜索目录: {}", platform::path_to_string(&path)));
-        };
-
-        // 3. 同目录下与音频文件同名的图片文件
-        if !platform::is_dir(&path) {
-            for ext in &["jpg", "jpeg", "png", "webp", "bmp"] {
-                let sibling = platform::path_with_extension(&path, ext);
-                if platform::exists(&sibling) {
-                    return platform::read_bytes(&sibling)
-                        .map_err(|e| format!("读取封面文件失败 '{}': {}", platform::path_to_string(&sibling), e));
-                }
-            }
-        }
-
-        // 4. 目录下常见封面文件名
-        let candidates = [
-            platform::path_join(&search_dir, "cover.jpg"),
-            platform::path_join(&search_dir, "cover.png"),
-            platform::path_join(&search_dir, "folder.jpg"),
-            platform::path_join(&search_dir, "folder.png"),
-            platform::path_join(&search_dir, "albumart.jpg"),
-            platform::path_join(&search_dir, "albumart.png"),
-            platform::path_join(&search_dir, "front.jpg"),
-            platform::path_join(&search_dir, "front.png"),
-        ];
-        for candidate in &candidates {
-            if platform::exists(candidate) {
-                return platform::read_bytes(candidate)
-                    .map_err(|e| format!("读取封面文件失败 '{}': {}", platform::path_to_string(candidate), e));
-            }
-        }
-
-        Err(format!("未找到封面图片: {}", platform::path_to_string(&path)))
+        Ok(data)
     }
 
     fn lyric_text_get(&self, song_id: &str) -> Result<String, String> {

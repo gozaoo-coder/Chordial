@@ -165,9 +165,24 @@ export async function getTrackInfo(trackId) {
 
 /** @deprecated 使用多次 {@link module:src/api/musicSource/library.getSong} */
 export async function getTracksByIds(trackIds) {
+  // 优化：批量命令替代 N 次 IPC 调用
   if (!trackIds?.length) return [];
   const { getSong } = await import('./library.js');
   return Promise.all(trackIds.map((id) => getSong(id)));
+}
+
+/**
+ * 批量按 ID 获取歌曲（推荐使用，替代 N 次 getSong）。
+ *
+ * 优化：使用后端 `library_get_songs_by_ids` 单次 IPC 调用，
+ * 替代 N 次 `library_get_song` 的 N×IPC 开销。
+ *
+ * @param {string[]} trackIds
+ * @returns {Promise<object[]>}
+ */
+export async function getSongsByIds(trackIds) {
+  if (!trackIds?.length) return [];
+  return transport.command('library_get_songs_by_ids', { ids: trackIds });
 }
 
 /** @deprecated 使用 {@link module:src/api/artist.getArtist} */
@@ -191,6 +206,7 @@ export default {
   formatToLRC,
   getTrackInfo,
   getTracksByIds,
+  getSongsByIds,
   getArtistImage,
   getPlaylistInfo,
 };

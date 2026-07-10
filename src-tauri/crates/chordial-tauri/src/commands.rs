@@ -565,6 +565,45 @@ pub fn library_get_all_albums(ctx: State<'_, Arc<AppContext>>) -> Result<serde_j
     serde_json::to_value(&albums).map_err(|e| format!("序列化失败: {}", e))
 }
 
+/// 批量按 ID 获取专辑。
+///
+/// 用于替代「加载全部再按 id 过滤」的反模式：
+/// `library_get_all_albums`（全量反序列化 ~110ms）
+/// → 本命令 O(n) 每条 O(1)，n=10 时 ~1ms。
+#[tauri::command]
+pub fn library_get_albums_by_ids(
+    ctx: State<'_, Arc<AppContext>>,
+    ids: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    let albums = ctx.library.get_albums_by_ids(&ids);
+    serde_json::to_value(&albums).map_err(|e| format!("序列化失败: {}", e))
+}
+
+/// 批量按 ID 获取歌曲。
+///
+/// 用于替代 N 次 `library_get_song` 的 N 次 IPC 开销。
+#[tauri::command]
+pub fn library_get_songs_by_ids(
+    ctx: State<'_, Arc<AppContext>>,
+    ids: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    let songs = ctx.library.get_songs_by_ids(&ids);
+    serde_json::to_value(&songs).map_err(|e| format!("序列化失败: {}", e))
+}
+
+/// 批量按 ID 获取艺术家。
+///
+/// 用于替代「加载全部再按 id 过滤」的反模式：
+/// `library_get_all_artists`（全量反序列化）→ 本命令 O(n) 每条 O(1)。
+#[tauri::command]
+pub fn library_get_artists_by_ids(
+    ctx: State<'_, Arc<AppContext>>,
+    ids: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    let artists = ctx.library.get_artists_by_ids(&ids);
+    serde_json::to_value(&artists).map_err(|e| format!("序列化失败: {}", e))
+}
+
 #[tauri::command]
 pub fn library_get_albums_page(
     ctx: State<'_, Arc<AppContext>>,

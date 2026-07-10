@@ -38,14 +38,17 @@ export async function getArtistSummary(artistId) {
 
 /**
  * 批量获取歌手信息。
+ *
+ * 优化：使用后端 `library_get_artists_by_ids` 批量命令，
+ * 替代「加载全部艺术家再前端过滤」的反模式。
+ *
  * @param {string[]} artistIds
  * @returns {Promise<Artist[]>}
  */
 export async function getArtistsByIds(artistIds) {
-  const all = await transport.command('library_get_all_artists');
-  return (artistIds || [])
-    .map((id) => (all[id] ? new Artist(all[id]) : null))
-    .filter(Boolean);
+  if (!artistIds?.length) return [];
+  const list = await transport.command('library_get_artists_by_ids', { ids: artistIds });
+  return (list || []).map((d) => (d ? new Artist(d) : null)).filter(Boolean);
 }
 
 /**

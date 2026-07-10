@@ -112,12 +112,14 @@ pub fn run() {
             // MusicLibrary — Song CRUD + 搜索
             commands::library_song_count,
             commands::library_get_song,
+            commands::library_get_songs_by_ids,
             commands::library_get_all_songs,
             commands::library_get_songs_page,
             commands::library_search_songs,
             // MusicLibrary — Artist CRUD + 搜索
             commands::library_artist_count,
             commands::library_get_artist,
+            commands::library_get_artists_by_ids,
             commands::library_get_all_artists,
             commands::library_get_artists_page,
             commands::library_search_artists,
@@ -125,6 +127,7 @@ pub fn run() {
             commands::library_album_count,
             commands::library_get_album,
             commands::library_get_all_albums,
+            commands::library_get_albums_by_ids,
             commands::library_get_albums_page,
             commands::library_search_albums,
             // MusicLibrary — Home

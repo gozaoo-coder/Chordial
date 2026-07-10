@@ -268,9 +268,12 @@ pub fn handle(registrar: &SourceRegistrar, path: &str, request: &Request<Vec<u8>
 
                 match resource::get_album_picture(registrar, &source_id) {
                     Ok(data) => {
+                        // 浏览器缓存封面图（URL 已含 source_id 哈希，文件改动时 URL 亦变）
+                        // 24h immutable 避免重复请求触发后端 extract_cover_art（5-50ms/次）
                         Response::builder()
                             .header(header::CONTENT_TYPE, mime)
                             .header(header::CONTENT_LENGTH, data.len().to_string())
+                            .header(header::CACHE_CONTROL, "public, max-age=86400, immutable")
                             .body(data)
                             .unwrap()
                     }
