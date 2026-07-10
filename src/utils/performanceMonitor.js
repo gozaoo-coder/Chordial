@@ -195,6 +195,171 @@ export const perf = {
   get enabled() {
     return isEnabled();
   },
+
+  // ── GPU / 帧率 / 长任务 探针 ───────────────────────────────────────────
+
+  /**
+   * 包装一个 requestAnimationFrame 回调，测量单帧耗时（含合成）。
+   * 仅 DEV 启用，自动剥离生产环境。
+   * @param {string} label
+   * @param {(deltaMs: number, frameTs: number) => void} fn - 回调，接收上一帧 delta
+   * @returns {number} rafId
+   */
+  raf(label, fn) {
+    if (!isEnabled() || typeof requestAnimationFrame !== 'function') {
+      return requestAnimationFrame ? requestAnimationFrame(() => fn(16.7, performance.now())) : 0;
+    }
+    const start = performance.now();
+    return requestAnimationFrame((ts) => {
+      const delta = ts - start;
+      const STYLE_FRAME = 'font-weight: bold; color: #f59e0b;';
+      if (delta > 20) {
+        // 超过 20ms 视为掉帧
+        console.log(
+          `%c🎬 %c[Perf]%c ${label}  %c${formatDuration(delta)} (frame)%c ⚠️ drop`,
+          '', STYLE_LABEL, '', STYLE_FRAME, STYLE_META
+        );
+      } else if (delta > 8) {
+        console.log(
+          `%c🎬 %c[Perf]%c ${label}  %c${formatDuration(delta)}%c (frame)`,
+          '', STYLE_LABEL, '', STYLE_FRAME, STYLE_META
+        );
+      }
+      fn(delta, ts);
+    });
+  },
+
+  /**
+   * 启动一个 FPS 采样器，按 interval 节流输出统计。
+   * 返回停止函数。用于监测持续动画区域（blur 背景、AMLL spring 等）。
+   * @param {string} label
+   * @param {number} [intervalMs=1000] - 输出统计周期
+   * @returns {() => void} stop
+   */
+  startFpsMonitor(label, intervalMs = 1000) {
+    if (!isEnabled() || typeof requestAnimationFrame !== 'function') {
+      return () => {};
+    }
+    let frames = 0;
+    let lastTs = performance.now();
+    let periodStart = lastTs;
+    let maxFrame = 0;
+    let minFrame = Infinity;
+    let stopped = false;
+    const STYLE_FPS = 'font-weight: bold; color: #8b5cf6;';
+
+    const tick = (ts) => {
+      if (stopped) return;
+      const delta = ts - lastTs;
+      if (delta > 0) {
+        frames++;
+        if (delta > maxFrame) maxFrame = delta;
+        if (delta < minFrame) minFrame = delta;
+      }
+      lastTs = ts;
+      if (ts - periodStart >= intervalMs) {
+        const avg = (ts - periodStart) / Math.max(frames, 1);
+        const fps = (1000 / avg);
+        console.log(
+          `%c📊 %c[Perf]%c ${label}  %c${fps.toFixed(1)} fps%c avg=${formatDuration(avg)} min=${formatDuration(minFrame)} max=${formatDuration(maxFrame)} frames=${frames}`,
+          '', STYLE_LABEL, '', STYLE_FPS, STYLE_META
+        );
+        frames = 0;
+        maxFrame = 0;
+        minFrame = Infinity;
+        periodStart = ts;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+
+    return () => { stopped = true; };
+  },
+
+  /**
+   * 订阅 PerformanceObserver Long Task API。
+   * 返回取消订阅函数。捕获 >50ms 的长任务（通常为 JS 阻塞或 GPU 合成阻塞）。
+   * @param {string} [label='longtask']
+   * @returns {() => void} unsubscribe
+   */
+  watchLongTasks(label = 'longtask') {
+    if (!isEnabled()) return () => {};
+    if (typeof PerformanceObserver === 'undefined') return () => {};
+    let observer;
+    try {
+      observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          console.log(
+            `%c⚠️ %c[Perf]%c ${label}  %c${formatDuration(entry.duration)}%c name=${entry.name} startTime=${entry.startTime.toFixed(1)}`,
+            '', STYLE_LABEL, '', STYLE_DURATION, STYLE_META
+          );
+        }
+      });
+      observer.observe({ entryTypes: ['longtask'] });
+    } catch {
+      return () => {};
+    }
+    return () => { try { observer.disconnect(); } catch {} };
+  },
+
+  /**
+   * 订阅 paint timing（FP/FCP）和 LCP。
+   * 返回取消订阅函数。
+   * @returns {() => void} unsubscribe
+   */
+  watchPaint() {
+    if (!isEnabled() || typeof PerformanceObserver === 'undefined') return () => {};
+    const observers = [];
+    try {
+      const paintObs = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) {
+          console.log(`%c🎨 %c[Perf]%c ${e.name}  %c${formatDuration(e.startTime)}`, '', STYLE_LABEL, '', STYLE_DURATION, '');
+        }
+      });
+      paintObs.observe({ entryTypes: ['paint'] });
+      observers.push(paintObs);
+    } catch {}
+    try {
+      const lcpObs = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) {
+          console.log(`%c🎯 %c[Perf]%c LCP  %c${formatDuration(e.startTime)}%c element=${e.element?.tagName ?? '?'}`, '', STYLE_LABEL, '', STYLE_DURATION, STYLE_META);
+        }
+      });
+      lcpObs.observe({ entryTypes: ['largest-contentful-paint'] });
+      observers.push(lcpObs);
+    } catch {}
+    try {
+      const layoutObs = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) {
+          console.log(`%c📐 %c[Perf]%c layout-shift  %c${(e.value * 1000).toFixed(2)}‰%c sources=${e.sources?.length ?? 0}`, '', STYLE_LABEL, '', STYLE_DURATION, STYLE_META);
+        }
+      });
+      layoutObs.observe({ entryTypes: ['layout-shift'] });
+      observers.push(layoutObs);
+    } catch {}
+    return () => observers.forEach((o) => { try { o.disconnect(); } catch {} });
+  },
+
+  /**
+   * 采样当前 GPU 合成层、内存占用（Chrome 限定，不可用时静默）。
+   */
+  snapshot() {
+    if (!isEnabled()) return;
+    const mem = (performance).memory;
+    if (mem) {
+      console.log(
+        `%c💾 %c[Perf]%c js-heap  %c${(mem.usedJSHeapSize / 1048576).toFixed(1)}MB / ${(mem.totalJSHeapSize / 1048576).toFixed(1)}MB%c limit=${(mem.jsHeapSizeLimit / 1048576).toFixed(0)}MB`,
+        '', STYLE_LABEL, '', STYLE_DURATION, STYLE_META
+      );
+    }
+    if (hasPerformance && performance.getEntriesByType) {
+      const marks = performance.getEntriesByType('mark').length;
+      const measures = performance.getEntriesByType('measure').length;
+      if (marks + measures > 200) {
+        console.log(`%c🧹 %c[Perf]%c perf-entries  marks=${marks} measures=${measures}%c 建议清理`, '', STYLE_LABEL, '', STYLE_META);
+      }
+    }
+  },
 };
 
 /**
@@ -211,6 +376,8 @@ export function usePerf(componentName) {
     log: (label, meta) => perf.log(prefix(label), meta),
     measureAsync: (label, promise, meta) => perf.measureAsync(prefix(label), promise, meta),
     group: (label, fn) => perf.group(prefix(label), fn),
+    raf: (label, fn) => perf.raf(prefix(label), fn),
+    startFpsMonitor: (label, intervalMs) => perf.startFpsMonitor(prefix(label), intervalMs),
   };
 }
 
