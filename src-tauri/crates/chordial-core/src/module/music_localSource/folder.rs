@@ -39,6 +39,9 @@ impl FolderManager {
     const KEY: &str = "local_source_folders";
 
     /// 创建文件夹管理器，从持久化存储加载已有文件夹列表。
+    ///
+    /// 优化：加载时一次性规范化路径，运行时直接比较，避免每次 has/add/remove
+    /// 都对每个已有文件夹做 `platform::canonicalize` 同步 fs 调用。
     pub fn new(store: PersistentStore) -> Self {
         let entries: Vec<FolderEntry> = store
             .get::<Vec<FolderEntry>>(Self::KEY)
@@ -48,6 +51,7 @@ impl FolderManager {
             .iter()
             .map(|e| PlatformPath::from(e.path.as_str()))
             .filter(|p| platform::exists(p))
+            .map(|p| platform::canonicalize(&p).unwrap_or_else(|_| p))
             .collect();
 
         Self {
@@ -64,18 +68,13 @@ impl FolderManager {
     }
 
     /// 检查文件夹是否已在监听列表中。
+    ///
+    /// 优化：仅在加载时规范化，运行时仅规范化输入参数，O(n) 直接比较。
     pub fn has_folder(&self, path: &PlatformPath) -> bool {
         let _scope = perf::scope("folder.has_folder");
         let canonical = platform::canonicalize(path)
             .unwrap_or_else(|_| path.clone());
-        self.folders
-            .read()
-            .iter()
-            .any(|f| {
-                let f_canon = platform::canonicalize(f)
-                    .unwrap_or_else(|_| f.clone());
-                f_canon == canonical
-            })
+        self.folders.read().iter().any(|f| *f == canonical)
     }
 
     /// 获取文件夹数量。
@@ -102,11 +101,7 @@ impl FolderManager {
         })?;
 
         let mut folders = self.folders.write();
-        if folders.iter().any(|f| {
-            let f_canon = platform::canonicalize(f)
-                .unwrap_or_else(|_| f.clone());
-            f_canon == canonical
-        }) {
+        if folders.iter().any(|f| *f == canonical) {
             return Ok(()); // 已存在，跳过
         }
 
@@ -127,11 +122,7 @@ impl FolderManager {
             .unwrap_or_else(|_| path.clone());
         let mut folders = self.folders.write();
         let len_before = folders.len();
-        folders.retain(|f| {
-            let f_canon = platform::canonicalize(f)
-                .unwrap_or_else(|_| f.clone());
-            f_canon != canonical
-        });
+        folders.retain(|f| *f != canonical);
         let removed = folders.len() < len_before;
         drop(folders);
 
@@ -167,7 +158,8 @@ impl FolderManager {
 ///
 /// 遍历 `root` 目录及其所有子目录，返回所有扩展名匹配的音频文件路径。
 pub fn collect_audio_files(root: &PlatformPath) -> Vec<PlatformPath> {
-    let mut files = Vec::new();
+    // 预分配：按典型音乐库规模给个初值，减少扩容次数
+    let mut files = Vec::with_capacity(256);
     collect_audio_files_recursive(root, &mut files);
     files
 }

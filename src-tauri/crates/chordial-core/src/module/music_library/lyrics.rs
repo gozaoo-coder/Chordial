@@ -3,7 +3,7 @@ use crate::module::perf;
 use crate::module::storage::persistent::PersistentStore;
 use std::collections::HashMap;
 
-const KEY: &str = "lyrics";
+pub const KEY: &str = "lyrics";
 
 /// 获取所有歌词。
 pub fn get_all(store: &PersistentStore) -> HashMap<String, Lyric> {
