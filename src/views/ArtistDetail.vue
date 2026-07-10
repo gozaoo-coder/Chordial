@@ -5,7 +5,7 @@ import AlbumList from '../components/common/AlbumList.vue';
 import TrackList from '../components/common/TrackList.vue';
 import { getArtist } from '../api/artist';
 import { getAlbumsByIds } from '../api/album';
-import { getTracksByIds } from '../api/musicSource/musicResource';
+import { getSongsByIds } from '../api/musicSource/musicResource';
 import { useCoverImage } from '@/composables/useCoverImage';
 import { usePerf } from '@/utils/performanceMonitor.js';
 
@@ -37,7 +37,7 @@ onMounted(async () => {
       start('loadArtistDetails');
       const [albums, tracks] = await Promise.all([
         artist.value.albumIds?.length > 0 ? getAlbumsByIds(artist.value.albumIds) : Promise.resolve([]),
-        artist.value.trackIds?.length > 0 ? getTracksByIds(artist.value.trackIds) : Promise.resolve([])
+        artist.value.trackIds?.length > 0 ? getSongsByIds(artist.value.trackIds) : Promise.resolve([])
       ]);
       artist.value.albums = albums;
       artist.value.tracks = tracks;

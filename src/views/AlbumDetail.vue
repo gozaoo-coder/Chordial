@@ -3,7 +3,7 @@ import { ref, shallowRef, onMounted, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import TrackList from '../components/common/TrackList.vue';
 import { getAlbum } from '../api/album';
-import { getTracksByIds } from '../api/musicSource/musicResource';
+import { getSongsByIds } from '../api/musicSource/musicResource';
 import { useCoverImage } from '@/composables/useCoverImage';
 import { usePerf } from '@/utils/performanceMonitor.js';
 
@@ -49,7 +49,7 @@ onMounted(async () => {
     // 获取专辑中的歌曲列表
     if (album.value?.trackIds?.length > 0) {
       start('loadAlbumTracks');
-      tracks.value = await getTracksByIds(album.value.trackIds);
+      tracks.value = await getSongsByIds(album.value.trackIds);
       end('loadAlbumTracks', { count: tracks.value.length });
     }
     end('loadAlbum', { trackCount: album.value?.trackIds?.length ?? 0 });

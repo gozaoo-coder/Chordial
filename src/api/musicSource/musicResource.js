@@ -163,12 +163,11 @@ export async function getTrackInfo(trackId) {
   return getSong(trackId);
 }
 
-/** @deprecated 使用多次 {@link module:src/api/musicSource/library.getSong} */
+/** @deprecated 使用 {@link getSongsByIds}（批量 IPC，单次往返） */
 export async function getTracksByIds(trackIds) {
   // 优化：批量命令替代 N 次 IPC 调用
   if (!trackIds?.length) return [];
-  const { getSong } = await import('./library.js');
-  return Promise.all(trackIds.map((id) => getSong(id)));
+  return getSongsByIds(trackIds);
 }
 
 /**

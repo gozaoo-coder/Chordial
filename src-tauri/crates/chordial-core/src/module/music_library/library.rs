@@ -3,16 +3,8 @@ use crate::module::music_source::registrar::SourceCleanup;
 use crate::module::music_source::types::{EntityType, SourceId};
 use crate::module::perf;
 use crate::module::storage::persistent::PersistentStore;
-use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
-
-/// 一次性写入整个实体表（替代循环内逐条 update 的低效模式）。
-///
-/// 单次 `store.set` 比循环内 N 次 `songs::update`（每次反序列化整表）快 N 倍。
-fn store_set_all<T: Serialize>(store: &PersistentStore, key: &str, value: &T) -> Result<(), String> {
-    store.set(key, value)
-}
 
 /// 音乐库 — 所有音乐实体的统一管理入口。
 ///
@@ -341,65 +333,129 @@ impl MusicLibrary {
     /// [`SourceRegistrar::unregister`](crate::module::music_source::registrar::SourceRegistrar::unregister)。
     pub fn remove_source_from_all_entities(&self, source_name: &str) -> Result<(), String> {
         let _scope = perf::scope("library.remove_source_from_all_entities");
-        // ── Songs ──（批量内存修改，最后一次 set，避免循环内重复反序列化整表）
+
+        // 优化：仅反序列化 source_ids 数组中含目标 source_name 的条目，
+        // 用 set_subkey / remove_entry 仅写回受影响条目，避免全量重写。
+        // 典型场景：注销一个 source 时影响 ~5-50 条，而非全部 3853 条。
+
+        // ── Songs ──
         {
-            let mut all_songs = songs::get_all(&self.store);
-            let mut to_remove: Vec<String> = Vec::with_capacity(all_songs.len() / 8 + 1);
-            for (id, song) in all_songs.iter_mut() {
+            let mut affected: Vec<Song> = self
+                .store
+                .get_entries_filtered::<Song, _>(songs::KEY, |v| {
+                    v.get("source_ids")
+                        .and_then(|s| s.as_array())
+                        .map_or(false, |arr| {
+                            arr.iter().any(|sid| {
+                                sid.get("source_name").and_then(|n| n.as_str()) == Some(source_name)
+                            })
+                        })
+                });
+            let mut to_remove: Vec<String> = Vec::with_capacity(affected.len());
+            let mut any_changed = false;
+            for song in affected.iter_mut() {
                 let before = song.source_ids.len();
                 song.source_ids.retain(|sid| sid.source_name != source_name);
-                if song.source_ids.len() < before && song.source_ids.is_empty() {
-                    to_remove.push(id.clone());
+                if song.source_ids.len() < before {
+                    any_changed = true;
+                    if song.source_ids.is_empty() {
+                        to_remove.push(song.id.clone());
+                    }
                 }
             }
-            for id in &to_remove {
-                all_songs.remove(id);
+            if any_changed {
+                for song in &affected {
+                    self.store.set_subkey(songs::KEY, &song.id, song)?;
+                }
+                for id in &to_remove {
+                    self.store.remove_entry(songs::KEY, id);
+                }
             }
-            // 任何 source_ids 被裁剪过都写回（包括未变空只是缩短的）
-            store_set_all(&self.store, songs::KEY, &all_songs)?;
         }
 
         // ── Artists ──
         {
-            let mut all_artists = artists::get_all(&self.store);
-            let mut to_remove: Vec<String> = Vec::with_capacity(all_artists.len() / 8 + 1);
-            for (id, artist) in all_artists.iter_mut() {
+            let mut affected: Vec<Artist> = self
+                .store
+                .get_entries_filtered::<Artist, _>(artists::KEY, |v| {
+                    v.get("source_ids")
+                        .and_then(|s| s.as_array())
+                        .map_or(false, |arr| {
+                            arr.iter().any(|sid| {
+                                sid.get("source_name").and_then(|n| n.as_str()) == Some(source_name)
+                            })
+                        })
+                });
+            let mut to_remove: Vec<String> = Vec::with_capacity(affected.len());
+            let mut any_changed = false;
+            for artist in affected.iter_mut() {
                 let before = artist.source_ids.len();
                 artist.source_ids.retain(|sid| sid.source_name != source_name);
-                if artist.source_ids.len() < before && artist.source_ids.is_empty() {
-                    to_remove.push(id.clone());
+                if artist.source_ids.len() < before {
+                    any_changed = true;
+                    if artist.source_ids.is_empty() {
+                        to_remove.push(artist.id.clone());
+                    }
                 }
             }
-            for id in &to_remove {
-                all_artists.remove(id);
+            if any_changed {
+                for artist in &affected {
+                    self.store.set_subkey(artists::KEY, &artist.id, artist)?;
+                }
+                for id in &to_remove {
+                    self.store.remove_entry(artists::KEY, id);
+                }
             }
-            store_set_all(&self.store, artists::KEY, &all_artists)?;
         }
 
         // ── Albums ──
         {
-            let mut all_albums = albums::get_all(&self.store);
-            let mut to_remove: Vec<String> = Vec::with_capacity(all_albums.len() / 8 + 1);
-            for (id, album) in all_albums.iter_mut() {
+            let mut affected: Vec<Album> = self
+                .store
+                .get_entries_filtered::<Album, _>(albums::KEY, |v| {
+                    v.get("source_ids")
+                        .and_then(|s| s.as_array())
+                        .map_or(false, |arr| {
+                            arr.iter().any(|sid| {
+                                sid.get("source_name").and_then(|n| n.as_str()) == Some(source_name)
+                            })
+                        })
+                });
+            let mut to_remove: Vec<String> = Vec::with_capacity(affected.len());
+            let mut any_changed = false;
+            for album in affected.iter_mut() {
                 let before = album.source_ids.len();
                 album.source_ids.retain(|sid| sid.source_name != source_name);
-                if album.source_ids.len() < before && album.source_ids.is_empty() {
-                    to_remove.push(id.clone());
+                if album.source_ids.len() < before {
+                    any_changed = true;
+                    if album.source_ids.is_empty() {
+                        to_remove.push(album.id.clone());
+                    }
                 }
             }
-            for id in &to_remove {
-                all_albums.remove(id);
+            if any_changed {
+                for album in &affected {
+                    self.store.set_subkey(albums::KEY, &album.id, album)?;
+                }
+                for id in &to_remove {
+                    self.store.remove_entry(albums::KEY, id);
+                }
             }
-            store_set_all(&self.store, albums::KEY, &all_albums)?;
         }
 
         // ── Lyrics ──
+        // Lyrics 的 source_id 是单对象（非数组），用 source_name 直接等值匹配
         {
-            let mut all_lyrics = lyrics::get_all(&self.store);
-            let before_len = all_lyrics.len();
-            all_lyrics.retain(|_, lyric| lyric.source_id.source_name != source_name);
-            if all_lyrics.len() != before_len {
-                store_set_all(&self.store, lyrics::KEY, &all_lyrics)?;
+            let affected: Vec<Lyric> = self
+                .store
+                .get_entries_filtered::<Lyric, _>(lyrics::KEY, |v| {
+                    v.get("source_id")
+                        .and_then(|sid| sid.get("source_name"))
+                        .and_then(|n| n.as_str())
+                        == Some(source_name)
+                });
+            for lyric in &affected {
+                self.store.remove_entry(lyrics::KEY, &lyric.id);
             }
         }
 
@@ -426,11 +482,27 @@ impl MusicLibrary {
             return Ok(());
         }
 
-        let mut all_songs = songs::get_all(&self.store);
-        let mut to_remove: Vec<String> = Vec::with_capacity(all_songs.len() / 8 + 1);
-        let mut any_changed = false;
+        // 优化：仅反序列化 source_ids 数组中含目标 source_name 的歌曲
+        // 避免反序列化全部歌曲（数千条）只为修改少量条目
+        let mut affected: Vec<Song> = self
+            .store
+            .get_entries_filtered::<Song, _>(songs::KEY, |v| {
+                v.get("source_ids")
+                    .and_then(|s| s.as_array())
+                    .map_or(false, |arr| {
+                        arr.iter().any(|sid| {
+                            sid.get("source_name").and_then(|n| n.as_str()) == Some(source_name)
+                                && sid.get("entity_id")
+                                    .and_then(|eid| eid.as_str())
+                                    .map_or(false, |eid| entity_ids.contains(eid))
+                        })
+                    })
+            });
 
-        for (id, song) in all_songs.iter_mut() {
+        let mut any_changed = false;
+        let mut to_remove: Vec<String> = Vec::with_capacity(affected.len());
+
+        for song in affected.iter_mut() {
             let before = song.source_ids.len();
             song.source_ids.retain(|sid| {
                 !(sid.source_name == source_name && entity_ids.contains(&sid.entity_id))
@@ -438,15 +510,19 @@ impl MusicLibrary {
             if song.source_ids.len() < before {
                 any_changed = true;
                 if song.source_ids.is_empty() {
-                    to_remove.push(id.clone());
+                    to_remove.push(song.id.clone());
                 }
             }
         }
-        for id in &to_remove {
-            all_songs.remove(id);
-        }
+
+        // 仅写回被修改的条目（每条用 set_subkey，避免全量重写）
         if any_changed {
-            store_set_all(&self.store, songs::KEY, &all_songs)?;
+            for song in &affected {
+                self.store.set_subkey(songs::KEY, &song.id, song)?;
+            }
+            for id in &to_remove {
+                self.store.remove_entry(songs::KEY, id);
+            }
         }
 
         // 清理级联空实体
@@ -456,45 +532,75 @@ impl MusicLibrary {
 
     /// 清理所有 `source_ids` 为空的实体（Song / Artist / Album / Lyric）。
     ///
-    /// 遍历全部四类实体，删除所有失去全部来源引用的条目。
-    /// 适用于：文件删除、文件夹移除后确保库中无悬挂数据。
+    /// 优化：仅反序列化「source_ids 为空」的条目（通常 ≤ 总量的 1%），
+    /// 用 `get_entries_filtered` 在 JSON 层筛选后逐条 `remove_entry`，
+    /// 避免反序列化全部实体再 retain。
     pub fn cleanup_empty_entities(&self) -> Result<(), String> {
         let _scope = perf::scope("library.cleanup_empty_entities");
-        // Songs（批量：内存中 retain + 一次 set）
-        {
-            let mut all_songs = songs::get_all(&self.store);
-            let before = all_songs.len();
-            all_songs.retain(|_, s| !s.source_ids.is_empty());
-            if all_songs.len() != before {
-                store_set_all(&self.store, songs::KEY, &all_songs)?;
-            }
+
+        // Songs — JSON 层判断 source_ids 数组为空
+        let empty_songs: Vec<String> = self
+            .store
+            .get_entries_filtered::<serde_json::Value, _>(songs::KEY, |v| {
+                v.get("source_ids")
+                    .and_then(|s| s.as_array())
+                    .map_or(true, |arr| arr.is_empty())
+            })
+            .into_iter()
+            .filter_map(|v| v.get("id").and_then(|i| i.as_str()).map(String::from))
+            .collect();
+        for id in &empty_songs {
+            self.store.remove_entry(songs::KEY, id);
         }
-        // Artists
-        {
-            let mut all_artists = artists::get_all(&self.store);
-            let before = all_artists.len();
-            all_artists.retain(|_, a| !a.source_ids.is_empty());
-            if all_artists.len() != before {
-                store_set_all(&self.store, artists::KEY, &all_artists)?;
-            }
+
+        // Artists — 同上
+        let empty_artists: Vec<String> = self
+            .store
+            .get_entries_filtered::<serde_json::Value, _>(artists::KEY, |v| {
+                v.get("source_ids")
+                    .and_then(|s| s.as_array())
+                    .map_or(true, |arr| arr.is_empty())
+            })
+            .into_iter()
+            .filter_map(|v| v.get("id").and_then(|i| i.as_str()).map(String::from))
+            .collect();
+        for id in &empty_artists {
+            self.store.remove_entry(artists::KEY, id);
         }
-        // Albums
-        {
-            let mut all_albums = albums::get_all(&self.store);
-            let before = all_albums.len();
-            all_albums.retain(|_, a| !a.source_ids.is_empty());
-            if all_albums.len() != before {
-                store_set_all(&self.store, albums::KEY, &all_albums)?;
-            }
+
+        // Albums — 同上
+        let empty_albums: Vec<String> = self
+            .store
+            .get_entries_filtered::<serde_json::Value, _>(albums::KEY, |v| {
+                v.get("source_ids")
+                    .and_then(|s| s.as_array())
+                    .map_or(true, |arr| arr.is_empty())
+            })
+            .into_iter()
+            .filter_map(|v| v.get("id").and_then(|i| i.as_str()).map(String::from))
+            .collect();
+        for id in &empty_albums {
+            self.store.remove_entry(albums::KEY, id);
         }
-        // Lyrics
-        {
-            let mut all_lyrics = lyrics::get_all(&self.store);
-            let before = all_lyrics.len();
-            all_lyrics.retain(|_, l| !l.source_id.source_name.is_empty());
-            if all_lyrics.len() != before {
-                store_set_all(&self.store, lyrics::KEY, &all_lyrics)?;
-            }
+
+        // Lyrics — source_id 是单对象（非数组），判 source_name 为空
+        let empty_lyrics: Vec<String> = self
+            .store
+            .get_entries_filtered::<serde_json::Value, _>(lyrics::KEY, |v| {
+                v.get("source_id")
+                    .and_then(|s| s.get("source_name"))
+                    .and_then(|n| n.as_str())
+                    .map_or(true, |n| n.is_empty())
+            })
+            .into_iter()
+            .filter_map(|v| v.get("id").and_then(|i| i.as_str()).map(String::from))
+            .collect();
+        for id in &empty_lyrics {
+            self.store.remove_entry(lyrics::KEY, id);
+        }
+
+        if !empty_songs.is_empty() || !empty_artists.is_empty() || !empty_albums.is_empty() || !empty_lyrics.is_empty() {
+            self.save()?;
         }
         Ok(())
     }

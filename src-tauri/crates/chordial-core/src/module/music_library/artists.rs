@@ -20,53 +20,61 @@ pub fn get(store: &PersistentStore, id: &str) -> Option<Artist> {
 }
 
 /// 添加一个艺术家。
+///
+/// 优化：存在性检查用 `has_entry`（O(1) JSON 键查，不反序列化），
+/// 插入用 `set_field` 仅写一条而非全量重写。
 pub fn add(store: &PersistentStore, artist: &Artist) -> Result<(), String> {
-    let mut artists = get_all(store);
-    if artists.contains_key(&artist.id) {
+    if store.has_entry(KEY, &artist.id) {
         return Err(format!("艺术家 '{}' (id={}) 已存在", artist.name, artist.id));
     }
-    artists.insert(artist.id.clone(), artist.clone());
-    store.set(KEY, &artists)
+    store.set_subkey(KEY, &artist.id, artist)
 }
 
 /// 更新一个艺术家。
+///
+/// 优化：存在性检查用 `has_entry`，插入用 `set_subkey`。
 pub fn update(store: &PersistentStore, artist: &Artist) -> Result<(), String> {
     let _scope = perf::scope("artists.update");
-    let mut artists = get_all(store);
-    if !artists.contains_key(&artist.id) {
+    if !store.has_entry(KEY, &artist.id) {
         return Err(format!("艺术家 id={} 不存在", artist.id));
     }
-    artists.insert(artist.id.clone(), artist.clone());
-    store.set(KEY, &artists)
+    store.set_subkey(KEY, &artist.id, artist)
 }
 
 /// 删除一个艺术家。
+///
+/// 优化：直接 `remove_entry` 操作 JSON Object 键，
+/// 避免反序列化整个 HashMap 再重写。
 pub fn remove(store: &PersistentStore, id: &str) -> Result<bool, String> {
     let _scope = perf::scope("artists.remove");
-    let mut artists = get_all(store);
-    let existed = artists.remove(id).is_some();
-    if existed {
-        store.set(KEY, &artists)?;
-    }
-    Ok(existed)
+    Ok(store.remove_entry(KEY, id))
 }
 
 /// 按名称模糊搜索艺术家。
+///
+/// 优化：JSON 层过滤，仅反序列化匹配项。
 pub fn search(store: &PersistentStore, query: &str) -> Vec<Artist> {
     let _scope = perf::scope("artists.search");
     let query_lower = query.to_lowercase();
-    get_all(store)
-        .into_values()
-        .filter(|a| a.name.to_lowercase().contains(&query_lower))
-        .collect()
+    store.get_entries_filtered::<Artist, _>(KEY, |v| {
+        v.get("name")
+            .and_then(|n| n.as_str())
+            .map_or(false, |n| n.to_lowercase().contains(&query_lower))
+    })
 }
 
 /// 按名称精确查找艺术家（忽略大小写）。
+///
+/// 优化：JSON 层过滤，仅反序列化匹配项。
 pub fn find_by_name(store: &PersistentStore, name: &str) -> Option<Artist> {
-    let name_lower = name.to_lowercase();
-    get_all(store)
-        .into_values()
-        .find(|a| a.name.to_lowercase() == name_lower)
+    store
+        .get_entries_filtered::<Artist, _>(KEY, |v| {
+            v.get("name")
+                .and_then(|n| n.as_str())
+                .map_or(false, |n| n.eq_ignore_ascii_case(name))
+        })
+        .into_iter()
+        .next()
 }
 
 /// 分页获取艺术家。
