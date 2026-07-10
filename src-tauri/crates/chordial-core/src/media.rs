@@ -24,6 +24,7 @@
 use crate::module::music_source::registrar::SourceRegistrar;
 use crate::module::music_source::resource;
 use crate::module::music_source::types::{EntityType, SourceId, SourceType};
+use crate::module::perf;
 use crate::module::platform::{self, PlatformPath};
 use http::{header, Method, Request, Response, StatusCode};
 use std::io::{Read, Seek, SeekFrom};
@@ -90,6 +91,7 @@ pub fn error_response(status: StatusCode, msg: &str) -> Response<Vec<u8>> {
 ///
 /// 使用 [`platform::open_file`] 和 [`platform::file_size`] 实现跨平台文件访问。
 pub fn serve_audio_file(path_str: &str, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let _token = perf::start("media.serve_audio_file");
     let path = PlatformPath::from(path_str);
 
     // 获取文件大小（先于 open 以减少内存分配）
@@ -169,6 +171,7 @@ pub fn serve_audio_file(path_str: &str, request: &Request<Vec<u8>>) -> Response<
                     );
                 }
 
+                perf::end(&_token, Some(&format!("bytes={}", length)));
                 return Response::builder()
                     .status(StatusCode::PARTIAL_CONTENT)
                     .header(header::CONTENT_TYPE, mime)
@@ -195,6 +198,7 @@ pub fn serve_audio_file(path_str: &str, request: &Request<Vec<u8>>) -> Response<
         );
     }
 
+    perf::end(&_token, Some(&format!("bytes={}", file_size)));
     Response::builder()
         .header(header::CONTENT_TYPE, mime)
         .header(header::CONTENT_LENGTH, file_size.to_string())
@@ -211,6 +215,7 @@ pub fn serve_audio_file(path_str: &str, request: &Request<Vec<u8>>) -> Response<
 ///
 /// `path` 为请求 URL 的路径部分（`/audio/<sn>/<eid>` 等）。
 pub fn handle(registrar: &SourceRegistrar, path: &str, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let _scope = perf::scope("media.handle");
     match parse_url(path) {
         Ok(parsed) => match parsed.resource_type.as_str() {
             "audio" => {

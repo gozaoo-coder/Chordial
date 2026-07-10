@@ -1,5 +1,6 @@
 use super::backend::StorageBackend;
 use super::file::FileBackend;
+use crate::module::perf;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -133,6 +134,7 @@ impl PersistentStore {
     ///
     /// key 不存在或类型不匹配时返回 `None`。
     pub fn get<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Option<T> {
+        let _scope = perf::scope("persistent.get");
         self.cache
             .read()
             .get(key)
@@ -151,6 +153,7 @@ impl PersistentStore {
     /// 仅修改内存缓存，**不立即落盘**。需要调用 [`save()`](Self::save)
     /// 或 [`save_if_dirty()`](Self::save_if_dirty) 手动持久化。
     pub fn set<T: Serialize>(&self, key: &str, value: &T) -> Result<(), String> {
+        let _scope = perf::scope("persistent.set");
         let json = serde_json::to_value(value)
             .map_err(|e| format!("序列化失败: {}", e))?;
         self.cache.write().insert(key.to_string(), json);
@@ -197,6 +200,7 @@ impl PersistentStore {
     ///
     /// 写入成功后清除脏标记。
     pub fn save(&self) -> Result<(), String> {
+        let _scope = perf::scope("persistent.save");
         let data = self.cache.read().clone();
         self.backend.write(&data)?;
         *self.dirty.write() = false;
@@ -207,6 +211,7 @@ impl PersistentStore {
     ///
     /// 适合在退出时调用，避免不必要的磁盘 I/O。
     pub fn save_if_dirty(&self) -> Result<(), String> {
+        let _scope = perf::scope("persistent.save");
         if *self.dirty.read() {
             self.save()
         } else {
@@ -233,6 +238,7 @@ impl PersistentStore {
     ///
     /// 若 key 对应文件已存在则覆盖。
     pub fn set_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
+        let _scope = perf::scope("persistent.set_blob");
         let path = self.blob_path(key);
         fs::write(&path, data).map_err(|e| format!("写入 Blob 文件失败: {}", e))?;
         self.blob_keys_cache.write().insert(key.to_string());
@@ -243,6 +249,7 @@ impl PersistentStore {
     ///
     /// 若 key 不存在或文件丢失则返回 `None`。
     pub fn get_blob(&self, key: &str) -> Option<Vec<u8>> {
+        let _scope = perf::scope("persistent.get_blob");
         let path = self.blob_path(key);
         if !path.exists() {
             return None;

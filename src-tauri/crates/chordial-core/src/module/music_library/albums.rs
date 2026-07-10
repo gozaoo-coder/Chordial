@@ -1,4 +1,5 @@
 use super::models::Album;
+use crate::module::perf;
 use crate::module::storage::persistent::PersistentStore;
 use std::collections::HashMap;
 
@@ -6,11 +7,13 @@ const KEY: &str = "albums";
 
 /// 获取所有专辑。
 pub fn get_all(store: &PersistentStore) -> HashMap<String, Album> {
+    let _scope = perf::scope("albums.get_all");
     store.get::<HashMap<String, Album>>(KEY).unwrap_or_default()
 }
 
 /// 按 ID 获取单个专辑。
 pub fn get(store: &PersistentStore, id: &str) -> Option<Album> {
+    let _scope = perf::scope("albums.get");
     get_all(store).remove(id)
 }
 
@@ -26,6 +29,7 @@ pub fn add(store: &PersistentStore, album: &Album) -> Result<(), String> {
 
 /// 更新一个专辑。
 pub fn update(store: &PersistentStore, album: &Album) -> Result<(), String> {
+    let _scope = perf::scope("albums.update");
     let mut albums = get_all(store);
     if !albums.contains_key(&album.id) {
         return Err(format!("专辑 id={} 不存在", album.id));
@@ -36,6 +40,7 @@ pub fn update(store: &PersistentStore, album: &Album) -> Result<(), String> {
 
 /// 删除一个专辑。
 pub fn remove(store: &PersistentStore, id: &str) -> Result<bool, String> {
+    let _scope = perf::scope("albums.remove");
     let mut albums = get_all(store);
     let existed = albums.remove(id).is_some();
     if existed {
@@ -50,6 +55,7 @@ pub fn search(
     query: &str,
     artists: &HashMap<String, super::models::Artist>,
 ) -> Vec<Album> {
+    let _scope = perf::scope("albums.search");
     let query_lower = query.to_lowercase();
     get_all(store)
         .into_values()

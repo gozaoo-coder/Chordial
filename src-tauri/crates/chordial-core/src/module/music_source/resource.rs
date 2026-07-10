@@ -14,6 +14,7 @@
 
 use super::registrar::SourceRegistrar;
 use super::types::SourceId;
+use crate::module::perf;
 
 /// 获取歌曲的音频文件。
 ///
@@ -25,6 +26,7 @@ pub fn get_song_file(
     registrar: &SourceRegistrar,
     source_id: &SourceId,
 ) -> Result<Vec<u8>, String> {
+    let _scope = perf::scope("resource.get_song_file");
     let source = registrar
         .get(&source_id.source_name)
         .ok_or_else(|| format!("来源 '{}' 未注册", source_id.source_name))?;
@@ -54,6 +56,7 @@ pub fn get_album_picture(
     registrar: &SourceRegistrar,
     source_id: &SourceId,
 ) -> Result<Vec<u8>, String> {
+    let _scope = perf::scope("resource.get_album_picture");
     let source = registrar
         .get(&source_id.source_name)
         .ok_or_else(|| format!("来源 '{}' 未注册", source_id.source_name))?;
@@ -71,6 +74,7 @@ pub fn get_lyric_text(
     registrar: &SourceRegistrar,
     source_id: &SourceId,
 ) -> Result<String, String> {
+    let _scope = perf::scope("resource.get_lyric_text");
     let source = registrar
         .get(&source_id.source_name)
         .ok_or_else(|| format!("来源 '{}' 未注册", source_id.source_name))?;

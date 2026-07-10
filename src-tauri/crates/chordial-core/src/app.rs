@@ -28,6 +28,7 @@ use crate::module::music_localSource::source::LocalMusicSource;
 use crate::module::music_source::manager::SourceManager;
 use crate::module::music_source::registrar::{SourceCleanup, SourceRegistrar};
 use crate::module::p2p::P2pManager;
+use crate::module::perf;
 use crate::module::storage::persistent::PersistentStore;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -65,6 +66,7 @@ impl AppContext {
     /// - `data_dir/local_source_folders.json`
     /// - `data_dir/cache_blobs/`（Blob 缓存目录）
     pub fn new(data_dir: PathBuf) -> Result<Self, String> {
+        let _scope = perf::scope("app.new");
         // ── 配置 / 存储 / 缓存 ──
         let config = Arc::new(ConfigStore::new(data_dir.join("config.json")));
         let store = Arc::new(PersistentStore::new(data_dir.join("storage.json")));

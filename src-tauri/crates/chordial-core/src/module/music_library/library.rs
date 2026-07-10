@@ -1,6 +1,7 @@
 use super::{albums, artists, lyrics, models::*, relations, songs};
 use crate::module::music_source::registrar::SourceCleanup;
 use crate::module::music_source::types::{EntityType, SourceId};
+use crate::module::perf;
 use crate::module::storage::persistent::PersistentStore;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -86,6 +87,7 @@ impl MusicLibrary {
     /// 仅当数据实际变化时才写回存储。
     /// 返回库中实际存储的歌曲 ID（合并模式返回已有歌曲 ID，新建模式返回新 ID）。
     pub fn add_song(&self, song: &Song) -> Result<String, String> {
+        let _scope = perf::scope("library.add_song");
         let mut all_songs = songs::get_all(&self.store);
         let mut all_artists = artists::get_all(&self.store);
         let mut all_albums = albums::get_all(&self.store);
@@ -126,6 +128,7 @@ impl MusicLibrary {
     }
 
     pub fn search_songs(&self, query: &str) -> Vec<Song> {
+        let _scope = perf::scope("library.search");
         let artists_map = artists::get_all(&self.store);
         songs::search(&self.store, query, &artists_map)
     }
@@ -188,6 +191,7 @@ impl MusicLibrary {
     ///
     /// 用一次 IPC 调用返回首页全量所需信息，避免三次 `get_all_*` 的大载荷。
     pub fn get_home_stats(&self) -> serde_json::Value {
+        let _scope = perf::scope("library.get_home_stats");
         let all_songs = songs::get_all(&self.store);
         let all_artists = artists::get_all(&self.store);
         let all_albums = albums::get_all(&self.store);
@@ -303,6 +307,7 @@ impl MusicLibrary {
     /// 此方法由 [`SourceCleanup`] 回调调用，参见
     /// [`SourceRegistrar::unregister`](crate::module::music_source::registrar::SourceRegistrar::unregister)。
     pub fn remove_source_from_all_entities(&self, source_name: &str) -> Result<(), String> {
+        let _scope = perf::scope("library.remove_source_from_all_entities");
         // ── Songs ──
         {
             let mut all_songs = songs::get_all(&self.store);
@@ -395,6 +400,7 @@ impl MusicLibrary {
         source_name: &str,
         entity_ids: &std::collections::HashSet<String>,
     ) -> Result<(), String> {
+        let _scope = perf::scope("library.remove_specific_song_source_ids");
         if entity_ids.is_empty() {
             return Ok(());
         }
@@ -434,6 +440,7 @@ impl MusicLibrary {
     /// 遍历全部四类实体，删除所有失去全部来源引用的条目。
     /// 适用于：文件删除、文件夹移除后确保库中无悬挂数据。
     pub fn cleanup_empty_entities(&self) -> Result<(), String> {
+        let _scope = perf::scope("library.cleanup_empty_entities");
         // Songs
         {
             let all_songs = songs::get_all(&self.store);
@@ -492,6 +499,7 @@ impl MusicLibrary {
     ///
     /// 返回与输入等长的 `Vec<String>`，每个元素为对应歌曲在库中的实际存储 ID。
     pub fn add_songs_batch(&self, songs: &[Song]) -> Result<Vec<String>, String> {
+        let _scope = perf::scope("library.add_songs_batch");
         let mut all_songs = songs::get_all(&self.store);
         let mut all_artists = artists::get_all(&self.store);
         let mut all_albums = albums::get_all(&self.store);

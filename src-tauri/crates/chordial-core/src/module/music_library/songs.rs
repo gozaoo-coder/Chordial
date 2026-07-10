@@ -1,4 +1,5 @@
 use super::models::Song;
+use crate::module::perf;
 use crate::module::storage::persistent::PersistentStore;
 use std::collections::{HashMap, HashSet};
 
@@ -6,11 +7,13 @@ const KEY: &str = "songs";
 
 /// 获取所有歌曲。
 pub fn get_all(store: &PersistentStore) -> HashMap<String, Song> {
+    let _scope = perf::scope("songs.get_all");
     store.get::<HashMap<String, Song>>(KEY).unwrap_or_default()
 }
 
 /// 按 ID 获取单首歌曲。
 pub fn get(store: &PersistentStore, id: &str) -> Option<Song> {
+    let _scope = perf::scope("songs.get");
     get_all(store).remove(id)
 }
 
@@ -48,6 +51,7 @@ pub fn add(store: &PersistentStore, song: &Song) -> Result<(), String> {
 ///
 /// 若歌曲不存在则返回 `Err`。
 pub fn update(store: &PersistentStore, song: &Song) -> Result<(), String> {
+    let _scope = perf::scope("songs.update");
     let mut songs = get_all(store);
     if !songs.contains_key(&song.id) {
         return Err(format!("歌曲 id={} 不存在", song.id));
@@ -60,6 +64,7 @@ pub fn update(store: &PersistentStore, song: &Song) -> Result<(), String> {
 ///
 /// 返回 `true` 表示存在并被删除。
 pub fn remove(store: &PersistentStore, id: &str) -> Result<bool, String> {
+    let _scope = perf::scope("songs.remove");
     let mut songs = get_all(store);
     let existed = songs.remove(id).is_some();
     if existed {
@@ -72,6 +77,7 @@ pub fn remove(store: &PersistentStore, id: &str) -> Result<bool, String> {
 ///
 /// 匹配范围：歌曲标题 + 关联的艺术家名称。
 pub fn search(store: &PersistentStore, query: &str, artists: &HashMap<String, super::models::Artist>) -> Vec<Song> {
+    let _scope = perf::scope("songs.search");
     let query_lower = query.to_lowercase();
     get_all(store)
         .into_values()

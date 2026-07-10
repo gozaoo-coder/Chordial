@@ -10,6 +10,7 @@
 //! - Android：`Cursor<Vec<u8>>`（预读全部字节）→ symphonia
 
 use crate::module::platform::{self, PlatformPath};
+use crate::module::perf;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
@@ -42,6 +43,7 @@ pub struct AudioMeta {
 /// # 返回
 /// 成功时返回 [`AudioMeta`]，失败时返回错误信息。
 pub fn probe_file(path: &PlatformPath) -> Result<AudioMeta, String> {
+    let _token = perf::start("scanner.probe_file");
     let src = platform::open_file(path)?;
 
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
@@ -109,6 +111,10 @@ pub fn probe_file(path: &PlatformPath) -> Result<AudioMeta, String> {
         meta.title = platform::path_file_stem(path);
     }
 
+    perf::end(
+        &_token,
+        Some(&format!("path={}", platform::path_to_string(path))),
+    );
     Ok(meta)
 }
 
@@ -123,6 +129,7 @@ pub fn probe_file(path: &PlatformPath) -> Result<AudioMeta, String> {
 /// # 返回
 /// 成功时返回图片字节数据（JPEG / PNG），失败时返回错误信息。
 pub fn extract_cover_art(path: &PlatformPath) -> Result<Vec<u8>, String> {
+    let _scope = perf::scope("scanner.extract_cover_art");
     let src = platform::open_file(path)?;
 
     let mss = MediaSourceStream::new(Box::new(src), Default::default());

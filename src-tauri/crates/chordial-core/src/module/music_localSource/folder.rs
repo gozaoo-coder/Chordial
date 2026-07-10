@@ -13,6 +13,7 @@
 //! - Android：`String`（content URI）→ JNI 桥接
 
 use crate::module::platform::{self, PlatformPath};
+use crate::module::perf;
 use crate::module::storage::persistent::PersistentStore;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -64,6 +65,7 @@ impl FolderManager {
 
     /// 检查文件夹是否已在监听列表中。
     pub fn has_folder(&self, path: &PlatformPath) -> bool {
+        let _scope = perf::scope("folder.has_folder");
         let canonical = platform::canonicalize(path)
             .unwrap_or_else(|_| path.clone());
         self.folders
@@ -87,6 +89,7 @@ impl FolderManager {
     ///
     /// 若文件夹不存在则返回 `Err`。若已存在则跳过。
     pub fn add_folder(&self, path: &PlatformPath) -> Result<(), String> {
+        let _scope = perf::scope("folder.add_folder");
         if !platform::exists(path) {
             return Err(format!("文件夹不存在: {}", platform::path_to_string(path)));
         }
@@ -119,6 +122,7 @@ impl FolderManager {
     /// 注意：此方法仅从管理列表中移除，不负责级联清理音乐库数据。
     /// 调用者应在调用此方法之前或之后自行清理。
     pub fn remove_folder(&self, path: &PlatformPath) -> bool {
+        let _scope = perf::scope("folder.remove_folder");
         let canonical = platform::canonicalize(path)
             .unwrap_or_else(|_| path.clone());
         let mut folders = self.folders.write();
@@ -169,6 +173,7 @@ pub fn collect_audio_files(root: &PlatformPath) -> Vec<PlatformPath> {
 }
 
 fn collect_audio_files_recursive(dir: &PlatformPath, files: &mut Vec<PlatformPath>) {
+    let _scope = perf::scope("folder.collect_audio_files");
     if let Ok(entries) = platform::read_dir_entries_with_file_type(dir) {
         for (entry, is_dir) in entries {
             if is_dir {

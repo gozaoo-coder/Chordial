@@ -24,5 +24,6 @@ pub mod music_localSource;
 pub mod music_library;
 pub mod music_source;
 pub mod p2p;
+pub mod perf;
 pub mod platform;
 pub mod storage;

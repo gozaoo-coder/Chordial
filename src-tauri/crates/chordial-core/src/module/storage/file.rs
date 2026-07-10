@@ -1,4 +1,5 @@
 use super::backend::StorageBackend;
+use crate::module::perf;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -47,6 +48,7 @@ impl FileBackend {
 
 impl StorageBackend for FileBackend {
     fn read(&self) -> Result<HashMap<String, Value>, String> {
+        let _scope = perf::scope("file.read");
         if !self.path.exists() {
             return Ok(HashMap::new());
         }
@@ -60,6 +62,7 @@ impl StorageBackend for FileBackend {
     }
 
     fn write(&self, data: &HashMap<String, Value>) -> Result<(), String> {
+        let _scope = perf::scope("file.write");
         self.ensure_dir()?;
         let content = serde_json::to_string(data)
             .map_err(|e| format!("序列化失败: {}", e))?;

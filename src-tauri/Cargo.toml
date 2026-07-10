@@ -65,3 +65,21 @@ jni = "0.21"
 [features]
 # 此特性门控由 Tauri 的 mobile 入口使用
 custom-protocol = ["tauri/custom-protocol"]
+
+# ── Profile 配置 ──────────────────────────────────────────────────────
+# dev 构建保留符号 + 轻量优化（perf 计时更准）
+[profile.dev]
+debug = true
+opt-level = 0
+split-debuginfo = "unpacked"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+# release 构建薄 LTO + 单 codegen-unit 提升性能
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+opt-level = 3
+panic = "abort"

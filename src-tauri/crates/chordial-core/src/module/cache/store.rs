@@ -1,3 +1,4 @@
+use crate::module::perf;
 use crate::module::storage::entry::{StoredEntry, Ttl};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -128,6 +129,7 @@ impl CacheStore {
     /// 若 key 不存在或已过期，返回 `None`。
     /// 过期条目会在首次访问时被自动移除。
     pub fn get<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Option<T> {
+        let _scope = perf::scope("cache.get");
         let entries = self.entries.read();
         let entry = entries.get(key)?;
         if entry.is_expired() {
@@ -154,6 +156,7 @@ impl CacheStore {
     ///
     /// 若 key 已存在，旧的 TTL 会被覆盖。
     pub fn set<T: Serialize>(&self, key: &str, value: &T, ttl: &Ttl) -> Result<(), String> {
+        let _scope = perf::scope("cache.set");
         let json =
             serde_json::to_value(value).map_err(|e| format!("序列化失败: {}", e))?;
         let entry = StoredEntry::new(json, ttl);
@@ -225,6 +228,7 @@ impl CacheStore {
     ///
     /// 若 key 已存在，旧的 TTL 和文件会被覆盖。
     pub fn set_blob(&self, key: &str, data: &[u8], ttl: &Ttl) -> Result<(), String> {
+        let _scope = perf::scope("cache.set_blob");
         let path = self
             .blob_path(key)
             .ok_or_else(|| "Blob 存储未启用，请先调用 enable_blob_storage".to_string())?;
@@ -245,6 +249,7 @@ impl CacheStore {
     /// 若 key 不存在、已过期或文件丢失，返回 `None`。
     /// 过期条目会在首次访问时自动清理元数据和磁盘文件。
     pub fn get_blob(&self, key: &str) -> Option<Vec<u8>> {
+        let _scope = perf::scope("cache.get_blob");
         // 检查 TTL
         let expired = {
             let blob_entries = self.blob_entries.read();

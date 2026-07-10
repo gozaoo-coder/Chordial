@@ -16,6 +16,7 @@ use super::folder::FolderManager;
 use super::scanner::{self, AudioMeta};
 use crate::module::music_library::library::MusicLibrary;
 use crate::module::music_library::models::{Album, Artist, Lyric, Song};
+use crate::module::perf;
 use crate::module::music_source::traits::MusicSource;
 use crate::module::music_source::types::{EntityType, SourceId, SourceType};
 use crate::module::platform::{self, PlatformPath};
@@ -77,6 +78,7 @@ impl LocalMusicSource {
     ///
     /// 返回 `true` 表示成功处理（新增或合并），`false` 表示跳过（非音频文件）。
     pub fn index_file(&self, path: &PlatformPath) -> Result<bool, String> {
+        let _scope = perf::scope("source.index_file");
         let canonical = platform::canonicalize(path)
             .unwrap_or_else(|_| path.clone());
 
@@ -143,6 +145,7 @@ impl LocalMusicSource {
 
     /// 重新索引文件（适用于文件修改事件）。
     pub fn reindex_file(&self, path: &PlatformPath) -> Result<bool, String> {
+        let _scope = perf::scope("source.reindex_file");
         // 先卸载旧索引
         self.unindex_file(path)?;
         // 再重新索引
@@ -209,6 +212,8 @@ impl LocalMusicSource {
     /// `(restored, removed)` — 成功恢复的条目数和因文件丢失而移除的条目数。
     pub fn restore_index_from_library(&self) -> (usize, usize) {
         use std::time::Instant;
+
+        let _scope = perf::scope("source.restore_index");
 
         let _t0 = Instant::now();
         let all_songs = self.library.get_all_songs();
@@ -404,6 +409,7 @@ impl MusicSource for LocalMusicSource {
     }
 
     fn search_songs(&self, query: &str) -> Result<Vec<Song>, String> {
+        let _scope = perf::scope("source.search_songs");
         let query_lower = query.to_lowercase();
         let mut results = Vec::new();
 
