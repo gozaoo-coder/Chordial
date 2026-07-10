@@ -33,12 +33,12 @@
 
   <!-- Toast 提示 -->
   <div class="p2p-toasts">
-    <Transition-group name="p2p-toast">
+    <TransitionGroup name="p2p-toast">
       <div v-for="t in toasts" :key="t.id" :class="['p2p-toast', `kind-${t.kind}`]" @click="dismissToast(t.id)">
         <div class="p2p-toast-title">{{ t.title }}</div>
         <div v-if="t.body" class="p2p-toast-body">{{ t.body }}</div>
       </div>
-    </Transition-group>
+    </TransitionGroup>
   </div>
 </template>
 

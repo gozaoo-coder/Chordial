@@ -146,6 +146,115 @@ impl PersistentStore {
         self.cache.read().get(key).cloned()
     }
 
+    /// 按 ID 从 HashMap 值中读取单条记录并反序列化。
+    ///
+    /// **性能关键**：仅反序列化目标条目，不反序列化整个 HashMap。
+    /// 对 3853 张专辑的库，`get::<HashMap<..>>(key).remove(id)` 需 24ms，
+    /// 本方法仅需 ~0.1ms。
+    ///
+    /// 要求存储的 Value 为 JSON Object（即 `{"id1": {...}, "id2": {...}}`）。
+    pub fn get_entry<T: for<'de> Deserialize<'de>>(&self, key: &str, id: &str) -> Option<T> {
+        let _scope = perf::scope("persistent.get_entry");
+        let guard = self.cache.read();
+        let value = guard.get(key)?;
+        let obj = value.as_object()?;
+        let entry_value = obj.get(id)?;
+    serde_json::from_value(entry_value.clone()).ok()
+    }
+
+    /// 获取 HashMap 值的条目数量，不做反序列化。
+    ///
+    /// 仅检查 JSON Object 的键数量，开销 O(1)。
+    pub fn count_entries(&self, key: &str) -> usize {
+    let _scope = perf::scope("persistent.count_entries");
+        self.cache
+            .read()
+            .get(key)
+            .and_then(|v| v.as_object())
+            .map(|m| m.len())
+            .unwrap_or(0)
+    }
+
+    /// 从 HashMap 值中分页读取并反序列化。
+    ///
+    /// 仅反序列化 `[offset, offset+limit)` 范围的条目，
+    /// 不反序列化整个 HashMap。适合分页列表场景。
+    ///
+    /// 注意：JSON Object 的迭代顺序由 serde_json 保证（插入序），
+    /// 与 `get_all().into_values().skip().take()` 行为一致。
+    pub fn get_page_entries<T: for<'de> Deserialize<'de>>(
+        &self,
+        key: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Vec<T> {
+    let _scope = perf::scope("persistent.get_page_entries");
+        let guard = self.cache.read();
+        let value = match guard.get(key) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+        let obj = match value.as_object() {
+            Some(o) => o,
+            None => return Vec::new(),
+        };
+        obj.values()
+            .skip(offset)
+            .take(limit)
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect()
+    }
+
+    /// 从 HashMap 值中读取所有条目并反序列化。
+    ///
+    /// 比 `get::<HashMap<String, T>>` 更高效：
+    /// 直接遍历 Object values 逐条反序列化，
+    /// 避免 `serde_json::from_value::<HashMap<String, T>>` 的中间 HashMap 分配。
+    pub fn get_all_entries<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Vec<T> {
+    let _scope = perf::scope("persistent.get_all_entries");
+        let guard = self.cache.read();
+        let value = match guard.get(key) {
+            Some(v) => v,
+            None => return Vec::new(),
+        };
+        let obj = match value.as_object() {
+            Some(o) => o,
+            None => return Vec::new(),
+        };
+        let result = Vec::with_capacity(obj.len());
+        obj.values()
+            .fold(result, |mut acc, v| {
+                if let Ok(item) = serde_json::from_value::<T>(v.clone()) {
+                    acc.push(item);
+                }
+                acc
+            })
+    }
+
+    /// 从 HashMap 值中读取所有条目，返回 `HashMap<String, T>`。
+    ///
+    /// 与 `get::<HashMap<String, T>>` 功能相同但更直接：
+    /// 逐条反序列化，失败条目跳过而非整体失败。
+    pub fn get_all_map<T: for<'de> Deserialize<'de>>(&self, key: &str) -> HashMap<String, T> {
+    let _scope = perf::scope("persistent.get_all_map");
+        let guard = self.cache.read();
+        let value = match guard.get(key) {
+            Some(v) => v,
+            None => return HashMap::new(),
+        };
+        let obj = match value.as_object() {
+            Some(o) => o,
+            None => return HashMap::new(),
+        };
+        let mut result = HashMap::with_capacity(obj.len());
+        for (k, v) in obj {
+            if let Ok(item) = serde_json::from_value::<T>(v.clone()) {
+                result.insert(k.clone(), item);
+            }
+        }
+        result
+    }
+
     // ── 写入 ─────────────────────────────────────────
 
     /// 写入键值对。

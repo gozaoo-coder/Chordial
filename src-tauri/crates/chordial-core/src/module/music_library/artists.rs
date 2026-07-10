@@ -12,9 +12,11 @@ pub fn get_all(store: &PersistentStore) -> HashMap<String, Artist> {
 }
 
 /// 按 ID 获取单个艺术家。
+///
+/// 优化：仅反序列化目标条目，不反序列化整个 HashMap。
 pub fn get(store: &PersistentStore, id: &str) -> Option<Artist> {
     let _scope = perf::scope("artists.get");
-    get_all(store).remove(id)
+    store.get_entry::<Artist>(KEY, id)
 }
 
 /// 添加一个艺术家。
@@ -69,17 +71,15 @@ pub fn find_by_name(store: &PersistentStore, name: &str) -> Option<Artist> {
 
 /// 分页获取艺术家。
 ///
-/// 注意：当前存储为全量 HashMap，分页仍需反序列化全部数据，
-/// 但可显著减少通过 IPC 传往前端的 JSON 载荷。
+/// 优化：仅反序列化 [offset, offset+limit) 范围的条目。
 pub fn get_page(store: &PersistentStore, offset: usize, limit: usize) -> Vec<Artist> {
-    get_all(store)
-        .into_values()
-        .skip(offset)
-        .take(limit)
-        .collect()
+    let _scope = perf::scope("artists.get_page");
+    store.get_page_entries::<Artist>(KEY, offset, limit)
 }
 
 /// 获取艺术家总数。
+///
+/// 优化：O(1) 检查 JSON Object 键数量，不反序列化。
 pub fn count(store: &PersistentStore) -> usize {
-    get_all(store).len()
+    store.count_entries(KEY)
 }

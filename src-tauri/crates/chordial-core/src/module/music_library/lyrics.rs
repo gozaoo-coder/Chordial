@@ -12,9 +12,11 @@ pub fn get_all(store: &PersistentStore) -> HashMap<String, Lyric> {
 }
 
 /// 按 ID 获取单条歌词。
+///
+/// 优化：仅反序列化目标条目，不反序列化整个 HashMap。
 pub fn get(store: &PersistentStore, id: &str) -> Option<Lyric> {
     let _scope = perf::scope("lyrics.get");
-    get_all(store).remove(id)
+    store.get_entry::<Lyric>(KEY, id)
 }
 
 /// 添加一条歌词。
@@ -67,6 +69,8 @@ pub fn search(store: &PersistentStore, query: &str) -> Vec<Lyric> {
 }
 
 /// 获取歌词总数。
+///
+/// 优化：O(1) 检查 JSON Object 键数量，不反序列化。
 pub fn count(store: &PersistentStore) -> usize {
-    get_all(store).len()
+    store.count_entries(KEY)
 }

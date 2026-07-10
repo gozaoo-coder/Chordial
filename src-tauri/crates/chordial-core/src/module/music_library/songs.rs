@@ -12,9 +12,11 @@ pub fn get_all(store: &PersistentStore) -> HashMap<String, Song> {
 }
 
 /// 按 ID 获取单首歌曲。
+///
+/// 优化：仅反序列化目标条目，不反序列化整个 HashMap。
 pub fn get(store: &PersistentStore, id: &str) -> Option<Song> {
     let _scope = perf::scope("songs.get");
-    get_all(store).remove(id)
+    store.get_entry::<Song>(KEY, id)
 }
 
 /// 查找重复歌曲：标题相同（忽略大小写）且艺人名集合相同（无序匹配）。
@@ -95,17 +97,15 @@ pub fn search(store: &PersistentStore, query: &str, artists: &HashMap<String, su
 
 /// 分页获取歌曲。
 ///
-/// 注意：当前存储为全量 HashMap，分页仍需反序列化全部数据，
-/// 但可显著减少通过 IPC 传往前端的 JSON 载荷。
+/// 优化：仅反序列化 [offset, offset+limit) 范围的条目。
 pub fn get_page(store: &PersistentStore, offset: usize, limit: usize) -> Vec<Song> {
-    get_all(store)
-        .into_values()
-        .skip(offset)
-        .take(limit)
-        .collect()
+    let _scope = perf::scope("songs.get_page");
+    store.get_page_entries::<Song>(KEY, offset, limit)
 }
 
 /// 获取歌曲总数。
+///
+/// 优化：O(1) 检查 JSON Object 键数量，不反序列化。
 pub fn count(store: &PersistentStore) -> usize {
-    get_all(store).len()
+    store.count_entries(KEY)
 }
