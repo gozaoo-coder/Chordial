@@ -12,6 +12,7 @@
  */
 
 import { transport } from '@/api/transport';
+import { perf } from '@/utils/performanceMonitor.js';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // TTL 辅助工具
@@ -50,7 +51,7 @@ export const cacheTtl = {
  * @returns {Promise<any>} 缓存值
  */
 export async function cacheGet(key) {
-  return transport.command('cache_get', { key });
+  return perf.measureAsync('cache.get', transport.command('cache_get', { key }), { key });
 }
 
 /**
@@ -65,7 +66,7 @@ export async function cacheGet(key) {
  * await cacheSet('state', data, cacheTtl.forever);
  */
 export async function cacheSet(key, value, ttl) {
-  return transport.command('cache_set', { key, value, ttl });
+  return perf.measureAsync('cache.set', transport.command('cache_set', { key, value, ttl }), { key });
 }
 
 /**
@@ -74,7 +75,7 @@ export async function cacheSet(key, value, ttl) {
  * @returns {Promise<boolean>} 是否成功删除
  */
 export async function cacheRemove(key) {
-  return transport.command('cache_remove', { key });
+  return perf.measureAsync('cache.remove', transport.command('cache_remove', { key }), { key });
 }
 
 /**
@@ -83,7 +84,7 @@ export async function cacheRemove(key) {
  * @returns {Promise<boolean>}
  */
 export async function cacheHas(key) {
-  return transport.command('cache_has', { key });
+  return perf.measureAsync('cache.has', transport.command('cache_has', { key }), { key });
 }
 
 /**
@@ -91,7 +92,7 @@ export async function cacheHas(key) {
  * @returns {Promise<string[]>}
  */
 export async function cacheKeys() {
-  return transport.command('cache_keys');
+  return perf.measureAsync('cache.keys', transport.command('cache_keys'));
 }
 
 /**
@@ -99,7 +100,7 @@ export async function cacheKeys() {
  * @returns {Promise<void>}
  */
 export async function cacheClear() {
-  return transport.command('cache_clear');
+  return perf.measureAsync('cache.clear', transport.command('cache_clear'));
 }
 
 /**
@@ -107,7 +108,7 @@ export async function cacheClear() {
  * @returns {Promise<number>} 清理数量
  */
 export async function cacheClearExpired() {
-  return transport.command('cache_clear_expired');
+  return perf.measureAsync('cache.clearExpired', transport.command('cache_clear_expired'));
 }
 
 /**
@@ -117,5 +118,5 @@ export async function cacheClearExpired() {
  * @returns {Promise<boolean>} 是否续期成功
  */
 export async function cacheTouch(key, ttl) {
-  return transport.command('cache_touch', { key, ttl });
+  return perf.measureAsync('cache.touch', transport.command('cache_touch', { key, ttl }), { key });
 }

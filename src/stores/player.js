@@ -10,6 +10,7 @@
  */
 
 import { reactive, readonly, computed } from 'vue';
+import { perf } from '@/utils/performanceMonitor.js';
 
 // 播放模式枚举
 export const PlayMode = {
@@ -251,6 +252,7 @@ const actions = {
    * @param {Array} playlist - 可选的播放列表
    */
   async play(track, playlist = null) {
+    return perf.measureAsync('PlayerStore.play', (async () => {
     if (!track || !track.id) {
       console.warn('play: 无效的 track 参数');
       return;
@@ -320,6 +322,7 @@ const actions = {
     } finally {
       state.isLoading = false;
     }
+    })());
   },
 
   /**
@@ -362,11 +365,13 @@ const actions = {
    * @param {number} time - 时间（秒）
    */
   seek(time) {
+    perf.start('PlayerStore.seek');
     if (state.audioElement) {
       const clampedTime = Math.max(0, Math.min(time, state.duration));
       state.audioElement.currentTime = clampedTime;
       state.currentTime = clampedTime;
     }
+    perf.end('PlayerStore.seek');
   },
 
   /**
@@ -382,7 +387,8 @@ const actions = {
    * 播放上一首
    */
   playPrevious() {
-    if (state.playlist.length === 0) return;
+    perf.start('PlayerStore.playPrevious');
+    if (state.playlist.length === 0) { perf.end('PlayerStore.playPrevious'); return; }
 
     let previousIndex;
 
@@ -401,13 +407,15 @@ const actions = {
     if (previousTrack) {
       actions.play(previousTrack);
     }
+    perf.end('PlayerStore.playPrevious');
   },
 
   /**
    * 播放下一首
    */
   playNext() {
-    if (state.playlist.length === 0) return;
+    perf.start('PlayerStore.playNext');
+    if (state.playlist.length === 0) { perf.end('PlayerStore.playNext'); return; }
 
     let nextIndex;
 
@@ -426,6 +434,7 @@ const actions = {
     if (nextTrack) {
       actions.play(nextTrack);
     }
+    perf.end('PlayerStore.playNext');
   },
 
   /**
@@ -488,11 +497,13 @@ const actions = {
    * @param {Array} playlist - 播放列表
    */
   setPlaylist(playlist) {
+    perf.start('PlayerStore.setPlaylist');
     state.playlist = playlist || [];
     // 更新当前歌曲索引
     if (state.currentTrack) {
       state.currentIndex = getTrackIndex(state.currentTrack);
     }
+    perf.end('PlayerStore.setPlaylist');
   },
 
   /**
@@ -500,13 +511,15 @@ const actions = {
    * @param {Track} track - 歌曲
    */
   addToPlaylist(track) {
-    if (!track) return;
+    perf.start('PlayerStore.addToPlaylist');
+    if (!track) { perf.end('PlayerStore.addToPlaylist'); return; }
 
     // 检查是否已存在
     const exists = state.playlist.some(t => t.id === track.id);
     if (!exists) {
       state.playlist.push(track);
     }
+    perf.end('PlayerStore.addToPlaylist');
   },
 
   /**
@@ -553,6 +566,7 @@ const actions = {
    * @param {Track} track - 歌曲
    */
   async loadLyrics(track) {
+    return perf.measureAsync('PlayerStore.loadLyrics', (async () => {
     try {
       const lyricsInfo = await track.getLyricsInfo();
 
@@ -583,6 +597,7 @@ const actions = {
         state.lyricsData.hasPlainLyrics = false;
       }
     }
+    })());
   },
 
   /**

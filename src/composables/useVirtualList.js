@@ -15,6 +15,7 @@
  * @returns {Object} 虚拟列表状态和计算属性
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { perf } from '@/utils/performanceMonitor.js';
 
 export function useVirtualList(itemsRef, options = {}) {
   const {
@@ -116,7 +117,8 @@ export function useVirtualList(itemsRef, options = {}) {
 
   // 计算可见项
   const visibleItems = computed(() => {
-    if (!itemsRef.value || !itemsRef.value.length) return [];
+    perf.start('VirtualList.compute');
+    if (!itemsRef.value || !itemsRef.value.length) { perf.end('VirtualList.compute'); return []; }
 
     if (columns > 1) {
       // 网格模式：按行渲染
@@ -148,6 +150,7 @@ export function useVirtualList(itemsRef, options = {}) {
         }
       }
 
+      perf.end('VirtualList.compute');
       return items;
     }
 
@@ -173,6 +176,7 @@ export function useVirtualList(itemsRef, options = {}) {
       });
     }
 
+    perf.end('VirtualList.compute');
     return items;
   });
 
@@ -186,7 +190,9 @@ export function useVirtualList(itemsRef, options = {}) {
     }
 
     rafId.value = requestAnimationFrame(() => {
+      perf.start('VirtualList.scroll');
       scrollTop.value = e.target.scrollTop;
+      perf.end('VirtualList.scroll');
     });
   };
 

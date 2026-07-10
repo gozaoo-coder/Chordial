@@ -8,6 +8,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { perf } from '@/utils/performanceMonitor.js';
 
 /**
  * 调用后端命令（Tauri invoke 直通）。
@@ -17,7 +18,7 @@ import { invoke } from '@tauri-apps/api/core';
  * @returns {Promise<any>}
  */
 export async function command(name, args = {}) {
-  return invoke(name, args);
+  return perf.measureAsync(`transport.${name}`, invoke(name, args));
 }
 
 // ── 媒体 URL 构建（复用 chordialUrl.js 逻辑）───────────────

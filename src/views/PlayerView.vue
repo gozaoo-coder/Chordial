@@ -127,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { LyricPlayer } from '@applemusic-like-lyrics/vue'
 import { PlayerStore, PlayMode } from '@/stores/player.js'
@@ -135,7 +135,7 @@ import { useCoverImage } from '@/composables/useCoverImage'
 import { useLyricParser } from '@/composables/useLyricParser'
 import { usePerf } from '@/utils/performanceMonitor.js'
 
-const { start, end, log } = usePerf('PlayerView')
+const { start, end, log, startFpsMonitor } = usePerf('PlayerView')
 
 const router = useRouter()
 const isActive = ref(false)
@@ -143,6 +143,7 @@ const showLyrics = ref(true)
 const progressTrack = ref(null)
 const coverBgKey = ref(0)
 let seekDragging = false
+let stopBlurFps = null
 
 // ── player ──
 
@@ -156,7 +157,10 @@ const playMode = computed(() => PlayerStore.state.playMode)
 const { coverUrl } = useCoverImage(currentTrack, 'large')
 
 // 曲目切换 → 背景 key 递增 → 触发 crossfade
-watch(() => currentTrack.value?.id, () => { coverBgKey.value++ })
+watch(() => currentTrack.value?.id, (newId) => {
+  log('trackSwitch', { id: newId })
+  coverBgKey.value++
+})
 
 // ── time ──
 
@@ -284,11 +288,16 @@ function endSeek() {
 // ── lifecycle ──
 
 onMounted(() => {
+  stopBlurFps = startFpsMonitor('blurBg', 2000)
   requestAnimationFrame(() => {
     start('pageActive')
     isActive.value = true
     end('pageActive')
   })
+})
+
+onUnmounted(() => {
+  if (stopBlurFps) stopBlurFps()
 })
 </script>
 

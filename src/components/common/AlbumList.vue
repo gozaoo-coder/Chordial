@@ -1,7 +1,8 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCoverImages } from '@/composables/useCoverImage';
+import { usePerf } from '@/utils/performanceMonitor.js';
 import CoverImage from './CoverImage.vue';
 
 const props = defineProps({
@@ -12,6 +13,7 @@ const props = defineProps({
 });
 
 const router = useRouter();
+const { log } = usePerf('AlbumList');
 
 const albumsRef = computed(() => props.albums);
 const { coverUrls } = useCoverImages(albumsRef, 'small');
@@ -36,6 +38,10 @@ const getTrackCount = (album) => {
   }
   return album.trackCount || 0;
 };
+
+onMounted(() => {
+  log('mount', { count: props.albums?.length });
+});
 </script>
 
 <template>

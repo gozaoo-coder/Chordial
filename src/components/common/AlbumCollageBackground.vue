@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import CoverImage from './CoverImage.vue';
+import { perf } from '@/utils/performanceMonitor.js';
 
 const props = defineProps({
   albums: {
@@ -58,6 +59,7 @@ const hasEnoughCovers = computed(() => backgroundAlbums.value.length >= 3);
 const offsetX = ref(0);
 const offsetY = ref(0);
 let animationId = null;
+let stopFps = null;
 
 // 缓慢漂移动画
 const startAnimation = () => {
@@ -90,10 +92,12 @@ const stopAnimation = () => {
 
 onMounted(() => {
   startAnimation();
+  stopFps = perf.startFpsMonitor('AlbumCollageBackground.raf', 2000);
 });
 
 onUnmounted(() => {
   stopAnimation();
+  if (stopFps) stopFps();
 });
 
 // 网格样式

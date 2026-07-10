@@ -7,6 +7,8 @@
  * @implements {import('./base.js').Transport}
  */
 
+import { perf } from '@/utils/performanceMonitor.js';
+
 /** @type {string} */
 let _baseUrl = 'http://localhost:7878';
 
@@ -34,18 +36,20 @@ export function getBaseUrl() {
  * @returns {Promise<any>}
  */
 export async function command(name, args = {}) {
-  const response = await fetch(`${_baseUrl}/rpc`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, args }),
-  });
+  return perf.measureAsync(`transport.${name}`, (async () => {
+    const response = await fetch(`${_baseUrl}/rpc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, args }),
+    });
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `HTTP ${response.status}: ${response.statusText}`);
-  }
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `HTTP ${response.status}: ${response.statusText}`);
+    }
 
-  return response.json();
+    return response.json();
+  })());
 }
 
 /**
