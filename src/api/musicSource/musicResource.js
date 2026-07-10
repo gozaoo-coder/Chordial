@@ -10,7 +10,7 @@
  */
 
 import { transport } from '@/api/transport';
-import { SourceId } from '@/class';
+import { Song, SourceId } from '@/class';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Helpers
@@ -181,7 +181,8 @@ export async function getTracksByIds(trackIds) {
  */
 export async function getSongsByIds(trackIds) {
   if (!trackIds?.length) return [];
-  return transport.command('library_get_songs_by_ids', { ids: trackIds });
+  const list = await transport.command('library_get_songs_by_ids', { ids: trackIds });
+  return (list || []).map((d) => new Song(d));
 }
 
 /** @deprecated 使用 {@link module:src/api/artist.getArtist} */
