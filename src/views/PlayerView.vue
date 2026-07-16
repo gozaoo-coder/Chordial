@@ -135,7 +135,7 @@ import { useCoverImage } from '@/composables/useCoverImage'
 import { useLyricParser } from '@/composables/useLyricParser'
 import { usePerf } from '@/utils/performanceMonitor.js'
 import { animate } from 'animejs'
-import { ANIME_EASINGS } from '@/utils/animePresets.js'
+import { ANIME_SPRINGS } from '@/utils/animePresets.js'
 
 const { start, end, log, startFpsMonitor } = usePerf('PlayerView')
 
@@ -308,34 +308,34 @@ onUnmounted(() => {
 
 // bg-fade: 背景图淡入淡出（0.6s）
 function onBgEnter(el, done) {
-  animate(el, { opacity: [0, 1], duration: 600, easing: ANIME_EASINGS.standard, onComplete: done })
+  animate(el, { opacity: [0, 1], duration: 600, ease: ANIME_SPRINGS.default, onComplete: done })
 }
 function onBgLeave(el, done) {
-  animate(el, { opacity: [1, 0], duration: 600, easing: ANIME_EASINGS.standard, onComplete: done })
+  animate(el, { opacity: [1, 0], duration: 600, ease: ANIME_SPRINGS.default, onComplete: done })
 }
 
 // cover-swap: 封面切换（enter: opacity+scale 0.25s，leave: opacity+scale 0.15s）
 function onCoverEnter(el, done) {
-  animate(el, { opacity: [0, 1], scale: [0.95, 1], duration: 250, easing: ANIME_EASINGS.standard, onComplete: done })
+  animate(el, { opacity: [0, 1], scale: [0.95, 1], duration: 250, ease: ANIME_SPRINGS.bouncy, onComplete: done })
 }
 function onCoverLeave(el, done) {
-  animate(el, { opacity: [1, 0], scale: [1, 1.02], duration: 150, easing: ANIME_EASINGS.standard, onComplete: done })
+  animate(el, { opacity: [1, 0], scale: [1, 1.02], duration: 150, ease: ANIME_SPRINGS.sensitive, onComplete: done })
 }
 
 // meta-swap: 元信息切换（enter: opacity+translateY 0.25s + 0.05s delay，leave: opacity 0.1s）
 function onMetaEnter(el, done) {
-  animate(el, { opacity: [0, 1], translateY: [6, 0], duration: 250, delay: 50, easing: ANIME_EASINGS.standard, onComplete: done })
+  animate(el, { opacity: [0, 1], translateY: [6, 0], duration: 250, delay: 50, ease: ANIME_SPRINGS.default, onComplete: done })
 }
 function onMetaLeave(el, done) {
-  animate(el, { opacity: [1, 0], duration: 100, easing: ANIME_EASINGS.standard, onComplete: done })
+  animate(el, { opacity: [1, 0], duration: 100, ease: ANIME_SPRINGS.sensitive, onComplete: done })
 }
 
 // lyrics-fade: 歌词淡入淡出（enter 0.3s，leave 0.15s）
 function onLyricsEnter(el, done) {
-  animate(el, { opacity: [0, 1], duration: 300, easing: ANIME_EASINGS.standard, onComplete: done })
+  animate(el, { opacity: [0, 1], duration: 300, ease: ANIME_SPRINGS.default, onComplete: done })
 }
 function onLyricsLeave(el, done) {
-  animate(el, { opacity: [1, 0], duration: 150, easing: ANIME_EASINGS.standard, onComplete: done })
+  animate(el, { opacity: [1, 0], duration: 150, ease: ANIME_SPRINGS.sensitive, onComplete: done })
 }
 </script>
 
