@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onBeforeUnmount } from 'vue'
 import { animate } from 'animejs';
 import { ANIME_PRESETS } from '@/utils/animePresets.js';
 import AppHeader from './AppHeader.vue';
@@ -7,12 +7,27 @@ import AppSidebar from './AppSidebar.vue';
 import AppBottomNav from './AppBottomNav.vue';
 import P2pMatchDialog from '@/components/p2p/P2pMatchDialog.vue';
 import { PlayerControlBar } from '@/components/player';
+import PlayerView from '@/views/PlayerView.vue';
 import { PlayerStore } from '@/stores/player.js'
 import { useCoverImage } from '@/composables/useCoverImage';
 
 const currentTrack = computed(() => PlayerStore.state.currentTrack)
 const { coverUrl: albumCoverUrl } = useCoverImage(currentTrack, 'small')
 const isPlaying = computed(() => PlayerStore.state.isPlaying)
+const isPlayerViewOpen = computed(() => PlayerStore.state.ui.isPlayerViewOpen)
+
+// 设备检测：监听窗口尺寸，同步到 PlayerStore.ui.currentDevice
+let _resizeHandler = null;
+onMounted(() => {
+  _resizeHandler = () => PlayerStore.detectDevice(window.innerWidth);
+  _resizeHandler();
+  window.addEventListener('resize', _resizeHandler, { passive: true });
+});
+onBeforeUnmount(() => {
+  if (_resizeHandler) {
+    window.removeEventListener('resize', _resizeHandler);
+  }
+});
 
 // 路由切换动画：旧页面淡出，新页面从下淡入
 function onRouteEnter(el, done) {
@@ -58,6 +73,9 @@ function onRouteLeave(el, done) {
       @pause="PlayerStore.pause"
       @next="PlayerStore.playNext"
     />
+
+    <!-- PlayerView 模态层（不再通过 router） -->
+    <PlayerView v-if="isPlayerViewOpen" />
 
     <!-- P2P 匹配对话框 + 事件桥接 -->
     <P2pMatchDialog />

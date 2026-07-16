@@ -9,7 +9,6 @@ const Artists = () => import('../views/Artists.vue')
 const Albums = () => import('../views/Albums.vue')
 const MusicSourceManager = () => import('../views/MusicSourceManager.vue')
 const TrackDetail = () => import('../views/TrackDetail.vue')
-const PlayerView = () => import('../views/PlayerView.vue')
 const SettingsView = () => import('../views/SettingsView.vue')
 const GeneralSettingsView = () => import('../views/settings/GeneralSettingsView.vue')
 const P2pSettingsView = () => import('../views/settings/P2pSettingsView.vue')
@@ -67,12 +66,6 @@ const routes = [
     component: TrackDetail,
     props: true,
     meta: { title: '歌曲详情' }
-  },
-  {
-    path: '/player',
-    name: 'PlayerView',
-    component: PlayerView,
-    meta: { title: '正在播放' }
   },
   {
     path: '/settings',

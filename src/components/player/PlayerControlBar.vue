@@ -7,10 +7,10 @@
 
     <div class="controls-section">
       <!-- 专辑封面 -->
-      <div class="album-cover-thumb" v-if="albumCoverUrl" @click="openPlayerView">
+      <div class="album-cover-thumb" ref="coverThumb" v-if="albumCoverUrl" @click="openPlayerView">
         <img :src="albumCoverUrl" alt="专辑封面" />
       </div>
-      <div class="album-cover-thumb placeholder" v-else @click="openPlayerView">
+      <div class="album-cover-thumb placeholder" ref="coverThumb" v-else @click="openPlayerView">
         <i class="bi bi-disc-fill"></i>
       </div>
 
@@ -39,16 +39,14 @@
  * 从 PlayerStore 读取当前播放状态和歌曲元数据。
  */
 import { computed, onMounted, useTemplateRef } from 'vue'
-import { useRouter } from 'vue-router'
 import { PlayerStore } from '@/stores/player.js'
 import { usePerf } from '@/utils/performanceMonitor.js'
 import { useAnime } from '@/composables/useAnime.js'
 
 const { log } = usePerf('PlayerControlBar')
 
-const router = useRouter()
-
 const rootRef = useTemplateRef('root')
+const coverThumbRef = useTemplateRef('coverThumb')
 const { run } = useAnime(() => rootRef.value)
 
 // 入场动画：控制栏向上淡入
@@ -131,9 +129,9 @@ const volumeIcon = computed(() => {
   return 'bi bi-volume-up-fill'
 })
 
-// 点击封面打开播放详情页
+// 点击封面打开 PlayerView 模态（传递封面 DOM 元素用于 FLIP 共享元素动画）
 const openPlayerView = () => {
-  router.push('/player')
+  PlayerStore.openPlayerView(coverThumbRef.value)
 }
 
 // 切换播放/暂停

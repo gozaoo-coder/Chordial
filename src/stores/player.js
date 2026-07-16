@@ -56,8 +56,24 @@ const state = reactive({
     syncedLyrics: '',
     hasSyncedLyrics: false,
     hasPlainLyrics: false
+  },
+
+  // ── PlayerView UI 状态（模态化，不再通过 router）──────────────
+  ui: {
+    isPlayerViewOpen: false,          // PlayerView 模态是否打开
+    playerViewModeMobile: 'regular',  // 移动端模式: 'details' | 'regular' | 'lyrics'
+    playerViewModeDesktop: 'info',    // 桌面端模式: 'info' | 'lyrics' | 'playlist'
+    playerViewExpandProgress: 0,      // 0-1, 拖动展开进度（player-control-bar → player-view）
+    isImmersive: false,               // 自动观赏模式（隐藏控件）
+    currentDevice: 'mobile',          // 'mobile' | 'desktop'（768px 断点）
+    sharedElementSource: null,        // markRaw DOM 元素引用，用于 FLIP 共享元素动画
+    playerViewTransitioning: false,   // 过渡中，阻止交互
   }
 });
+
+// 沉浸模式定时器（模块级，不放入 reactive state）
+let _immersiveTimer = null;
+const IMMERSIVE_DELAY = 5000; // 5s 无操作进入观赏模式
 
 // 计算属性
 const getters = {
@@ -94,7 +110,18 @@ const getters = {
   isPlaylistEmpty: computed(() => state.playlist.length === 0),
 
   // 播放列表长度
-  playlistLength: computed(() => state.playlist.length)
+  playlistLength: computed(() => state.playlist.length),
+
+  // ── PlayerView UI getters ────────────────────────────────────
+  isPlayerViewOpen: computed(() => state.ui.isPlayerViewOpen),
+  playerViewMode: computed(() =>
+    state.ui.currentDevice === 'desktop'
+      ? state.ui.playerViewModeDesktop
+      : state.ui.playerViewModeMobile
+  ),
+  isImmersive: computed(() => state.ui.isImmersive),
+  currentDevice: computed(() => state.ui.currentDevice),
+  playerViewTransitioning: computed(() => state.ui.playerViewTransitioning),
 };
 
 // 格式化时间
@@ -616,6 +643,112 @@ const actions = {
     state.showLyrics = show;
   },
 
+  // ── PlayerView UI Actions ────────────────────────────────────
+
+  /**
+   * 打开 PlayerView 模态
+   * @param {HTMLElement|null} sourceEl - 触发元素（album-cover-thumb），用于 FLIP 共享元素动画
+   */
+  openPlayerView(sourceEl = null) {
+    state.ui.sharedElementSource = sourceEl ? markRaw(sourceEl) : null;
+    state.ui.isPlayerViewOpen = true;
+    state.ui.playerViewTransitioning = true;
+    actions.resetImmersiveTimer();
+  },
+
+  /**
+   * 关闭 PlayerView 模态
+   */
+  closePlayerView() {
+    state.ui.isPlayerViewOpen = false;
+    state.ui.sharedElementSource = null;
+    state.ui.isImmersive = false;
+    state.ui.playerViewExpandProgress = 0;
+    state.ui.playerViewTransitioning = false;
+    if (_immersiveTimer) {
+      clearTimeout(_immersiveTimer);
+      _immersiveTimer = null;
+    }
+  },
+
+  /**
+   * 标记过渡结束
+   */
+  setPlayerViewTransitioning(v) {
+    state.ui.playerViewTransitioning = v;
+  },
+
+  /**
+   * 设置展开进度（拖动时 0→1）
+   */
+  setExpandProgress(p) {
+    state.ui.playerViewExpandProgress = Math.max(0, Math.min(1, p));
+  },
+
+  /**
+   * 切换 PlayerView 模式
+   * @param {string} mode - 移动端: 'details'|'regular'|'lyrics'  桌面端: 'info'|'lyrics'|'playlist'
+   */
+  setPlayerViewMode(mode) {
+    if (state.ui.currentDevice === 'desktop') {
+      state.ui.playerViewModeDesktop = mode;
+    } else {
+      state.ui.playerViewModeMobile = mode;
+    }
+    actions.registerInteraction();
+  },
+
+  /**
+   * 进入观赏模式（隐藏控件）
+   */
+  enterImmersive() {
+    state.ui.isImmersive = true;
+  },
+
+  /**
+   * 退出观赏模式（显示控件）
+   */
+  exitImmersive() {
+    state.ui.isImmersive = false;
+    actions.resetImmersiveTimer();
+  },
+
+  /**
+   * 注册用户交互（重置沉浸定时器）
+   */
+  registerInteraction() {
+    if (state.ui.isImmersive) {
+      actions.exitImmersive();
+    } else {
+      actions.resetImmersiveTimer();
+    }
+  },
+
+  /**
+   * 重置沉浸模式定时器
+   */
+  resetImmersiveTimer() {
+    if (_immersiveTimer) {
+      clearTimeout(_immersiveTimer);
+    }
+    if (state.ui.isPlayerViewOpen) {
+      _immersiveTimer = setTimeout(() => {
+        actions.enterImmersive();
+      }, IMMERSIVE_DELAY);
+    }
+  },
+
+  /**
+   * 设备检测（768px 断点）
+   * @param {number} width - 视口宽度
+   */
+  detectDevice(width) {
+    const newDevice = width >= 768 ? 'desktop' : 'mobile';
+    if (state.ui.currentDevice !== newDevice) {
+      state.ui.currentDevice = newDevice;
+    }
+  },
+
   /**
    * 清理资源
    */
@@ -632,10 +765,18 @@ const actions = {
       state.currentTrack.releaseAudio();
     }
 
+    // 清理沉浸模式定时器
+    if (_immersiveTimer) {
+      clearTimeout(_immersiveTimer);
+      _immersiveTimer = null;
+    }
+
     state.currentTrack = null;
     state.isPlaying = false;
     state.playlist = [];
     state.currentIndex = -1;
+    state.ui.isPlayerViewOpen = false;
+    state.ui.isImmersive = false;
   }
 };
 
