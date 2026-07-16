@@ -1,16 +1,20 @@
 <script setup>
-import { ref, shallowRef, onMounted, watch, computed } from 'vue';
+import { ref, shallowRef, onMounted, watch, nextTick, useTemplateRef, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import TrackList from '../components/common/TrackList.vue';
 import { getAlbum } from '../api/album';
 import { getSongsByIds } from '../api/musicSource/musicResource';
 import { useCoverImage } from '@/composables/useCoverImage';
 import { usePerf } from '@/utils/performanceMonitor.js';
+import { useAnime } from '@/composables/useAnime.js';
 
 const { start, end, log } = usePerf('AlbumDetail');
 
 const route = useRoute();
 const router = useRouter();
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
 
 // shallowRef：业务类实例避免深代理开销
 const album = shallowRef(null);
@@ -41,6 +45,11 @@ onMounted(async () => {
     return;
   }
 
+  // 启动 loading spinner 旋转动画
+  run(({ animate, loopPresets }) => {
+    animate('.spinner', { ...loopPresets.spin });
+  });
+
   try {
     start('loadAlbum');
     album.value = await getAlbum(albumId);
@@ -65,6 +74,18 @@ onMounted(async () => {
 watch(() => album.value?.id, (newId) => {
   if (newId) {
     reloadCover();
+  }
+});
+
+// 数据加载完成后触入场动画
+watch(isLoading, (loading) => {
+  if (!loading && album.value) {
+    nextTick(() => {
+      run(({ animate, presets, staggerPresets }) => {
+        animate('.album-hero', { ...presets.fadeInUp });
+        animate('.section', { ...presets.listItemEnter, delay: staggerPresets.normal() });
+      });
+    });
   }
 });
 
@@ -99,7 +120,7 @@ const handleTrackPlay = (track) => {
 </script>
 
 <template>
-  <div class="album-detail-page">
+  <div ref="root" class="album-detail-page">
     <div v-if="isLoading" class="loading-state">
       <div class="spinner"></div>
     </div>
@@ -285,6 +306,11 @@ const handleTrackPlay = (track) => {
 
 .section {
   margin-bottom: 40px;
+}
+
+/* 覆盖全局 .spinner 的 CSS 旋转，改由 anime.js 驱动 */
+.spinner {
+  animation: none;
 }
 
 @media (max-width: 767px) {

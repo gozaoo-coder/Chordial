@@ -1,5 +1,7 @@
 <script setup>
 import { computed } from 'vue'
+import { animate } from 'animejs';
+import { ANIME_PRESETS } from '@/utils/animePresets.js';
 import AppHeader from './AppHeader.vue';
 import AppSidebar from './AppSidebar.vue';
 import AppBottomNav from './AppBottomNav.vue';
@@ -11,6 +13,21 @@ import { useCoverImage } from '@/composables/useCoverImage';
 const currentTrack = computed(() => PlayerStore.state.currentTrack)
 const { coverUrl: albumCoverUrl } = useCoverImage(currentTrack, 'small')
 const isPlaying = computed(() => PlayerStore.state.isPlaying)
+
+// 路由切换动画：旧页面淡出，新页面从下淡入
+function onRouteEnter(el, done) {
+  animate(el, {
+    ...ANIME_PRESETS.fadeInUp,
+    onComplete: done,
+  });
+}
+
+function onRouteLeave(el, done) {
+  animate(el, {
+    ...ANIME_PRESETS.fadeOut,
+    onComplete: done,
+  });
+}
 </script>
 
 <template>
@@ -23,7 +40,7 @@ const isPlaying = computed(() => PlayerStore.state.isPlaying)
       <main class="main-content">
         <div class="content-wrapper">
           <router-view v-slot="{ Component }">
-            <transition name="fade" mode="out-in">
+            <transition :css="false" mode="out-in" @enter="onRouteEnter" @leave="onRouteLeave">
               <component :is="Component" />
             </transition>
           </router-view>
@@ -84,16 +101,6 @@ const isPlaying = computed(() => PlayerStore.state.isPlaying)
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
 }
 
 @media (max-width: 1023px) {

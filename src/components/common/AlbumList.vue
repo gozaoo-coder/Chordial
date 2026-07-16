@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, watch, nextTick, useTemplateRef } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCoverImages } from '@/composables/useCoverImage';
 import { usePerf } from '@/utils/performanceMonitor.js';
+import { useAnime } from '@/composables/useAnime.js';
 import CoverImage from './CoverImage.vue';
 
 const props = defineProps({
@@ -14,6 +15,10 @@ const props = defineProps({
 
 const router = useRouter();
 const { log } = usePerf('AlbumList');
+
+// anime.js 动画作用域（限定到组件根节点）
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
 
 const albumsRef = computed(() => props.albums);
 const { coverUrls } = useCoverImages(albumsRef, 'small');
@@ -39,13 +44,38 @@ const getTrackCount = (album) => {
   return album.trackCount || 0;
 };
 
+// --- 动画（anime.js v4）---
+// 列表项错峰入场：listItemEnter + stagger；动画完成后清除内联 transform 恢复 CSS hover 的 translateY(-6px) 上浮。
+function playEnter() {
+  run(({ animate, stagger, presets }) => {
+    const root = rootRef.value;
+    if (!root) return;
+    const items = root.querySelectorAll('.album-card');
+    if (!items.length) return;
+    animate(items, {
+      ...presets.listItemEnter,
+      delay: stagger(50),
+      onComplete: () => {
+        // 清除内联 transform，恢复 CSS :hover 的 translateY(-6px) 上浮效果
+        rootRef.value?.querySelectorAll('.album-card').forEach((el) => {
+          el.style.transform = '';
+        });
+      },
+    });
+  });
+}
+
 onMounted(() => {
   log('mount', { count: props.albums?.length });
+  playEnter();
 });
+
+// 数据异步到达后触发入场动画
+watch(() => props.albums, () => nextTick(playEnter), { flush: 'post' });
 </script>
 
 <template>
-  <div class="album-list-wrapper">
+  <div ref="root" class="album-list-wrapper">
     <div class="album-list">
       <div
         v-for="album in albums"

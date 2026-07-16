@@ -1,8 +1,28 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted, useTemplateRef } from 'vue';
 import { useRoute } from 'vue-router';
+import { useAnime } from '@/composables/useAnime.js';
 
 const route = useRoute();
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
+
+// 菜单项错峰入场（slideInLeft + stagger）
+onMounted(() => {
+  run(({ animate, stagger, presets }) => {
+    animate('.nav-item', {
+      ...presets.slideInLeft,
+      delay: stagger(50),
+      onComplete: () => {
+        // 清除内联 transform，恢复 CSS :hover / .active 过渡
+        rootRef.value?.querySelectorAll('.nav-item').forEach((el) => {
+          el.style.transform = '';
+        });
+      },
+    });
+  });
+});
 
 const navItems = [
   {
@@ -41,7 +61,7 @@ const isActive = (path) => {
 </script>
 
 <template>
-  <aside class="app-sidebar">
+  <aside ref="root" class="app-sidebar">
     <nav class="sidebar-nav">
       <router-link
         v-for="item in navItems"

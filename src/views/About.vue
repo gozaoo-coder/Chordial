@@ -1,9 +1,22 @@
 <script setup>
+import { onMounted, useTemplateRef } from 'vue';
+import { useAnime } from '@/composables/useAnime.js';
+
 const appVersion = '0.1.0';
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
+
+onMounted(() => {
+  run(({ animate, stagger, presets }) => {
+    animate('.about-card', { ...presets.fadeInUp });
+    animate('.tech-tag', { ...presets.fadeIn, delay: stagger(40) });
+  });
+});
 </script>
 
 <template>
-  <div class="about-page">
+  <div ref="rootRef" class="about-page">
     <div class="about-card card">
       <div class="app-logo">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

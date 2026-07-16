@@ -1,8 +1,9 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted, watch, nextTick, useTemplateRef } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCoverImages } from '@/composables/useCoverImage';
 import { useVirtualList } from '@/composables/useVirtualList';
+import { useAnime } from '@/composables/useAnime.js';
 import CoverImage from './CoverImage.vue';
 import PlayerStore from '@/stores/player.js';
 import { usePerf } from '@/utils/performanceMonitor.js';
@@ -42,6 +43,10 @@ const router = useRouter();
 const containerRef = ref(null);
 
 const emit = defineEmits(['play', 'select']);
+
+// anime.js 动画作用域（限定到组件根节点）
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
 
 // 使用 composable 批量加载封面
 const tracksRef = computed(() => props.tracks);
@@ -89,10 +94,36 @@ const getCoverUrl = (track) => {
   // 优先使用从 ResourceManager 加载的封面
   return coverUrls.value.get(track.id) || track.album?.coverUrl || '';
 };
+
+// --- 动画（anime.js v4）---
+// 列表项错峰入场。虚拟列表项用 transform: translateY 定位，动画需排除虚拟项，
+// 仅对普通列表项使用 listItemEnter（含 translateY）；动画完成后清除内联 transform 以恢复 CSS hover。
+function playEnter() {
+  run(({ animate, stagger, presets }) => {
+    const root = rootRef.value;
+    if (!root) return;
+    // 仅普通列表项入场；虚拟列表项依赖 transform 定位，跳过避免覆盖
+    const items = root.querySelectorAll('.track-list-body:not(.virtual-scroll) .track-item');
+    if (!items.length) return;
+    animate(items, {
+      ...presets.listItemEnter,
+      delay: stagger(50),
+      onComplete: () => {
+        // 清除内联 transform，恢复 CSS :hover 的背景/上浮效果
+        rootRef.value?.querySelectorAll('.track-list-body:not(.virtual-scroll) .track-item').forEach((el) => {
+          el.style.transform = '';
+        });
+      },
+    });
+  });
+}
+
+onMounted(playEnter);
+watch(() => props.tracks, () => nextTick(playEnter), { flush: 'post' });
 </script>
 
 <template>
-  <div class="track-list">
+  <div ref="root" class="track-list">
     <div class="track-list-header">
       <div class="col-number">#</div>
       <div class="col-title">标题</div>

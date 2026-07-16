@@ -1,8 +1,9 @@
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref, onMounted, onUnmounted, watch, nextTick, useTemplateRef } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCoverImages } from '@/composables/useCoverImage';
 import { useVirtualList } from '@/composables/useVirtualList';
+import { useAnime } from '@/composables/useAnime.js';
 import CoverImage from './CoverImage.vue';
 
 const props = defineProps({
@@ -19,6 +20,10 @@ const props = defineProps({
 
 const router = useRouter();
 const containerRef = ref(null);
+
+// anime.js 动画作用域（限定到组件根节点）
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
 
 // 使用 composable 批量加载封面
 const artistsRef = computed(() => props.artists);
@@ -68,9 +73,36 @@ const handleResize = () => {
   }, 100);
 };
 
+// --- 动画（anime.js v4）---
+// 列表项错峰入场：listItemEnter + stagger。
+// 虚拟列表项用 top/left/width 定位（非 transform），故 translateY 入场安全；
+// 动画完成后清除内联 transform 恢复 CSS hover 的 translateY(-6px) 上浮。
+function playEnter() {
+  run(({ animate, stagger, presets }) => {
+    const root = rootRef.value;
+    if (!root) return;
+    const items = root.querySelectorAll('.artist-card');
+    if (!items.length) return;
+    animate(items, {
+      ...presets.listItemEnter,
+      delay: stagger(50),
+      onComplete: () => {
+        // 清除内联 transform，恢复 CSS :hover 的 translateY(-6px) 上浮效果
+        rootRef.value?.querySelectorAll('.artist-card').forEach((el) => {
+          el.style.transform = '';
+        });
+      },
+    });
+  });
+}
+
 onMounted(() => {
   window.addEventListener('resize', handleResize);
+  playEnter();
 });
+
+// 数据异步到达后触发入场动画
+watch(() => props.artists, () => nextTick(playEnter), { flush: 'post' });
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
@@ -110,7 +142,7 @@ const getAlbumCount = (artist) => {
 </script>
 
 <template>
-  <div class="artist-list-wrapper">
+  <div ref="root" class="artist-list-wrapper">
     <!-- 虚拟列表容器 -->
     <div
       v-if="virtualScroll && artists.length > 30"

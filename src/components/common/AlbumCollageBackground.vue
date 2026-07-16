@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue';
+import { animate } from 'animejs';
 import CoverImage from './CoverImage.vue';
 import { perf } from '@/utils/performanceMonitor.js';
 
@@ -31,24 +32,24 @@ const shuffleArray = (array) => {
 // 获取用于背景的专辑封面
 const backgroundAlbums = computed(() => {
   if (!props.albums || props.albums.length === 0) return [];
-  
+
   // 过滤出有来源的专辑（可通过 ResourceManager 尝试加载封面）
   const albumsWithSource = props.albums.filter(
     album => album.sourceIds && album.sourceIds.length > 0
   );
-  
+
   if (albumsWithSource.length === 0) return [];
-  
+
   // 随机打乱并选取
   const shuffled = shuffleArray(albumsWithSource);
   const selected = shuffled.slice(0, props.maxDisplay);
-  
+
   // 如果数量不足，重复填充以达到网格效果
   const result = [...selected];
   while (result.length < props.maxDisplay && selected.length > 0) {
     result.push(...selected.slice(0, props.maxDisplay - result.length));
   }
-  
+
   return result.slice(0, props.maxDisplay);
 });
 
@@ -57,17 +58,77 @@ const hasEnoughCovers = computed(() => backgroundAlbums.value.length >= 3);
 
 // perf: 旧实现用 requestAnimationFrame 每帧更新 offsetX/offsetY，
 // 导致 animationStyle computed 每帧重算，9 个 collage-item 的 :style 各触发一次。
-// 改用纯 CSS keyframes 动画，完全交给 GPU 合成器，零主线程开销。
-// animationEnabled 通过 animation-play-state 控制暂停/恢复。
-
+// 现改用 anime.js v4（WAAPI 路径，合成器线程），与 CSS keyframes 同等性能，
+// 但统一由 JS 管理生命周期与 animationEnabled 暂停/恢复。
+let driftAnim = null;
+let gradientAnim = null;
 let stopFps = null;
 
+const gridRef = ref(null);
+const gradientRef = ref(null);
+
+const startDrift = () => {
+  if (!gridRef.value) return;
+  driftAnim?.pause();
+  // 60s 缓慢正弦漂移，5 个关键帧对应原 CSS collage-drift
+  driftAnim = animate(gridRef.value, {
+    scale: 1.1,
+    translateX: [0, 10, 0, -10, 0],
+    translateY: [0, 8, 16, 8, 0],
+    duration: 60000,
+    easing: 'linear',
+    loop: true,
+  });
+  if (!props.animationEnabled) driftAnim.pause();
+};
+
+const startGradient = () => {
+  if (!gradientRef.value) return;
+  gradientAnim?.pause();
+  // 15s 渐变背景位置循环
+  gradientAnim = animate(gradientRef.value, {
+    backgroundPositionX: ['0%', '100%', '0%'],
+    backgroundPositionY: '50%',
+    duration: 15000,
+    easing: 'easeInOutQuad',
+    loop: true,
+  });
+  if (!props.animationEnabled) gradientAnim.pause();
+};
+
+// animationEnabled 变化时暂停/恢复
+watch(
+  () => props.animationEnabled,
+  (enabled) => {
+    if (enabled) {
+      driftAnim?.play();
+      gradientAnim?.play();
+    } else {
+      driftAnim?.pause();
+      gradientAnim?.pause();
+    }
+  }
+);
+
+// hasEnoughCovers 变化时（封面数据到达/切换 v-if v-else）启动对应动画
+watch(
+  hasEnoughCovers,
+  async (has) => {
+    await nextTick();
+    if (has) startDrift();
+    else startGradient();
+  },
+  { immediate: true }
+);
+
 onMounted(() => {
-  // 保留 FPS 监控以验证 CSS 动画后的帧率
-  stopFps = perf.startFpsMonitor('AlbumCollageBackground.css', 2000);
+  // 保留 FPS 监控以验证 anime.js WAAPI 动画的帧率
+  stopFps = perf.startFpsMonitor('AlbumCollageBackground.waapi', 2000);
 });
 
 onUnmounted(() => {
+  driftAnim?.pause();
+  gradientAnim?.pause();
   if (stopFps) stopFps();
 });
 
@@ -98,8 +159,8 @@ const gridStyle = computed(() => {
     <!-- 多专辑封面网格 -->
     <div
       v-if="hasEnoughCovers"
+      ref="gridRef"
       class="collage-grid"
-      :class="{ 'animation-paused': !animationEnabled }"
       :style="gridStyle"
     >
       <div
@@ -116,9 +177,9 @@ const gridStyle = computed(() => {
         />
       </div>
     </div>
-    
+
     <!-- 备用背景 - 当专辑不足时 -->
-    <div v-else class="fallback-gradient"></div>
+    <div v-else ref="gradientRef" class="fallback-gradient"></div>
     
     <!-- 模糊层 -->
     <div class="blur-overlay"></div>
@@ -142,23 +203,7 @@ const gridStyle = computed(() => {
   inset: -20px;
   display: grid;
   gap: 4px;
-  transform: scale(1.1);
-  /* CSS 动画替代 JS RAF：60s 缓慢正弦漂移，纯 GPU 合成，零主线程开销 */
-  animation: collage-drift 60s linear infinite;
   will-change: transform;
-}
-
-/* 动画暂停（animationEnabled=false 时） */
-.collage-grid.animation-paused {
-  animation-play-state: paused;
-}
-
-@keyframes collage-drift {
-  0%   { transform: scale(1.1) translate(0, 0); }
-  25%  { transform: scale(1.1) translate(10px, 8px); }
-  50%  { transform: scale(1.1) translate(0, 16px); }
-  75%  { transform: scale(1.1) translate(-10px, 8px); }
-  100% { transform: scale(1.1) translate(0, 0); }
 }
 
 .collage-item {
@@ -223,13 +268,6 @@ const gridStyle = computed(() => {
     #f093fb 100%
   );
   background-size: 200% 200%;
-  animation: gradientShift 15s ease infinite;
-}
-
-@keyframes gradientShift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
 }
 
 /* 深色模式适配 */
@@ -255,17 +293,6 @@ const gridStyle = computed(() => {
       #16213e 50%,
       #0f0f23 100%
     );
-  }
-}
-
-/* 减少动画偏好 */
-@media (prefers-reduced-motion: reduce) {
-  .collage-item {
-    transform: none !important;
-  }
-  
-  .fallback-gradient {
-    animation: none;
   }
 }
 </style>

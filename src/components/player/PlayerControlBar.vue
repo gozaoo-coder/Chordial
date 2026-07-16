@@ -1,5 +1,5 @@
 <template>
-  <div class="player-control-bar">
+  <div class="player-control-bar" ref="root">
     <!-- 模糊封面背景 -->
     <div class="bar-bg" v-if="albumCoverUrl">
       <img :src="albumCoverUrl" alt="" />
@@ -38,14 +38,25 @@
  * 提供播放控制、歌曲信息展示、封面模糊背景等功能。
  * 从 PlayerStore 读取当前播放状态和歌曲元数据。
  */
-import { computed } from 'vue'
+import { computed, onMounted, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { PlayerStore } from '@/stores/player.js'
 import { usePerf } from '@/utils/performanceMonitor.js'
+import { useAnime } from '@/composables/useAnime.js'
 
 const { log } = usePerf('PlayerControlBar')
 
 const router = useRouter()
+
+const rootRef = useTemplateRef('root')
+const { run } = useAnime(() => rootRef.value)
+
+// 入场动画：控制栏向上淡入
+onMounted(() => {
+  run(({ animate, presets }) => {
+    animate(rootRef.value, { ...presets.fadeInUp })
+  })
+})
 
 const props = defineProps({
   currentTime: {

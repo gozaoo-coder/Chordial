@@ -1,5 +1,5 @@
 <template>
-  <div class="settings-shell">
+  <div ref="rootRef" class="settings-shell">
     <aside class="settings-nav">
       <h1 class="nav-title">设置</h1>
       <router-link :to="{ name: 'SettingsGeneral' }" class="nav-item" active-class="active">
@@ -22,6 +22,18 @@
 </template>
 
 <script setup>
+import { onMounted, useTemplateRef } from 'vue';
+import { useAnime } from '@/composables/useAnime.js';
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
+
+onMounted(() => {
+  run(({ animate, stagger, presets }) => {
+    animate('.nav-title', { ...presets.fadeIn });
+    animate('.nav-item', { ...presets.fadeInUp, delay: stagger(60) });
+  });
+});
 </script>
 
 <style scoped>

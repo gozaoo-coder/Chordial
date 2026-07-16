@@ -2,9 +2,9 @@
   <div class="player-view" :class="{ 'is-active': isActive }" @keydown="onKeydown">
     <!-- 背景 -->
     <div class="player-bg">
-      <Transition name="bg-fade">
+      <transition :css="false" @enter="onBgEnter" @leave="onBgLeave">
         <img v-if="coverUrl" :key="coverBgKey" :src="coverUrl" class="bg-img" />
-      </Transition>
+      </transition>
       <div class="bg-mask"></div>
     </div>
 
@@ -34,14 +34,14 @@
       <div class="core" :class="{ 'core--centered': !showLyrics || !hasLyrics }">
         <!-- 封面 -->
         <div class="cover-section">
-          <Transition name="cover-swap" mode="out-in">
+          <transition :css="false" mode="out-in" @enter="onCoverEnter" @leave="onCoverLeave">
             <div class="cover-art" :key="currentTrack.id">
               <img v-if="coverUrl" :src="coverUrl" alt="" />
               <i v-else class="bi bi-disc-fill cover-fallback"></i>
             </div>
-          </Transition>
+          </transition>
 
-          <Transition name="meta-swap" mode="out-in">
+          <transition :css="false" mode="out-in" @enter="onMetaEnter" @leave="onMetaLeave">
             <div class="track-meta" :key="currentTrack.id">
               <h1 class="track-title">{{ currentTrack.title }}</h1>
               <p class="track-artist">{{ currentTrack.artist }}</p>
@@ -49,12 +49,12 @@
                 {{ currentTrack.albumTitle }}
               </p>
             </div>
-          </Transition>
+          </transition>
         </div>
 
         <!-- 歌词 -->
         <div v-if="showLyrics" class="lyrics-section">
-          <Transition name="lyrics-fade" mode="out-in">
+          <transition :css="false" mode="out-in" @enter="onLyricsEnter" @leave="onLyricsLeave">
             <div v-if="hasLyrics" class="lyrics-wrapper" :key="'sync-' + currentTrack.id">
               <LyricPlayer
                 :lyric-lines="lyricLines"
@@ -74,7 +74,7 @@
               <p v-for="(line, i) in plainLyrics" :key="i" class="plain-line">{{ line }}</p>
             </div>
             <div v-else class="no-lyrics" :key="'none-' + currentTrack.id">暂无歌词</div>
-          </Transition>
+          </transition>
         </div>
       </div>
 
@@ -134,6 +134,8 @@ import { PlayerStore, PlayMode } from '@/stores/player.js'
 import { useCoverImage } from '@/composables/useCoverImage'
 import { useLyricParser } from '@/composables/useLyricParser'
 import { usePerf } from '@/utils/performanceMonitor.js'
+import { animate } from 'animejs'
+import { ANIME_EASINGS } from '@/utils/animePresets.js'
 
 const { start, end, log, startFpsMonitor } = usePerf('PlayerView')
 
@@ -301,6 +303,40 @@ onUnmounted(() => {
   // 防止 seek 拖拽中卸载组件时 4 个 document 监听器泄漏
   endSeek()
 })
+
+// ── transition hooks (anime.js v4) ──
+
+// bg-fade: 背景图淡入淡出（0.6s）
+function onBgEnter(el, done) {
+  animate(el, { opacity: [0, 1], duration: 600, easing: ANIME_EASINGS.standard, onComplete: done })
+}
+function onBgLeave(el, done) {
+  animate(el, { opacity: [1, 0], duration: 600, easing: ANIME_EASINGS.standard, onComplete: done })
+}
+
+// cover-swap: 封面切换（enter: opacity+scale 0.25s，leave: opacity+scale 0.15s）
+function onCoverEnter(el, done) {
+  animate(el, { opacity: [0, 1], scale: [0.95, 1], duration: 250, easing: ANIME_EASINGS.standard, onComplete: done })
+}
+function onCoverLeave(el, done) {
+  animate(el, { opacity: [1, 0], scale: [1, 1.02], duration: 150, easing: ANIME_EASINGS.standard, onComplete: done })
+}
+
+// meta-swap: 元信息切换（enter: opacity+translateY 0.25s + 0.05s delay，leave: opacity 0.1s）
+function onMetaEnter(el, done) {
+  animate(el, { opacity: [0, 1], translateY: [6, 0], duration: 250, delay: 50, easing: ANIME_EASINGS.standard, onComplete: done })
+}
+function onMetaLeave(el, done) {
+  animate(el, { opacity: [1, 0], duration: 100, easing: ANIME_EASINGS.standard, onComplete: done })
+}
+
+// lyrics-fade: 歌词淡入淡出（enter 0.3s，leave 0.15s）
+function onLyricsEnter(el, done) {
+  animate(el, { opacity: [0, 1], duration: 300, easing: ANIME_EASINGS.standard, onComplete: done })
+}
+function onLyricsLeave(el, done) {
+  animate(el, { opacity: [1, 0], duration: 150, easing: ANIME_EASINGS.standard, onComplete: done })
+}
 </script>
 
 <style scoped>
@@ -336,11 +372,6 @@ onUnmounted(() => {
     radial-gradient(ellipse at 50% 30%, transparent 0%, rgba(0,0,0,0.35) 70%),
     linear-gradient(to bottom, rgba(0,0,0,0.15), rgba(0,0,0,0.5));
 }
-
-.bg-fade-enter-active,
-.bg-fade-leave-active { transition: opacity 0.6s ease; }
-.bg-fade-enter-from,
-.bg-fade-leave-to { opacity: 0; }
 
 /* ── empty ── */
 
@@ -431,17 +462,6 @@ onUnmounted(() => {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* transition: cover swap */
-.cover-swap-enter-active { transition: opacity 0.25s ease, transform 0.25s ease; }
-.cover-swap-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
-.cover-swap-enter-from { opacity: 0; transform: scale(0.95); }
-.cover-swap-leave-to { opacity: 0; transform: scale(1.02); }
-
-.meta-swap-enter-active { transition: opacity 0.25s ease 0.05s, transform 0.25s ease 0.05s; }
-.meta-swap-leave-active { transition: opacity 0.1s ease; }
-.meta-swap-enter-from { opacity: 0; transform: translateY(6px); }
-.meta-swap-leave-to { opacity: 0; }
-
 /* ── lyrics ── */
 
 .lyrics-section {
@@ -461,11 +481,6 @@ onUnmounted(() => {
   line-height: 1.8; white-space: pre-wrap; word-break: break-word; margin: 0;
 }
 .no-lyrics { font-size: 0.9375rem; color: rgba(255,255,255,0.18); user-select: none; }
-
-.lyrics-fade-enter-active { transition: opacity 0.3s ease; }
-.lyrics-fade-leave-active { transition: opacity 0.15s ease; }
-.lyrics-fade-enter-from,
-.lyrics-fade-leave-to { opacity: 0; }
 
 /* ── controls ── */
 

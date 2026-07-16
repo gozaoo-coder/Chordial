@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch, nextTick, useTemplateRef } from 'vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   addLocalFolder,
@@ -9,8 +9,12 @@ import {
   rescanAll,
 } from '../api/musicSource';
 import { usePerf } from '@/utils/performanceMonitor.js';
+import { useAnime } from '@/composables/useAnime.js';
 
 const { start, end, log } = usePerf('MusicSourceManager');
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
 
 // ── State ──────────────────────────────────────────────────────────────────
 const folders = ref([]);
@@ -27,6 +31,26 @@ onMounted(async () => {
   } else {
     isLoading.value = false;
   }
+});
+
+// 数据加载完成后触入场动画（isLoading 由 true → false）
+watch(isLoading, (loading) => {
+  if (loading) return;
+  nextTick(() => {
+    run(({ animate, stagger, presets }) => {
+      animate('.source-card', { ...presets.fadeInUp, delay: stagger(60) });
+    });
+  });
+});
+
+// loading spinner：CSS @keyframes spin 已迁移至 anime.js ANIME_LOOP.spin
+watch([isScanning, isAdding], ([scanning, adding]) => {
+  if (!scanning && !adding) return;
+  nextTick(() => {
+    run(({ animate, loopPresets }) => {
+      animate('.spin', { ...loopPresets.spin });
+    });
+  });
 });
 
 // ── Data loading ───────────────────────────────────────────────────────────
@@ -120,7 +144,7 @@ const formatFileCount = (n) => {
 </script>
 
 <template>
-  <div class="music-source-page">
+  <div ref="rootRef" class="music-source-page">
     <!-- Header -->
     <div class="page-header">
       <div>
@@ -253,15 +277,6 @@ const formatFileCount = (n) => {
 .page-actions .btn svg {
   width: 18px;
   height: 18px;
-}
-
-.spin {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 
 .sources-list {

@@ -1,11 +1,31 @@
 <script setup>
 import { useRoute } from 'vue-router';
-import { computed } from 'vue';
+import { computed, onMounted, useTemplateRef } from 'vue';
 import PlayerStore from '@/stores/player.js';
+import { useAnime } from '@/composables/useAnime.js';
 
 const route = useRoute();
 
 const hasCurrentTrack = computed(() => PlayerStore.hasCurrentTrack.value);
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
+
+// 导航项错峰入场（fadeInUp + stagger）
+onMounted(() => {
+  run(({ animate, stagger, presets }) => {
+    animate('.bottom-nav-item', {
+      ...presets.fadeInUp,
+      delay: stagger(50),
+      onComplete: () => {
+        // 清除内联 transform，恢复 CSS :hover / .active 过渡
+        rootRef.value?.querySelectorAll('.bottom-nav-item').forEach((el) => {
+          el.style.transform = '';
+        });
+      },
+    });
+  });
+});
 
 const navItems = [
   {
@@ -44,7 +64,7 @@ const isActive = (path) => {
 </script>
 
 <template>
-  <nav class="app-bottom-nav" :class="{ 'with-player': hasCurrentTrack }">
+  <nav ref="root" class="app-bottom-nav" :class="{ 'with-player': hasCurrentTrack }">
     <router-link v-for="item in navItems" :key="item.path" :to="item.path" class="bottom-nav-item"
       :class="{ active: isActive(item.path) }">
       <i :class="item.icon" class="bottom-nav-icon"></i>

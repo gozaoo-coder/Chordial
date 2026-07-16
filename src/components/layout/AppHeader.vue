@@ -1,13 +1,33 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, useTemplateRef } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import WindowControls from '@/components/WindowControls.vue';
 import { usePlatform } from '@/composables/usePlatform.js';
+import { useAnime } from '@/composables/useAnime.js';
 
 const route = useRoute();
 const router = useRouter();
 
 const { isDesktop } = usePlatform();
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
+
+// header 三段区块错峰入场（fadeInDown + stagger）
+onMounted(() => {
+  run(({ animate, stagger, presets }) => {
+    animate('.header-left, .header-center, .header-right', {
+      ...presets.fadeInDown,
+      delay: stagger(60),
+      onComplete: () => {
+        // 清除内联 transform，恢复 CSS 过渡
+        rootRef.value?.querySelectorAll('.header-left, .header-center, .header-right').forEach((el) => {
+          el.style.transform = '';
+        });
+      },
+    });
+  });
+});
 
 const pageTitle = computed(() => {
   return route.meta?.title || 'Chordial';
@@ -27,7 +47,7 @@ const goToSettings = () => {
 </script>
 
 <template>
-  <header class="app-header">
+  <header ref="root" class="app-header">
     <!-- 窗口拖动区域 - 仅桌面端 -->
     <div v-if="isDesktop" class="drag-region"></div>
 

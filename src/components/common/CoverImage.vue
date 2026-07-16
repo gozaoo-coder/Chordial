@@ -1,6 +1,7 @@
 <script setup>
-import { ref, computed, watch, toRef } from 'vue';
+import { ref, computed, watch, toRef, useTemplateRef, nextTick } from 'vue';
 import { useCoverImage } from '@/composables/useCoverImage';
+import { useAnime } from '@/composables/useAnime.js';
 
 const props = defineProps({
   /** 直接传入 URL 字符串（向后兼容，优先级低于 item） */
@@ -28,6 +29,11 @@ const props = defineProps({
   }
 });
 
+const rootRef = useTemplateRef('root');
+const spinnerRef = useTemplateRef('spinner');
+const imgRef = useTemplateRef('img');
+const { run, animate, presets } = useAnime(() => rootRef.value);
+
 // ── 通过 useCoverImage 加载（item 模式）──
 const itemRef = toRef(props, 'item');
 const { coverUrl, isLoading: isComposableLoading } = useCoverImage(itemRef, props.size);
@@ -44,11 +50,17 @@ const displaySrc = computed(() => {
 
 const isEmpty = computed(() => !displaySrc.value);
 
+// 清除 anime.js 留下的内联 opacity，让 .cover-hidden 的 CSS 重新生效
+const resetImgOpacity = () => {
+  if (imgRef.value) imgRef.value.style.opacity = '';
+};
+
 // item 变化时重置 img 状态
 watch(() => props.src, () => {
   if (!coverUrl.value) {
     isImgLoading.value = true;
     hasImgError.value = false;
+    resetImgOpacity();
   }
 });
 
@@ -57,6 +69,7 @@ watch(coverUrl, (newUrl) => {
   if (newUrl) {
     isImgLoading.value = true;
     hasImgError.value = false;
+    resetImgOpacity();
   }
 });
 
@@ -68,7 +81,26 @@ const isLoading = computed(() => {
   return false;
 });
 
+// spinner 出现时启动旋转动画（放入 scope，组件卸载时统一 revert）
+watch(
+  () => isLoading.value && !isEmpty.value,
+  async (show) => {
+    if (show) {
+      await nextTick();
+      if (spinnerRef.value) {
+        run(({ animate, loopPresets }) => {
+          animate(spinnerRef.value, { ...loopPresets.spin });
+        });
+      }
+    }
+  },
+  { immediate: true }
+);
+
 const handleLoad = () => {
+  if (imgRef.value) {
+    animate(imgRef.value, { ...presets.fadeIn });
+  }
   isImgLoading.value = false;
   hasImgError.value = false;
 };
@@ -80,15 +112,16 @@ const handleError = () => {
 </script>
 
 <template>
-  <div class="cover-wrapper" :class="`cover-${type}`">
+  <div ref="rootRef" class="cover-wrapper" :class="`cover-${type}`">
     <!-- 加载中 -->
     <div v-if="isLoading && !isEmpty" class="cover-placeholder cover-loading">
-      <div class="spinner"></div>
+      <div ref="spinner" class="spinner"></div>
     </div>
 
     <!-- 图片 -->
     <img
       v-if="!isEmpty"
+      ref="img"
       :src="displaySrc"
       :alt="alt"
       class="cover-image"
@@ -147,7 +180,6 @@ const handleError = () => {
   height: 100%;
   object-fit: cover;
   opacity: 1;
-  transition: opacity 0.2s ease;
 }
 
 .cover-hidden {
@@ -179,12 +211,5 @@ const handleError = () => {
   border: 2px solid var(--border-color, rgba(0, 0, 0, 0.1));
   border-top-color: var(--primary-color, #667eea);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <div class="settings-index">
+  <div ref="rootRef" class="settings-index">
     <div class="index-header">
       <h2 class="index-title">设置</h2>
       <p class="index-subtitle">选择一个分类进行配置</p>
@@ -28,6 +28,27 @@
 </template>
 
 <script setup>
+import { onMounted, useTemplateRef } from 'vue';
+import { useAnime } from '@/composables/useAnime.js';
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
+
+onMounted(() => {
+  run(({ animate, stagger, presets }) => {
+    animate('.index-header', { ...presets.fadeIn });
+    // 入场后清除内联 transform，恢复 CSS :hover 的 translateY(-1px) 上浮效果
+    animate('.index-card', {
+      ...presets.fadeInUp,
+      delay: stagger(70),
+      onComplete: () => {
+        rootRef.value?.querySelectorAll('.index-card').forEach((el) => {
+          el.style.transform = '';
+        });
+      },
+    });
+  });
+});
 </script>
 
 <style scoped>

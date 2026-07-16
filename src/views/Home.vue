@@ -1,5 +1,5 @@
 <script setup>
-import { ref, shallowRef, onMounted, computed } from 'vue';
+import { ref, shallowRef, onMounted, computed, watch, nextTick, useTemplateRef } from 'vue';
 import { useRouter } from 'vue-router';
 import TrackList from '../components/common/TrackList.vue';
 import ArtistList from '../components/common/ArtistList.vue';
@@ -8,10 +8,15 @@ import AlbumCollageBackground from '../components/common/AlbumCollageBackground.
 import { library } from '../api/musicSource';
 import PlayerStore from '@/stores/player.js';
 import { usePerf } from '@/utils/performanceMonitor.js';
+import { useAnime } from '@/composables/useAnime.js';
 
 const { start, end, log } = usePerf('Home');
 
 const router = useRouter();
+
+// anime.js 作用域限定到组件根节点，卸载时自动 revert
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
 
 // shallowRef：列表数据为业务类实例，写入后只读，避免深代理开销
 const recentTracks = shallowRef([]);
@@ -75,6 +80,63 @@ onMounted(() => {
   }
 });
 
+// ===== anime.js 动画 =====
+// 加载 spinner：用 ANIME_LOOP.spin 替代原 CSS @keyframes spin
+const startSpinner = () => {
+  run(({ animate, loopPresets }) => {
+    animate('.spinner', { ...loopPresets.spin });
+  });
+};
+
+// 入场动画：hero 区 + 区块标题 + 卡片列表 + 空状态
+const playEntrance = () => {
+  run(({ animate, stagger, presets, staggerPresets }) => {
+    // Hero 徽章自上而下淡入
+    animate('.hero-badge', { ...presets.fadeInDown });
+    // Hero 其余内容向上淡入并错峰
+    animate('.hero-title, .hero-subtitle, .hero-actions, .hero-stats', {
+      ...presets.fadeInUp,
+      delay: stagger(80, { start: 80 }),
+    });
+
+    // 各区块标题淡入
+    animate('.section-header', { ...presets.fadeIn, delay: stagger(60) });
+
+    // 为你推荐 - 横向卡片顺序错峰入场
+    animate('.track-card', {
+      ...presets.listItemEnter,
+      delay: staggerPresets.fast(),
+    });
+
+    // 热门专辑 - 网格卡片从中心扩散入场
+    animate('.album-card', {
+      ...presets.listItemEnter,
+      delay: staggerPresets.grid(4),
+    });
+
+    // 空状态
+    animate('.empty-icon', { ...presets.scaleIn });
+    animate('.empty-title, .empty-desc, .empty-action', {
+      ...presets.fadeInUp,
+      delay: stagger(60, { start: 80 }),
+    });
+  });
+};
+
+// 监听加载状态：加载中旋转 spinner，加载完成触发入场动画
+// immediate 保证首次进入（isLoading 初始为 true）也能启动 spinner
+watch(
+  isLoading,
+  (loading) => {
+    if (loading) {
+      nextTick(startSpinner);
+    } else {
+      nextTick(playEntrance);
+    }
+  },
+  { immediate: true }
+);
+
 const handleTrackSelect = (track) => {
   router.push(`/track/${track.id}`);
 };
@@ -103,7 +165,7 @@ const shufflePlay = () => {
 </script>
 
 <template>
-  <div class="home-page">
+  <div class="home-page" ref="root">
     <!-- Hero Banner -->
     <section class="hero-banner" v-if="todayPicks.length > 0">
       <!-- 多专辑封面拼接背景 -->
@@ -695,11 +757,6 @@ const shufflePlay = () => {
   border: 3px solid var(--border-light);
   border-top-color: var(--primary-color);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 /* 空状态 */

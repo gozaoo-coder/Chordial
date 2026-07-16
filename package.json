@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "android:build": "tauri android build",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -25,6 +26,8 @@
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-window-state": "^2",
+    "@vueuse/core": "^14.3.0",
+    "animejs": "^4.5.0",
     "bootstrap-icons": "^1.13.1",
     "jsqr": "^1.4.0",
     "jss": "^10.10.0",

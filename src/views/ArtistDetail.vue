@@ -1,5 +1,5 @@
 <script setup>
-import { ref, shallowRef, onMounted, watch } from 'vue';
+import { ref, shallowRef, onMounted, watch, nextTick, useTemplateRef } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AlbumList from '../components/common/AlbumList.vue';
 import TrackList from '../components/common/TrackList.vue';
@@ -8,11 +8,15 @@ import { getAlbumsByIds } from '../api/album';
 import { getSongsByIds } from '../api/musicSource/musicResource';
 import { useCoverImage } from '@/composables/useCoverImage';
 import { usePerf } from '@/utils/performanceMonitor.js';
+import { useAnime } from '@/composables/useAnime.js';
 
 const { start, end, log } = usePerf('ArtistDetail');
 
 const route = useRoute();
 const router = useRouter();
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
 
 // shallowRef：业务类实例避免深代理开销
 const artist = shallowRef(null);
@@ -27,6 +31,11 @@ onMounted(async () => {
     router.push('/artists');
     return;
   }
+
+  // 启动 loading spinner 旋转动画
+  run(({ animate, loopPresets }) => {
+    animate('.spinner', { ...loopPresets.spin });
+  });
 
   try {
     start('loadArtist');
@@ -56,6 +65,18 @@ onMounted(async () => {
 watch(() => artist.value?.id, (newId) => {
   if (newId) {
     reloadCover();
+  }
+});
+
+// 数据加载完成后触入场动画
+watch(isLoading, (loading) => {
+  if (!loading && artist.value) {
+    nextTick(() => {
+      run(({ animate, presets, staggerPresets }) => {
+        animate('.artist-hero', { ...presets.fadeInUp });
+        animate('.section', { ...presets.listItemEnter, delay: staggerPresets.normal() });
+      });
+    });
   }
 });
 
@@ -259,6 +280,11 @@ const handleTrackPlay = (track) => {
 
 .section {
   margin-bottom: 40px;
+}
+
+/* 覆盖全局 .spinner 的 CSS 旋转，改由 anime.js 驱动 */
+.spinner {
+  animation: none;
 }
 
 .section-header {

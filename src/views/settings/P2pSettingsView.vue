@@ -1,5 +1,5 @@
 <template>
-  <div class="p2p-view">
+  <div ref="rootRef" class="p2p-view">
     <div class="section-header">
       <h2 class="section-title">P2P 资源共享</h2>
       <p class="section-subtitle">在局域网内与其他 Chordial 实例共享音乐库</p>
@@ -198,13 +198,17 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick, useTemplateRef } from 'vue';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
 import { p2pApi } from '@/api/p2p.js';
 import { useP2pEvents } from '@/composables/useP2pEvents.js';
+import { useAnime } from '@/composables/useAnime.js';
 
 const { toasts } = useP2pEvents();
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
 
 const p2pEnabled = ref(false);
 const p2pBroadcast = ref(false);
@@ -498,6 +502,11 @@ let statusTimer = null;
 let nowTimer = null;
 
 onMounted(async () => {
+  // 设置区块为静态结构，挂载即触入场动画；异步数据只填充值
+  run(({ animate, stagger, presets }) => {
+    animate('.section-header', { ...presets.fadeIn });
+    animate('.settings-section', { ...presets.fadeInUp, delay: stagger(70) });
+  });
   await refreshStatus();
   await regenerateQr();
   statusTimer = setInterval(refreshStatus, 3000);

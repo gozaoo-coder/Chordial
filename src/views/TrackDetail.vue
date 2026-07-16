@@ -1,5 +1,5 @@
 <script setup>
-import { ref, shallowRef, onMounted, watch } from 'vue';
+import { ref, shallowRef, onMounted, watch, nextTick, useTemplateRef } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Track } from '../class';
 import { getSong } from '../api/musicSource/library';
@@ -7,11 +7,15 @@ import TrackList from '../components/common/TrackList.vue';
 import { useCoverImage } from '@/composables/useCoverImage';
 import PlayerStore from '@/stores/player.js';
 import { usePerf } from '@/utils/performanceMonitor.js';
+import { useAnime } from '@/composables/useAnime.js';
 
 const { start, end, log } = usePerf('TrackDetail');
 
 const route = useRoute();
 const router = useRouter();
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
 
 // shallowRef：业务类实例避免深代理开销
 const track = shallowRef(null);
@@ -27,6 +31,11 @@ onMounted(async () => {
     router.push('/tracks');
     return;
   }
+
+  // 启动 loading spinner 旋转动画
+  run(({ animate, loopPresets }) => {
+    animate('.spinner', { ...loopPresets.spin });
+  });
 
   try {
     start('loadTrack');
@@ -45,6 +54,18 @@ onMounted(async () => {
 watch(() => track.value?.id, (newId) => {
   if (newId) {
     reloadCover();
+  }
+});
+
+// 数据加载完成后触入场动画
+watch(isLoading, (loading) => {
+  if (!loading && track.value) {
+    nextTick(() => {
+      run(({ animate, presets, staggerPresets }) => {
+        animate('.track-hero', { ...presets.fadeInUp });
+        animate('.track-details', { ...presets.listItemEnter, delay: staggerPresets.normal() });
+      });
+    });
   }
 });
 
@@ -69,7 +90,7 @@ const formatDuration = (seconds) => {
 </script>
 
 <template>
-  <div class="track-detail-page">
+  <div ref="root" class="track-detail-page">
     <div v-if="isLoading" class="loading-state">
       <div class="spinner"></div>
     </div>
@@ -283,6 +304,11 @@ const formatDuration = (seconds) => {
 
 .track-details {
   margin-top: 32px;
+}
+
+/* 覆盖全局 .spinner 的 CSS 旋转，改由 anime.js 驱动 */
+.spinner {
+  animation: none;
 }
 
 .details-title {

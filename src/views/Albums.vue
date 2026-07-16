@@ -1,8 +1,9 @@
 <script setup>
-import { ref, shallowRef, onMounted } from 'vue';
+import { ref, shallowRef, onMounted, watch, nextTick, useTemplateRef } from 'vue';
 import AlbumList from '../components/common/AlbumList.vue';
 import { library } from '../api/musicSource';
 import { usePerf } from '@/utils/performanceMonitor.js';
+import { useAnime } from '@/composables/useAnime.js';
 
 const { start, end } = usePerf('Albums');
 
@@ -13,6 +14,9 @@ const totalCount = ref(0);
 const isLoading = ref(true);
 const isLoadingMore = ref(false);
 const hasMore = ref(true);
+
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
 
 const loadAlbums = async () => {
   isLoading.value = true;
@@ -49,18 +53,58 @@ const loadMore = async () => {
   }
 };
 
+// --- 动画（anime.js v4） ---
+// loading spinner：用 ANIME_LOOP.spin 替代 CSS @keyframes spin
+function playLoadingSpinner() {
+  run(({ animate, loopPresets }) => {
+    animate('.loading-state .spinner', { ...loopPresets.spin });
+  });
+}
+
+// 加载更多按钮内的小 spinner
+function playLoadMoreSpinner() {
+  run(({ animate, loopPresets }) => {
+    animate('.spinner-small', { ...loopPresets.spin });
+  });
+}
+
 // 页面挂载时获取数据（已加载则跳过）
 onMounted(() => {
+  if (isLoading.value) {
+    nextTick(playLoadingSpinner);
+  }
   if (albums.value.length === 0) {
     loadAlbums();
   } else {
     isLoading.value = false;
   }
 });
+
+// loading 状态切换：启动 spinner（列表入场由 AlbumList 组件内部 playEnter 处理）
+watch(
+  isLoading,
+  (val) => {
+    if (val) {
+      nextTick(playLoadingSpinner);
+    }
+  },
+  { flush: 'post' }
+);
+
+// 加载更多 spinner
+watch(
+  isLoadingMore,
+  (val) => {
+    if (val) {
+      nextTick(playLoadMoreSpinner);
+    }
+  },
+  { flush: 'post' }
+);
 </script>
 
 <template>
-  <div class="albums-page">
+  <div class="albums-page" ref="root">
     <div class="page-header">
       <h1 class="page-title">专辑</h1>
       <p class="page-subtitle">共 {{ totalCount || albums.length }} 张专辑</p>
@@ -107,6 +151,11 @@ onMounted(() => {
   padding: 24px 0;
 }
 
+/* 禁用全局 .spinner 的 CSS spin 动画，改由 anime.js ANIME_LOOP.spin 驱动 */
+.loading-state .spinner {
+  animation: none;
+}
+
 .spinner-small {
   display: inline-block;
   width: 16px;
@@ -114,13 +163,8 @@ onMounted(() => {
   border: 2px solid var(--border-light, rgba(0,0,0,0.1));
   border-top-color: var(--primary-color, #0078d7);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
   margin-right: 8px;
   vertical-align: middle;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 @media (prefers-color-scheme: dark) {

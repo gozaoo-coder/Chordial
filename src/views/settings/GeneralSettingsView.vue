@@ -1,5 +1,5 @@
 <template>
-  <div class="general-view">
+  <div ref="rootRef" class="general-view">
     <div class="section-header">
       <h2 class="section-title">通用设置</h2>
       <p class="section-subtitle">自定义您的音乐播放体验</p>
@@ -68,7 +68,8 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch, onMounted, useTemplateRef } from 'vue';
+import { useAnime } from '@/composables/useAnime.js';
 
 const defaultVolume = ref(80);
 const autoPlay = ref(true);
@@ -100,7 +101,17 @@ const loadSettings = () => {
 // 这些 ref 均为基本类型，无需 deep: true（旧写法对基本类型做深度遍历是浪费）
 watch([defaultVolume, autoPlay, defaultPlayMode], saveSettings);
 
+const rootRef = useTemplateRef('root');
+const { run } = useAnime(() => rootRef.value);
+
 onMounted(loadSettings);
+
+onMounted(() => {
+  run(({ animate, stagger, presets }) => {
+    animate('.section-header', { ...presets.fadeIn });
+    animate('.settings-section', { ...presets.fadeInUp, delay: stagger(80) });
+  });
+});
 </script>
 
 <style scoped>

@@ -1,5 +1,5 @@
 <template>
-  <Transition name="p2p-fade">
+  <transition :css="false" @enter="onEnter" @leave="onLeave">
     <div v-if="pendingRequests.length" class="p2p-overlay">
       <div class="p2p-dialog">
         <div class="p2p-header">
@@ -29,7 +29,7 @@
         </div>
       </div>
     </div>
-  </Transition>
+  </transition>
 
   <!-- Toast 提示 -->
   <div class="p2p-toasts">
@@ -44,10 +44,26 @@
 
 <script setup>
 import { reactive } from 'vue';
+import { animate } from 'animejs';
+import { ANIME_PRESETS } from '@/utils/animePresets.js';
 import { useP2pEvents } from '@/composables/useP2pEvents.js';
 
 const { pendingRequests, toasts, accept, reject, dismissToast } = useP2pEvents();
 const busy = reactive({});
+
+// 弹窗入场：遮罩 fadeIn，内容 scaleIn
+function onEnter(el, done) {
+  const dialog = el.querySelector('.p2p-dialog');
+  animate(el, { ...ANIME_PRESETS.fadeIn });
+  animate(dialog, { ...ANIME_PRESETS.scaleIn, onComplete: done });
+}
+
+// 弹窗退场：遮罩 fadeOut，内容 scaleOut
+function onLeave(el, done) {
+  const dialog = el.querySelector('.p2p-dialog');
+  animate(el, { ...ANIME_PRESETS.fadeOut });
+  animate(dialog, { ...ANIME_PRESETS.scaleOut, onComplete: done });
+}
 
 const onAccept = async (id) => {
   busy[id] = true;
@@ -234,14 +250,7 @@ const onReject = async (id) => {
   margin-top: 2px;
 }
 
-/* Transitions */
-.p2p-fade-enter-active,
-.p2p-fade-leave-active {
-  transition: opacity 0.25s ease;
-}
-.p2p-fade-enter-from,
-.p2p-fade-leave-to { opacity: 0; }
-
+/* Toast Transitions（保留 CSS，属于状态过渡） */
 .p2p-toast-enter-active,
 .p2p-toast-leave-active {
   transition: all 0.3s ease;
