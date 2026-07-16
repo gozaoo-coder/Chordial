@@ -85,12 +85,18 @@
                     </div>
                   </transition>
                 </div>
-                <!-- 音乐信息 bar -->
+                <!-- 音乐信息 bar（水平：左音乐信息 + 右三点 icon） -->
                 <transition :css="false" mode="out-in" @enter="onMetaEnter" @leave="onMetaLeave">
-                  <div class="track-meta" :key="currentTrack.id" data-layout-id="meta">
-                    <h1 class="track-title">{{ currentTrack.title }}</h1>
-                    <p class="track-artist">{{ currentTrack.artist }}</p>
-                    <p v-if="currentTrack.albumTitle" class="track-album">{{ currentTrack.albumTitle }}</p>
+                  <div class="track-meta-bar" :key="currentTrack.id" data-layout-id="meta">
+                    <div class="track-meta-info">
+                      <h1 class="track-title">{{ currentTrack.title }}</h1>
+                      <p class="track-artist-album">
+                        {{ currentTrack.artist }}<template v-if="currentTrack.albumTitle"> - {{ currentTrack.albumTitle }}</template>
+                      </p>
+                    </div>
+                    <button class="meta-more-btn" @click="showTrackActionsSheet = true" title="操作">
+                      <i class="bi bi-three-dots"></i>
+                    </button>
                   </div>
                 </transition>
                 <!-- 进度条 + 控制按钮 + 功能控件 -->
@@ -116,30 +122,29 @@
                       <i class="bi bi-skip-end-fill"></i>
                     </button>
                   </div>
-                  <!-- 五个功能控件 -->
+                  <!-- 五个功能控件：歌单 / 播放方式 / 音量 / 全屏沉浸 / 更多设置 -->
                   <div class="widget-row immersive-hide">
+                    <button class="widget-btn" @click="showPlaylistSheet = true" title="歌单列表">
+                      <i class="bi bi-list-ul"></i>
+                      <span class="widget-label">歌单</span>
+                    </button>
                     <button class="widget-btn" :class="{ on: playMode !== PlayMode.SEQUENCE }"
-                      @click="PlayerStore.togglePlayMode" title="播放模式">
+                      @click="PlayerStore.togglePlayMode" title="播放方式">
                       <i :class="playModeIcon"></i>
-                      <span class="widget-label">模式</span>
+                      <span class="widget-label">播放</span>
                     </button>
                     <button class="widget-btn" :class="{ on: isMuted }"
-                      @click="PlayerStore.toggleMute" title="静音">
+                      @click="showVolumeSheet = true" title="音量调整">
                       <i :class="volumeIcon"></i>
                       <span class="widget-label">音量</span>
                     </button>
-                    <button v-if="hasSyncedLyrics || hasPlainLyrics" class="widget-btn"
-                      :class="{ on: mode === 'lyrics' }" @click="setMode('lyrics')" title="歌词">
-                      <i class="bi bi-mic-fill"></i>
-                      <span class="widget-label">歌词</span>
+                    <button class="widget-btn" @click="toggleImmersive" title="全屏沉浸">
+                      <i class="bi bi-arrows-fullscreen"></i>
+                      <span class="widget-label">沉浸</span>
                     </button>
-                    <button class="widget-btn" @click="setMode('details')" title="详情">
-                      <i class="bi bi-info-circle"></i>
-                      <span class="widget-label">详情</span>
-                    </button>
-                    <button class="widget-btn" @click="toggleQueueMode" title="歌单">
-                      <i class="bi bi-list-ul"></i>
-                      <span class="widget-label">歌单</span>
+                    <button class="widget-btn" @click="showMoreSheet = true" title="更多设置">
+                      <i class="bi bi-gear"></i>
+                      <span class="widget-label">更多</span>
                     </button>
                   </div>
                 </div>
@@ -182,8 +187,41 @@
                     <div v-else class="no-lyrics" :key="'none-' + currentTrack.id">暂无歌词</div>
                   </transition>
                 </div>
+                <!-- 歌词模式底部控件 -->
+                <div class="lyrics-bottom-controls immersive-hide">
+                  <div class="progress-area">
+                    <span class="time-label">{{ formattedCurrentTime }}</span>
+                    <div class="progress-bar"
+                      @mousedown="startSeek" @touchstart="startSeek">
+                      <div class="progress-bg"></div>
+                      <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
+                      <div class="progress-knob" :style="{ left: progressPercent + '%' }"></div>
+                    </div>
+                    <span class="time-label time-remaining">{{ formattedRemaining }}</span>
+                  </div>
+                  <div class="btn-row">
+                    <button class="ctrl-btn" @click="PlayerStore.playPrevious" title="上一首">
+                      <i class="bi bi-skip-start-fill"></i>
+                    </button>
+                    <button class="ctrl-btn ctrl-play" @click="PlayerStore.togglePlay" title="播放 / 暂停">
+                      <i :class="isPlaying ? 'bi bi-pause-circle-fill' : 'bi bi-play-circle-fill'"></i>
+                    </button>
+                    <button class="ctrl-btn" @click="PlayerStore.playNext" title="下一首">
+                      <i class="bi bi-skip-end-fill"></i>
+                    </button>
+                  </div>
+                </div>
               </div>
             </transition>
+            <!-- 移动端模式切换 bar（在 mobile-mode 最底端） -->
+            <nav class="mode-switch-bar immersive-hide">
+              <button v-for="m in modeOptions" :key="m.value"
+                class="switch-btn" :class="{ active: mode === m.value }"
+                @click="setMode(m.value)">
+                <i :class="m.icon"></i>
+                <span>{{ m.label }}</span>
+              </button>
+            </nav>
           </div>
 
           <!-- 桌面端 -->
@@ -199,10 +237,16 @@
                 </transition>
               </div>
               <transition :css="false" mode="out-in" @enter="onMetaEnter" @leave="onMetaLeave">
-                <div class="track-meta" :key="currentTrack.id" data-layout-id="meta">
-                  <h1 class="track-title">{{ currentTrack.title }}</h1>
-                  <p class="track-artist">{{ currentTrack.artist }}</p>
-                  <p v-if="currentTrack.albumTitle" class="track-album">{{ currentTrack.albumTitle }}</p>
+                <div class="track-meta-bar" :key="currentTrack.id" data-layout-id="meta">
+                  <div class="track-meta-info">
+                    <h1 class="track-title">{{ currentTrack.title }}</h1>
+                    <p class="track-artist-album">
+                      {{ currentTrack.artist }}<template v-if="currentTrack.albumTitle"> - {{ currentTrack.albumTitle }}</template>
+                    </p>
+                  </div>
+                  <button class="meta-more-btn" @click="showTrackActionsSheet = true" title="操作">
+                    <i class="bi bi-three-dots"></i>
+                  </button>
                 </div>
               </transition>
               <div class="regular-controls" :class="{ 'desktop-centered': mode === 'info' }" data-layout-id="controls">
@@ -228,32 +272,39 @@
                   </button>
                 </div>
                 <div class="widget-row immersive-hide">
-                  <button class="widget-btn" :class="{ on: playMode !== PlayMode.SEQUENCE }"
-                    @click="PlayerStore.togglePlayMode" title="播放模式">
-                    <i :class="playModeIcon"></i>
-                    <span class="widget-label">模式</span>
-                  </button>
-                  <button class="widget-btn" :class="{ on: isMuted }"
-                    @click="PlayerStore.toggleMute" title="静音">
-                    <i :class="volumeIcon"></i>
-                    <span class="widget-label">音量</span>
-                  </button>
-                  <button v-if="hasSyncedLyrics || hasPlainLyrics" class="widget-btn"
-                    :class="{ on: mode === 'lyrics' }" @click="setMode('lyrics')" title="歌词">
-                    <i class="bi bi-mic-fill"></i>
-                    <span class="widget-label">歌词</span>
-                  </button>
-                  <button class="widget-btn" @click="setMode('info')" title="信息">
-                    <i class="bi bi-info-circle"></i>
-                    <span class="widget-label">信息</span>
-                  </button>
-                  <button class="widget-btn" :class="{ on: mode === 'playlist' }"
-                    @click="setMode('playlist')" title="歌单">
+                  <button class="widget-btn" @click="showPlaylistSheet = true" title="歌单列表">
                     <i class="bi bi-list-ul"></i>
                     <span class="widget-label">歌单</span>
                   </button>
+                  <button class="widget-btn" :class="{ on: playMode !== PlayMode.SEQUENCE }"
+                    @click="PlayerStore.togglePlayMode" title="播放方式">
+                    <i :class="playModeIcon"></i>
+                    <span class="widget-label">播放</span>
+                  </button>
+                  <button class="widget-btn" :class="{ on: isMuted }"
+                    @click="showVolumeSheet = true" title="音量调整">
+                    <i :class="volumeIcon"></i>
+                    <span class="widget-label">音量</span>
+                  </button>
+                  <button class="widget-btn" @click="toggleImmersive" title="全屏沉浸">
+                    <i class="bi bi-arrows-fullscreen"></i>
+                    <span class="widget-label">沉浸</span>
+                  </button>
+                  <button class="widget-btn" @click="showMoreSheet = true" title="更多设置">
+                    <i class="bi bi-gear"></i>
+                    <span class="widget-label">更多</span>
+                  </button>
                 </div>
               </div>
+              <!-- 桌面端模式切换 bar（跟随 desktop-left 底部） -->
+              <nav class="mode-switch-bar immersive-hide">
+                <button v-for="m in modeOptions" :key="m.value"
+                  class="switch-btn" :class="{ active: mode === m.value }"
+                  @click="setMode(m.value)">
+                  <i :class="m.icon"></i>
+                  <span>{{ m.label }}</span>
+                </button>
+              </nav>
             </div>
 
             <!-- 右侧：歌词 / 歌单（info 模式时隐藏） -->
@@ -283,12 +334,15 @@
               </div>
               <div v-else-if="mode === 'playlist'" key="playlist" class="desktop-right desktop-playlist">
                 <h3 class="playlist-title">播放列表</h3>
-                <div class="playlist-items">
-                  <div v-for="(track, i) in playlist" :key="track.id"
-                    class="playlist-item" :class="{ active: i === currentIndex }"
-                    @click="PlayerStore.play(track)">
-                    <span class="playlist-item-title">{{ track.title }}</span>
-                    <span class="playlist-item-artist">{{ track.artist }}</span>
+                <div ref="playlistContainer" class="playlist-items" @scroll="onPlaylistScroll">
+                  <div class="playlist-items-inner" :style="{ height: playlistTotalHeight + 'px', position: 'relative' }">
+                    <div v-for="vis in visiblePlaylistItems" :key="vis.item.id"
+                      class="playlist-item" :class="{ active: vis.index === currentIndex }"
+                      :style="{ position: 'absolute', top: vis.offsetY + 'px', height: vis.height + 'px', left: 0, right: 0 }"
+                      @click="PlayerStore.play(vis.item)">
+                      <span class="playlist-item-title">{{ vis.item.title }}</span>
+                      <span class="playlist-item-artist">{{ vis.item.artist }}</span>
+                    </div>
                   </div>
                   <div v-if="playlist.length === 0" class="playlist-empty">播放列表为空</div>
                 </div>
@@ -296,17 +350,79 @@
             </transition>
           </div>
         </template>
-
-        <!-- 模式切换 bar（始终在最底端） -->
-        <nav v-if="currentTrack" class="mode-switch-bar immersive-hide">
-          <button v-for="m in modeOptions" :key="m.value"
-            class="switch-btn" :class="{ active: mode === m.value }"
-            @click="setMode(m.value)">
-            <i :class="m.icon"></i>
-            <span>{{ m.label }}</span>
-          </button>
-        </nav>
       </div>
+
+      <!-- ── BottomSheet: 歌单列表 ── -->
+      <BottomSheet :visible="showPlaylistSheet" @close="showPlaylistSheet = false" @update:visible="showPlaylistSheet = $event"
+        title="播放列表" :detents="['medium', 'large']" default-detent="medium">
+        <div class="sheet-playlist">
+          <div v-for="(track, i) in playlist" :key="track.id"
+            class="sheet-playlist-item" :class="{ active: i === currentIndex }"
+            @click="PlayerStore.play(track); showPlaylistSheet = false">
+            <span class="sheet-playlist-title">{{ track.title }}</span>
+            <span class="sheet-playlist-artist">{{ track.artist }}</span>
+          </div>
+          <div v-if="playlist.length === 0" class="playlist-empty">播放列表为空</div>
+        </div>
+      </BottomSheet>
+
+      <!-- ── BottomSheet: 音量调整 ── -->
+      <BottomSheet :visible="showVolumeSheet" @close="showVolumeSheet = false" @update:visible="showVolumeSheet = $event"
+        title="音量调整" :detents="['medium']" default-detent="medium">
+        <div class="sheet-volume">
+          <div class="volume-row">
+            <button class="volume-icon-btn" @click="PlayerStore.toggleMute">
+              <i :class="volumeIcon"></i>
+            </button>
+            <input type="range" min="0" max="1" step="0.01" :value="isMuted ? 0 : volume"
+              @input="PlayerStore.setVolume(parseFloat($event.target.value))"
+              class="volume-slider" />
+            <span class="volume-value">{{ Math.round((isMuted ? 0 : volume) * 100) }}%</span>
+          </div>
+        </div>
+      </BottomSheet>
+
+      <!-- ── BottomSheet: 更多设置 ── -->
+      <BottomSheet :visible="showMoreSheet" @close="showMoreSheet = false" @update:visible="showMoreSheet = $event"
+        title="更多设置" :detents="['medium']" default-detent="medium">
+        <div class="sheet-more">
+          <button class="sheet-more-item" @click="setMode('details'); showMoreSheet = false">
+            <i class="bi bi-info-circle"></i>
+            <span>查看详细信息</span>
+          </button>
+          <button class="sheet-more-item" @click="setMode('lyrics'); showMoreSheet = false" v-if="hasSyncedLyrics || hasPlainLyrics">
+            <i class="bi bi-mic-fill"></i>
+            <span>查看歌词</span>
+          </button>
+          <button class="sheet-more-item" @click="toggleImmersive; showMoreSheet = false">
+            <i class="bi bi-arrows-fullscreen"></i>
+            <span>全屏沉浸</span>
+          </button>
+        </div>
+      </BottomSheet>
+
+      <!-- ── BottomSheet: 三点操作（当前音乐操作） ── -->
+      <BottomSheet :visible="showTrackActionsSheet" @close="showTrackActionsSheet = false" @update:visible="showTrackActionsSheet = $event"
+        title="歌曲操作" :detents="['medium']" default-detent="medium">
+        <div class="sheet-actions">
+          <button class="sheet-action-item" @click="setMode('details'); showTrackActionsSheet = false">
+            <i class="bi bi-info-circle"></i>
+            <span>查看详情</span>
+          </button>
+          <button class="sheet-action-item" @click="setMode('lyrics'); showTrackActionsSheet = false" v-if="hasSyncedLyrics || hasPlainLyrics">
+            <i class="bi bi-mic-fill"></i>
+            <span>查看歌词</span>
+          </button>
+          <button class="sheet-action-item" @click="showPlaylistSheet = true; showTrackActionsSheet = false">
+            <i class="bi bi-list-ul"></i>
+            <span>播放列表</span>
+          </button>
+          <button class="sheet-action-item" @click="showVolumeSheet = true; showTrackActionsSheet = false">
+            <i class="bi bi-volume-up"></i>
+            <span>音量调整</span>
+          </button>
+        </div>
+      </BottomSheet>
     </div>
   </Teleport>
 </template>
@@ -320,11 +436,14 @@ import { useLyricParser } from '@/composables/useLyricParser'
 import { usePerf } from '@/utils/performanceMonitor.js'
 import { useAnime } from '@/composables/useAnime.js'
 import { ANIME_SPRINGS } from '@/utils/animePresets.js'
+import { useVirtualList } from '@/composables/useVirtualList'
+import BottomSheet from '@/components/ui/BottomSheet.vue'
 
 const { log } = usePerf('PlayerView')
 
 const rootRef = useTemplateRef('root')
 const playerBodyRef = useTemplateRef('playerBody')
+const playlistContainerRef = useTemplateRef('playlistContainer')
 const coverBgKey = ref(0)
 let seekDragging = false
 
@@ -344,6 +463,24 @@ const isDesktop = computed(() => PlayerStore.state.ui.currentDevice === 'desktop
 const isImmersive = computed(() => PlayerStore.state.ui.isImmersive)
 const mode = computed(() => PlayerStore.playerViewMode.value)
 const { coverUrl } = useCoverImage(currentTrack, 'large')
+
+// ── BottomSheet 状态（歌单 / 音量 / 更多设置）──
+const showPlaylistSheet = ref(false)
+const showVolumeSheet = ref(false)
+const showMoreSheet = ref(false)
+const showTrackActionsSheet = ref(false) // 三点 icon 操作 sheet
+
+// ── playlist 虚拟列表（防止歌单卡死）──
+const {
+  visibleItems: visiblePlaylistItems,
+  totalHeight: playlistTotalHeight,
+  onScroll: onPlaylistScroll,
+  updateContainerHeight: updatePlaylistHeight,
+} = useVirtualList(playlist, {
+  itemHeight: 56,
+  bufferSize: 8,
+  containerRef: playlistContainerRef,
+})
 
 // ── mode options ──
 const modeOptions = computed(() => {
@@ -415,6 +552,14 @@ function toggleQueueMode() {
     setMode(mode.value === 'playlist' ? 'info' : 'playlist')
   } else {
     setMode('lyrics')
+  }
+}
+
+function toggleImmersive() {
+  if (isImmersive.value) {
+    PlayerStore.exitImmersive()
+  } else {
+    PlayerStore.enterImmersive()
   }
 }
 
@@ -663,7 +808,12 @@ function onModeLeave(el, done) {
 // 用 anime.js 替代 CSS transition，实现 spring 物理的沉浸模式进出动画
 watch(isImmersive, (immersive) => {
   if (!rootRef.value) return
-  const targets = rootRef.value.querySelectorAll('.immersive-hide')
+  // 只选择当前可见的 .immersive-hide（v-show 隐藏的元素 display:none，getBoundingClientRect 为 0）
+  const allTargets = rootRef.value.querySelectorAll('.immersive-hide')
+  const targets = Array.from(allTargets).filter(t => {
+    const r = t.getBoundingClientRect()
+    return r.width > 0 || r.height > 0
+  })
   if (targets.length === 0) return
   if (immersive) {
     // 进入沉浸：隐藏控件（灵敏弹簧，快速响应）
@@ -699,7 +849,7 @@ function setupDraggable() {
       container: rootRef.value,   // 限制在 player-view 内，防止拖出边界
       x: true,
       y: true,
-      snap: { x: [0], y: [0] },   // 总是回弹到原位
+      snap: [0],                  // 全局 snap：x/y 都吸附到 0（回弹原位）
       releaseEase: ANIME_SPRINGS.bouncy,
       containerFriction: 0.6,     // 拖到边界时的阻力
       onDrag: (state) => {
@@ -931,6 +1081,39 @@ watch(() => currentTrack.value?.id, (newId) => {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* ── track meta bar (水平：左音乐信息 + 右三点 icon) ── */
+.track-meta-bar {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 4px; max-width: 100%;
+  padding: 8px 4px;
+}
+.track-meta-info {
+  flex: 1; min-width: 0; text-align: left;
+}
+.track-meta-bar .track-title {
+  margin: 0 0 2px; max-width: none;
+}
+.track-artist-album {
+  font-size: 0.8125rem; color: rgba(255,255,255,0.5); margin: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.meta-more-btn {
+  flex-shrink: 0; background: rgba(255,255,255,0.08); border: none;
+  color: rgba(255,255,255,0.7); font-size: 1.1rem;
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.meta-more-btn:hover { background: rgba(255,255,255,0.16); color: rgba(255,255,255,0.95); }
+.meta-more-btn:active { transform: scale(0.92); }
+
+/* ── lyrics bottom controls (歌词模式底部控件) ── */
+.lyrics-bottom-controls {
+  flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+  gap: 10px; padding: 8px 0 4px; width: 100%; max-width: 560px; margin: 0 auto;
+}
+
 /* ── controls ── */
 .regular-controls {
   flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
@@ -1149,4 +1332,70 @@ watch(() => currentTrack.value?.id, (newId) => {
   .ctrl-play { font-size: 1.7rem; width: 36px; height: 36px; }
   .widget-row { gap: 4px; }
 }
+
+/* ── BottomSheet 内容样式 ── */
+.sheet-playlist { display: flex; flex-direction: column; gap: 4px; }
+.sheet-playlist-item {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  transition: background 0.15s;
+}
+.sheet-playlist-item:hover { background: var(--bg-hover); }
+.sheet-playlist-item.active { background: var(--primary-light); }
+.sheet-playlist-title {
+  font-size: 0.875rem; font-weight: 500; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sheet-playlist-artist {
+  font-size: 0.75rem; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.sheet-volume { padding: 16px 0; }
+.volume-row {
+  display: flex; align-items: center; gap: 12px;
+}
+.volume-icon-btn {
+  background: var(--bg-tertiary); border: none;
+  color: var(--text-primary); font-size: 1.25rem;
+  width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s;
+}
+.volume-icon-btn:hover { background: var(--bg-active); }
+.volume-slider {
+  flex: 1; height: 4px; -webkit-appearance: none; appearance: none;
+  background: var(--bg-tertiary); border-radius: 2px; outline: none;
+  cursor: pointer;
+}
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--primary-color); cursor: pointer;
+}
+.volume-slider::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--primary-color); cursor: pointer; border: none;
+}
+.volume-value {
+  font-size: 0.8125rem; color: var(--text-secondary);
+  min-width: 36px; text-align: right; font-variant-numeric: tabular-nums;
+}
+
+.sheet-more, .sheet-actions { display: flex; flex-direction: column; gap: 4px; }
+.sheet-more-item, .sheet-action-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border: none; background: none;
+  color: var(--text-primary); font-size: 0.9375rem;
+  cursor: pointer; border-radius: 8px; text-align: left;
+  transition: background 0.15s;
+}
+.sheet-more-item:hover, .sheet-action-item:hover { background: var(--bg-hover); }
+.sheet-more-item i, .sheet-action-item i {
+  font-size: 1.125rem; color: var(--text-secondary); width: 20px; text-align: center;
+}
+
+/* ── playlist virtual list ── */
+.playlist-items-inner { width: 100%; }
 </style>
