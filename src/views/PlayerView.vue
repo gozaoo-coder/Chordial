@@ -35,11 +35,11 @@
             <transition :css="false" mode="out-in" @enter="onModeEnter" @leave="onModeLeave">
               <!-- 详细信息模式 -->
               <div v-if="mode === 'details'" key="details" class="mode-details">
-                <div class="details-cover">
+                <div class="details-cover" data-flip-key="cover">
                   <img v-if="coverUrl" :src="coverUrl" alt="" />
                   <i v-else class="bi bi-disc-fill cover-fallback"></i>
                 </div>
-                <div class="details-info">
+                <div class="details-info" data-flip-key="meta">
                   <h2 class="details-title">{{ currentTrack.title }}</h2>
                   <p class="details-artist">{{ currentTrack.artist }}</p>
                   <p v-if="currentTrack.albumTitle" class="details-album">专辑：{{ currentTrack.albumTitle }}</p>
@@ -79,7 +79,7 @@
                 <!-- 专辑大图 -->
                 <div class="cover-section">
                   <transition :css="false" mode="out-in" @enter="onCoverEnter" @leave="onCoverLeave">
-                    <div class="cover-art" :key="currentTrack.id">
+                    <div class="cover-art" :key="currentTrack.id" data-flip-key="cover">
                       <img v-if="coverUrl" :src="coverUrl" alt="" />
                       <i v-else class="bi bi-disc-fill cover-fallback"></i>
                     </div>
@@ -87,14 +87,14 @@
                 </div>
                 <!-- 音乐信息 bar -->
                 <transition :css="false" mode="out-in" @enter="onMetaEnter" @leave="onMetaLeave">
-                  <div class="track-meta" :key="currentTrack.id">
+                  <div class="track-meta" :key="currentTrack.id" data-flip-key="meta">
                     <h1 class="track-title">{{ currentTrack.title }}</h1>
                     <p class="track-artist">{{ currentTrack.artist }}</p>
                     <p v-if="currentTrack.albumTitle" class="track-album">{{ currentTrack.albumTitle }}</p>
                   </div>
                 </transition>
                 <!-- 进度条 + 控制按钮 + 功能控件 -->
-                <div class="regular-controls">
+                <div class="regular-controls" data-flip-key="controls">
                   <div class="progress-area">
                     <span class="time-label">{{ formattedCurrentTime }}</span>
                     <div class="progress-bar" ref="progressTrack"
@@ -159,7 +159,7 @@
                   </div>
                 </div>
                 <!-- 歌词渲染 -->
-                <div class="lyrics-render-area">
+                <div class="lyrics-render-area" data-flip-key="lyrics">
                   <transition :css="false" mode="out-in" @enter="onLyricsEnter" @leave="onLyricsLeave">
                     <div v-if="hasLyrics" class="lyrics-wrapper" :key="'sync-' + currentTrack.id">
                       <LyricPlayer
@@ -192,20 +192,20 @@
             <div class="desktop-left">
               <div class="cover-section">
                 <transition :css="false" mode="out-in" @enter="onCoverEnter" @leave="onCoverLeave">
-                  <div class="cover-art" :key="currentTrack.id">
+                  <div class="cover-art" :key="currentTrack.id" data-flip-key="cover">
                     <img v-if="coverUrl" :src="coverUrl" alt="" />
                     <i v-else class="bi bi-disc-fill cover-fallback"></i>
                   </div>
                 </transition>
               </div>
               <transition :css="false" mode="out-in" @enter="onMetaEnter" @leave="onMetaLeave">
-                <div class="track-meta" :key="currentTrack.id">
+                <div class="track-meta" :key="currentTrack.id" data-flip-key="meta">
                   <h1 class="track-title">{{ currentTrack.title }}</h1>
                   <p class="track-artist">{{ currentTrack.artist }}</p>
                   <p v-if="currentTrack.albumTitle" class="track-album">{{ currentTrack.albumTitle }}</p>
                 </div>
               </transition>
-              <div class="regular-controls" :class="{ 'desktop-centered': mode === 'info' }">
+              <div class="regular-controls" :class="{ 'desktop-centered': mode === 'info' }" data-flip-key="controls">
                 <div class="progress-area">
                   <span class="time-label">{{ formattedCurrentTime }}</span>
                   <div class="progress-bar" ref="progressTrack"
@@ -258,7 +258,7 @@
 
             <!-- 右侧：歌词 / 歌单（info 模式时隐藏） -->
             <transition :css="false" mode="out-in" @enter="onModeEnter" @leave="onModeLeave">
-              <div v-if="mode === 'lyrics'" key="lyrics" class="desktop-right desktop-lyrics">
+              <div v-if="mode === 'lyrics'" key="lyrics" class="desktop-right desktop-lyrics" data-flip-key="lyrics">
                 <transition :css="false" mode="out-in" @enter="onLyricsEnter" @leave="onLyricsLeave">
                   <div v-if="hasLyrics" class="lyrics-wrapper" :key="'sync-' + currentTrack.id">
                     <LyricPlayer
@@ -743,6 +743,63 @@ function swipeUpAction() {
   if (isDesktop.value) setMode('playlist')
   else setMode('lyrics')
 }
+
+// ── cross-device FLIP (相同组件父元素交换动画) ──
+// 当设备在 mobile ↔ desktop 间切换时，共享组件（封面/元信息/控件/歌词）
+// 通过 data-flip-key 匹配，FLIP 动画平滑过渡到新布局位置
+const flipRecords = new Map()
+
+function recordFlipElements() {
+  flipRecords.clear()
+  if (!rootRef.value) return
+  const els = rootRef.value.querySelectorAll('[data-flip-key]')
+  els.forEach(el => {
+    const key = el.getAttribute('data-flip-key')
+    flipRecords.set(key, el.getBoundingClientRect())
+  })
+}
+
+function animateFlipElements() {
+  if (!rootRef.value || flipRecords.size === 0) return
+  const newEls = rootRef.value.querySelectorAll('[data-flip-key]')
+  newEls.forEach(newEl => {
+    const key = newEl.getAttribute('data-flip-key')
+    const oldRect = flipRecords.get(key)
+    if (!oldRect) return
+    const newRect = newEl.getBoundingClientRect()
+    const dx = oldRect.left - newRect.left
+    const dy = oldRect.top - newRect.top
+    const sx = oldRect.width / newRect.width
+    const sy = oldRect.height / newRect.height
+    // 变化太小则跳过
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < 0.02 && Math.abs(sy - 1) < 0.02) return
+    // 瞬间应用反向变换（从旧位置开始）
+    newEl.style.transformOrigin = 'top left'
+    newEl.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`
+    // anime.js spring 动画到 identity（新位置）
+    animate(newEl, {
+      translateX: [dx, 0],
+      translateY: [dy, 0],
+      scaleX: [sx, 1],
+      scaleY: [sy, 1],
+      duration: 500,
+      ease: ANIME_SPRINGS.powerful,
+      onComplete: () => {
+        newEl.style.transform = ''
+        newEl.style.transformOrigin = ''
+      },
+    })
+  })
+  flipRecords.clear()
+}
+
+// 设备切换：pre-flush 记录旧位置 → nextTick 动画到新位置
+watch(isDesktop, () => {
+  recordFlipElements()
+  nextTick(() => {
+    animateFlipElements()
+  })
+})
 
 // ── lifecycle ──
 onMounted(() => {
