@@ -10,7 +10,7 @@
         <div class="bg-mask"></div>
       </div>
 
-      <div class="player-body">
+      <div class="player-body" ref="playerBody">
         <!-- 顶栏 -->
         <header class="top-bar immersive-hide">
           <button class="btn-icon" @click="handleClose" title="返回">
@@ -324,6 +324,7 @@ import { ANIME_SPRINGS } from '@/utils/animePresets.js'
 const { log } = usePerf('PlayerView')
 
 const rootRef = useTemplateRef('root')
+const playerBodyRef = useTemplateRef('playerBody')
 const progressTrack = useTemplateRef('progressTrack')
 const coverBgKey = ref(0)
 let seekDragging = false
@@ -493,34 +494,135 @@ function endSeek() {
   document.removeEventListener('touchend', endSeek)
 }
 
+// ── shared element FLIP (封面共享元素动画) ──
+// 克隆源 img，从 PlayerControlBar 位置飞到 PlayerView cover-art 位置
+function getSourceImg() {
+  const src = PlayerStore.state.ui.sharedElementSource
+  if (!src) return null
+  // PlayerControlBar 的 .album-cover-thumb 内的 img
+  if (src.tagName === 'IMG') return src
+  return src.querySelector('img') || null
+}
+
+function getCoverTargetEl() {
+  // 当前可见的 cover-art（移动端 regular / 桌面端 info）
+  return rootRef.value?.querySelector('.cover-art') || null
+}
+
+function createGhost(img, fromRect) {
+  const ghost = img.cloneNode(true)
+  ghost.style.position = 'fixed'
+  ghost.style.left = fromRect.left + 'px'
+  ghost.style.top = fromRect.top + 'px'
+  ghost.style.width = fromRect.width + 'px'
+  ghost.style.height = fromRect.height + 'px'
+  ghost.style.zIndex = '400'
+  ghost.style.pointerEvents = 'none'
+  ghost.style.margin = '0'
+  ghost.style.objectFit = 'cover'
+  ghost.style.borderRadius = '12px'
+  ghost.style.boxShadow = '0 16px 60px rgba(0,0,0,0.55)'
+  document.body.appendChild(ghost)
+  return ghost
+}
+
+function animateGhost(ghost, fromRect, toRect, duration, ease) {
+  const dx = toRect.left - fromRect.left
+  const dy = toRect.top - fromRect.top
+  const sx = toRect.width / fromRect.width
+  const sy = toRect.height / fromRect.height
+  return new Promise(resolve => {
+    animate(ghost, {
+      translateX: [0, dx],
+      translateY: [0, dy],
+      scaleX: [1, sx],
+      scaleY: [1, sy],
+      duration,
+      ease,
+      onComplete: resolve,
+    })
+  })
+}
+
 // ── enter / exit ──
 async function playEnter() {
   if (!rootRef.value) return
-  // 模态进入：从底部滑入 + 淡入
-  animate(rootRef.value, {
-    opacity: [0, 1],
-    translateY: ['100%', 0],
-    duration: 500,
-    ease: ANIME_SPRINGS.powerful,
-    onComplete: () => {
-      PlayerStore.setPlayerViewTransitioning(false)
-    },
-  })
+  const sourceImg = getSourceImg()
+  const coverTarget = getCoverTargetEl()
+
+  // 共享元素 FLIP：封面从 PlayerControlBar 飞到 PlayerView
+  if (sourceImg && coverTarget) {
+    const fromRect = sourceImg.getBoundingClientRect()
+    // 隐藏目标 cover，等克隆动画结束再显示
+    coverTarget.style.opacity = '0'
+    // 创建克隆
+    const ghost = createGhost(sourceImg, fromRect)
+    // 模态进入：从底部滑入 + 淡入
+    animate(rootRef.value, {
+      opacity: [0, 1],
+      translateY: ['100%', 0],
+      duration: 500,
+      ease: ANIME_SPRINGS.powerful,
+    })
+    // 等待 DOM 渲染后获取目标位置
+    await nextTick()
+    const toRect = coverTarget.getBoundingClientRect()
+    // 克隆飞行
+    await animateGhost(ghost, fromRect, toRect, 500, ANIME_SPRINGS.powerful)
+    // 清理：移除克隆，显示目标
+    ghost.remove()
+    coverTarget.style.opacity = '1'
+    PlayerStore.setPlayerViewTransitioning(false)
+  } else {
+    // 无共享元素：普通进入
+    animate(rootRef.value, {
+      opacity: [0, 1],
+      translateY: ['100%', 0],
+      duration: 500,
+      ease: ANIME_SPRINGS.powerful,
+      onComplete: () => {
+        PlayerStore.setPlayerViewTransitioning(false)
+      },
+    })
+  }
 }
 
 async function playExit() {
   if (!rootRef.value) return
   PlayerStore.setPlayerViewTransitioning(true)
-  // 模态退出：向下滑出 + 淡出
-  await new Promise((resolve) => {
+  const sourceImg = getSourceImg()
+  const coverTarget = getCoverTargetEl()
+
+  // 共享元素 FLIP：封面从 PlayerView 飞回 PlayerControlBar
+  if (sourceImg && coverTarget) {
+    const fromRect = coverTarget.getBoundingClientRect()
+    const toRect = sourceImg.getBoundingClientRect()
+    // 隐藏目标 cover
+    coverTarget.style.opacity = '0'
+    // 创建克隆
+    const ghost = createGhost(sourceImg, fromRect)
+    // 模态退出：向下滑出 + 淡出
     animate(rootRef.value, {
       opacity: [1, 0],
       translateY: [0, '100%'],
       duration: 350,
       ease: ANIME_SPRINGS.sensitive,
-      onComplete: resolve,
     })
-  })
+    // 克隆飞回
+    await animateGhost(ghost, fromRect, toRect, 350, ANIME_SPRINGS.sensitive)
+    ghost.remove()
+  } else {
+    // 无共享元素：普通退出
+    await new Promise((resolve) => {
+      animate(rootRef.value, {
+        opacity: [1, 0],
+        translateY: [0, '100%'],
+        duration: 350,
+        ease: ANIME_SPRINGS.sensitive,
+        onComplete: resolve,
+      })
+    })
+  }
 }
 
 // ── transition hooks ──
@@ -555,17 +657,107 @@ function onModeLeave(el, done) {
   animate(el, { opacity: [1, 0], duration: 150, ease: ANIME_SPRINGS.sensitive, onComplete: done })
 }
 
+// ── immersive mode animation ──
+// 用 anime.js 替代 CSS transition，实现 spring 物理的沉浸模式进出动画
+watch(isImmersive, (immersive) => {
+  if (!rootRef.value) return
+  const targets = rootRef.value.querySelectorAll('.immersive-hide')
+  if (targets.length === 0) return
+  if (immersive) {
+    // 进入沉浸：隐藏控件（灵敏弹簧，快速响应）
+    animate(targets, {
+      opacity: [1, 0],
+      duration: 280,
+      ease: ANIME_SPRINGS.sensitive,
+      onComplete: () => {
+        targets.forEach(t => { t.style.pointerEvents = 'none' })
+      },
+    })
+  } else {
+    // 退出沉浸：显示控件（弹跳弹簧，轻快回归）
+    targets.forEach(t => { t.style.pointerEvents = '' })
+    animate(targets, {
+      opacity: [0, 1],
+      duration: 350,
+      ease: ANIME_SPRINGS.bouncy,
+    })
+  }
+})
+
+// ── draggable 手势 (左右滑模式切换 + 上滑歌单 + 下滑退出) ──
+let dragInstance = null
+let lastDragX = 0
+let lastDragY = 0
+const SWIPE_THRESHOLD = 60 // 最小滑动距离 (px)
+
+function setupDraggable() {
+  if (!playerBodyRef.value || !rootRef.value) return
+  run(({ createDraggable }) => {
+    dragInstance = createDraggable(playerBodyRef.value, {
+      container: rootRef.value,   // 限制在 player-view 内，防止拖出边界
+      x: true,
+      y: true,
+      snap: { x: [0], y: [0] },   // 总是回弹到原位
+      releaseEase: ANIME_SPRINGS.bouncy,
+      containerFriction: 0.6,     // 拖到边界时的阻力
+      onDrag: (state) => {
+        lastDragX = state.x
+        lastDragY = state.y
+      },
+      onSettle: () => {
+        const dx = lastDragX
+        const dy = lastDragY
+        const absDx = Math.abs(dx)
+        const absDy = Math.abs(dy)
+
+        // 主方向判断：水平优先（模式切换），其次垂直（歌单/退出）
+        if (absDx > absDy && absDx > SWIPE_THRESHOLD) {
+          swipeMode(dx > 0 ? -1 : 1)
+        } else if (absDy > SWIPE_THRESHOLD) {
+          if (dy > 0) {
+            // 下滑：退出 player-view
+            handleClose()
+          } else {
+            // 上滑：歌单（移动端切歌词，桌面端切歌单）
+            swipeUpAction()
+          }
+        }
+        lastDragX = 0
+        lastDragY = 0
+      },
+    })
+  })
+}
+
+function swipeMode(direction) {
+  const modes = isDesktop.value
+    ? ['info', 'lyrics', 'playlist']
+    : ['details', 'regular', 'lyrics']
+  const idx = modes.indexOf(mode.value)
+  if (idx < 0) return
+  const newIdx = Math.max(0, Math.min(modes.length - 1, idx + direction))
+  if (newIdx !== idx) setMode(modes[newIdx])
+}
+
+function swipeUpAction() {
+  if (isDesktop.value) setMode('playlist')
+  else setMode('lyrics')
+}
+
 // ── lifecycle ──
 onMounted(() => {
   // 曲目切换 → 背景 key 递增 → 触发 crossfade
   nextTick(() => {
     playEnter()
     rootRef.value?.focus()
+    setupDraggable()
   })
 })
 
 onBeforeUnmount(() => {
   endSeek()
+  // createDraggable 由 useAnime 的 onScopeDispose 自动 revert，无需手动清理
+  dragInstance = null
 })
 
 // 曲目切换 → 背景 key 递增
@@ -615,6 +807,14 @@ watch(() => currentTrack.value?.id, (newId) => {
   padding: 0 32px;
   padding-top: max(12px, var(--safe-area-top, 0px));
   padding-bottom: max(20px, var(--safe-area-bottom, 0px));
+}
+
+/* draggable 手势：内部滚动区域允许 pan-y，避免被 createDraggable 捕获垂直拖动 */
+.mode-details,
+.lyrics-wrapper,
+.playlist-items,
+.plain-lyrics {
+  touch-action: pan-y;
 }
 
 /* ── top bar ── */
@@ -891,13 +1091,9 @@ watch(() => currentTrack.value?.id, (newId) => {
 .switch-btn i { font-size: 0.9375rem; }
 
 /* ── immersive mode ── */
+/* opacity/pointer-events 由 anime.js watch(isImmersive) 控制，避免 CSS transition 冲突 */
 .is-immersive .immersive-hide {
-  opacity: 0;
   pointer-events: none;
-  transition: opacity 0.3s ease;
-}
-.player-body .immersive-hide {
-  transition: opacity 0.3s ease;
 }
 
 /* ── responsive ── */
