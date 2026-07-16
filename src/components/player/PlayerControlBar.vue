@@ -6,18 +6,26 @@
     </div>
 
     <div class="controls-section">
-      <!-- 专辑封面 -->
-      <div class="album-cover-thumb" ref="coverThumb" v-if="albumCoverUrl" @click="openPlayerView">
-        <img :src="albumCoverUrl" alt="专辑封面" />
-      </div>
-      <div class="album-cover-thumb placeholder" ref="coverThumb" v-else @click="openPlayerView">
-        <i class="bi bi-disc-fill"></i>
+      <!-- 专辑封面（真共享 DOM：动态 Teleport 到 PlayerView portal） -->
+      <div class="album-cover-slot">
+        <Teleport :to="coverPortalTarget" :disabled="!coverPortalTarget">
+          <div class="album-cover-thumb" ref="coverThumb" v-if="albumCoverUrl" @click="openPlayerView" data-shared="cover">
+            <img :src="albumCoverUrl" alt="专辑封面" />
+          </div>
+          <div class="album-cover-thumb placeholder" ref="coverThumb" v-else @click="openPlayerView" data-shared="cover">
+            <i class="bi bi-disc-fill"></i>
+          </div>
+        </Teleport>
       </div>
 
-      <!-- 歌曲信息 -->
-      <div class="track-info" v-if="trackTitle">
-        <span class="track-title">{{ trackTitle }}</span>
-        <span class="track-meta">{{ trackMeta }}</span>
+      <!-- 歌曲信息（真共享 DOM：动态 Teleport 到 PlayerView portal） -->
+      <div class="track-info-slot">
+        <Teleport :to="metaPortalTarget" :disabled="!metaPortalTarget">
+          <div class="track-info" v-if="trackTitle" data-shared="meta">
+            <span class="track-title">{{ trackTitle }}</span>
+            <span class="track-meta">{{ trackMeta }}</span>
+          </div>
+        </Teleport>
       </div>
 
       <button class="control-btn play-btn" @click="togglePlay">
@@ -48,6 +56,10 @@ const { log } = usePerf('PlayerControlBar')
 const rootRef = useTemplateRef('root')
 const coverThumbRef = useTemplateRef('coverThumb')
 const { run } = useAnime(() => rootRef.value)
+
+// 真共享 DOM：动态 Teleport 目标（PlayerView 打开时设为 portal 容器）
+const coverPortalTarget = computed(() => PlayerStore.coverPortalTarget.value)
+const metaPortalTarget = computed(() => PlayerStore.metaPortalTarget.value)
 
 // 入场动画：控制栏向上淡入
 onMounted(() => {
@@ -224,6 +236,18 @@ const formatTime = (seconds) => {
   gap: 0.75rem;
   position: relative;
   z-index: 1;
+}
+
+/* 真共享 DOM：teleport 后占位容器保持原尺寸，避免布局塌陷 */
+.album-cover-slot {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+}
+.track-info-slot {
+  min-width: 0;
+  max-width: 12rem;
+  flex: 1;
 }
 
 .control-btn {

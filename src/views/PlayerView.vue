@@ -76,29 +76,17 @@
                   <span>左右滑动切换模式</span>
                   <i class="bi bi-chevron-right"></i>
                 </div>
-                <!-- 专辑大图 -->
+                <!-- 专辑大图 portal（真共享 DOM 容器） -->
                 <div class="cover-section">
-                  <transition :css="false" mode="out-in" @enter="onCoverEnter" @leave="onCoverLeave">
-                    <div class="cover-art" :key="currentTrack.id" data-layout-id="cover">
-                      <img v-if="coverUrl" :src="coverUrl" alt="" />
-                      <i v-else class="bi bi-disc-fill cover-fallback"></i>
-                    </div>
-                  </transition>
+                  <div ref="coverPortal" class="cover-portal" data-layout-id="cover"></div>
                 </div>
-                <!-- 音乐信息 bar（水平：左音乐信息 + 右三点 icon） -->
-                <transition :css="false" mode="out-in" @enter="onMetaEnter" @leave="onMetaLeave">
-                  <div class="track-meta-bar" :key="currentTrack.id" data-layout-id="meta">
-                    <div class="track-meta-info">
-                      <h1 class="track-title">{{ currentTrack.title }}</h1>
-                      <p class="track-artist-album">
-                        {{ currentTrack.artist }}<template v-if="currentTrack.albumTitle"> - {{ currentTrack.albumTitle }}</template>
-                      </p>
-                    </div>
-                    <button class="meta-more-btn" @click="showTrackActionsSheet = true" title="操作">
-                      <i class="bi bi-three-dots"></i>
-                    </button>
-                  </div>
-                </transition>
+                <!-- 音乐信息 bar portal（真共享 DOM 容器） + 三点 icon -->
+                <div class="track-meta-bar" data-layout-id="meta">
+                  <div ref="metaPortal" class="meta-portal track-meta-info"></div>
+                  <button class="meta-more-btn" @click="showTrackActionsSheet = true" title="操作">
+                    <i class="bi bi-three-dots"></i>
+                  </button>
+                </div>
                 <!-- 进度条 + 控制按钮 + 功能控件 -->
                 <div class="regular-controls" data-layout-id="controls">
                   <div class="progress-area">
@@ -229,26 +217,14 @@
             <!-- 左侧：常规控件（始终显示） -->
             <div class="desktop-left">
               <div class="cover-section">
-                <transition :css="false" mode="out-in" @enter="onCoverEnter" @leave="onCoverLeave">
-                  <div class="cover-art" :key="currentTrack.id" data-layout-id="cover">
-                    <img v-if="coverUrl" :src="coverUrl" alt="" />
-                    <i v-else class="bi bi-disc-fill cover-fallback"></i>
-                  </div>
-                </transition>
+                <div ref="coverPortalDesktop" class="cover-portal" data-layout-id="cover"></div>
               </div>
-              <transition :css="false" mode="out-in" @enter="onMetaEnter" @leave="onMetaLeave">
-                <div class="track-meta-bar" :key="currentTrack.id" data-layout-id="meta">
-                  <div class="track-meta-info">
-                    <h1 class="track-title">{{ currentTrack.title }}</h1>
-                    <p class="track-artist-album">
-                      {{ currentTrack.artist }}<template v-if="currentTrack.albumTitle"> - {{ currentTrack.albumTitle }}</template>
-                    </p>
-                  </div>
-                  <button class="meta-more-btn" @click="showTrackActionsSheet = true" title="操作">
-                    <i class="bi bi-three-dots"></i>
-                  </button>
-                </div>
-              </transition>
+              <div class="track-meta-bar" data-layout-id="meta">
+                <div ref="metaPortalDesktop" class="meta-portal track-meta-info"></div>
+                <button class="meta-more-btn" @click="showTrackActionsSheet = true" title="操作">
+                  <i class="bi bi-three-dots"></i>
+                </button>
+              </div>
               <div class="regular-controls" :class="{ 'desktop-centered': mode === 'info' }" data-layout-id="controls">
                 <div class="progress-area">
                   <span class="time-label">{{ formattedCurrentTime }}</span>
@@ -444,10 +420,14 @@ const { log } = usePerf('PlayerView')
 const rootRef = useTemplateRef('root')
 const playerBodyRef = useTemplateRef('playerBody')
 const playlistContainerRef = useTemplateRef('playlistContainer')
+const coverPortalRef = useTemplateRef('coverPortal')
+const coverPortalDesktopRef = useTemplateRef('coverPortalDesktop')
+const metaPortalRef = useTemplateRef('metaPortal')
+const metaPortalDesktopRef = useTemplateRef('metaPortalDesktop')
 const coverBgKey = ref(0)
 let seekDragging = false
 
-const { animate, enter, exit, spring, run, useLayout } = useAnime(() => rootRef.value)
+const { animate, enter, exit, spring, run, useLayout, createLayout } = useAnime(() => rootRef.value)
 
 // ── player state ──
 const currentTrack = computed(() => PlayerStore.state.currentTrack)
@@ -641,135 +621,104 @@ function endSeek() {
   document.removeEventListener('touchend', endSeek)
 }
 
-// ── shared element FLIP (封面共享元素动画) ──
-// 克隆源 img，从 PlayerControlBar 位置飞到 PlayerView cover-art 位置
-function getSourceImg() {
-  const src = PlayerStore.state.ui.sharedElementSource
-  if (!src) return null
-  // PlayerControlBar 的 .album-cover-thumb 内的 img
-  if (src.tagName === 'IMG') return src
-  return src.querySelector('img') || null
+// ── 真共享 DOM 动画 (createLayout + 动态 Teleport) ──
+// PlayerControlBar 的 .album-cover-thumb 和 .track-info 用 <Teleport :disabled> 包裹
+// PlayerView 打开时，setPortalTargets 设为 portal 容器，Vue Teleport 移动 DOM
+// createLayout 捕获 DOM 移动，FLIP 动画从旧位置（control bar）到新位置（player view）
+let sharedLayout = null
+
+function getActiveCoverPortal() {
+  return isDesktop.value ? coverPortalDesktopRef.value : coverPortalRef.value
+}
+function getActiveMetaPortal() {
+  return isDesktop.value ? metaPortalDesktopRef.value : metaPortalRef.value
 }
 
-function getCoverTargetEl() {
-  // 当前可见的 cover-art（移动端 regular / 桌面端 info）
-  return rootRef.value?.querySelector('.cover-art') || null
-}
-
-function createGhost(img, fromRect) {
-  const ghost = img.cloneNode(true)
-  ghost.style.position = 'fixed'
-  ghost.style.left = fromRect.left + 'px'
-  ghost.style.top = fromRect.top + 'px'
-  ghost.style.width = fromRect.width + 'px'
-  ghost.style.height = fromRect.height + 'px'
-  ghost.style.zIndex = '400'
-  ghost.style.pointerEvents = 'none'
-  ghost.style.margin = '0'
-  ghost.style.objectFit = 'cover'
-  ghost.style.borderRadius = '12px'
-  ghost.style.boxShadow = '0 16px 60px rgba(0,0,0,0.55)'
-  document.body.appendChild(ghost)
-  return ghost
-}
-
-function animateGhost(ghost, fromRect, toRect, duration, ease) {
-  const dx = toRect.left - fromRect.left
-  const dy = toRect.top - fromRect.top
-  const sx = toRect.width / fromRect.width
-  const sy = toRect.height / fromRect.height
-  return new Promise(resolve => {
-    animate(ghost, {
-      translateX: [0, dx],
-      translateY: [0, dy],
-      scaleX: [1, sx],
-      scaleY: [1, sy],
-      duration,
-      ease,
-      onComplete: resolve,
-    })
+function ensureSharedLayout() {
+  if (sharedLayout) return sharedLayout
+  // root 为 document.body，children 为共享元素选择器
+  sharedLayout = createLayout(document.body, {
+    children: ['[data-shared="cover"]', '[data-shared="meta"]'],
   })
+  return sharedLayout
 }
 
 // ── enter / exit ──
 async function playEnter() {
   if (!rootRef.value) return
-  const sourceImg = getSourceImg()
-  const coverTarget = getCoverTargetEl()
 
-  // 共享元素 FLIP：封面从 PlayerControlBar 飞到 PlayerView
-  if (sourceImg && coverTarget) {
-    const fromRect = sourceImg.getBoundingClientRect()
-    // 隐藏目标 cover，等克隆动画结束再显示
-    coverTarget.style.opacity = '0'
-    // 创建克隆
-    const ghost = createGhost(sourceImg, fromRect)
-    // 模态进入：从底部滑入 + 淡入
-    animate(rootRef.value, {
-      opacity: [0, 1],
-      translateY: ['100%', 0],
-      duration: 500,
-      ease: ANIME_SPRINGS.powerful,
-    })
-    // 等待 DOM 渲染后获取目标位置
-    await nextTick()
-    const toRect = coverTarget.getBoundingClientRect()
-    // 克隆飞行
-    await animateGhost(ghost, fromRect, toRect, 500, ANIME_SPRINGS.powerful)
-    // 清理：移除克隆，显示目标
-    ghost.remove()
-    coverTarget.style.opacity = '1'
+  // 模态进入：从底部滑入 + 淡入
+  animate(rootRef.value, {
+    opacity: [0, 1],
+    translateY: ['100%', 0],
+    duration: 500,
+    ease: ANIME_SPRINGS.powerful,
+  })
+
+  // 等待 portal 容器渲染
+  await nextTick()
+  const coverPortal = getActiveCoverPortal()
+  const metaPortal = getActiveMetaPortal()
+  if (!coverPortal && !metaPortal) {
     PlayerStore.setPlayerViewTransitioning(false)
-  } else {
-    // 无共享元素：普通进入
-    animate(rootRef.value, {
-      opacity: [0, 1],
-      translateY: ['100%', 0],
-      duration: 500,
-      ease: ANIME_SPRINGS.powerful,
-      onComplete: () => {
-        PlayerStore.setPlayerViewTransitioning(false)
-      },
-    })
+    return
   }
+
+  // createLayout 记录旧位置（control bar 中的 cover/meta）
+  const layout = ensureSharedLayout()
+  layout.record()
+
+  // 设置 portal 目标 → Vue Teleport 移动 DOM 到 player view
+  PlayerStore.setPortalTargets(coverPortal, metaPortal)
+
+  // 等 Vue 移动 DOM
+  await nextTick()
+
+  // createLayout FLIP 动画：从旧位置（control bar）到新位置（player view portal）
+  layout.animate({
+    duration: 500,
+    ease: ANIME_SPRINGS.powerful,
+    onComplete: () => {
+      PlayerStore.setPlayerViewTransitioning(false)
+    },
+  })
 }
 
 async function playExit() {
   if (!rootRef.value) return
   PlayerStore.setPlayerViewTransitioning(true)
-  const sourceImg = getSourceImg()
-  const coverTarget = getCoverTargetEl()
 
-  // 共享元素 FLIP：封面从 PlayerView 飞回 PlayerControlBar
-  if (sourceImg && coverTarget) {
-    const fromRect = coverTarget.getBoundingClientRect()
-    const toRect = sourceImg.getBoundingClientRect()
-    // 隐藏目标 cover
-    coverTarget.style.opacity = '0'
-    // 创建克隆
-    const ghost = createGhost(sourceImg, fromRect)
-    // 模态退出：向下滑出 + 淡出
+  // createLayout 记录旧位置（player view portal 中的 cover/meta）
+  const layout = ensureSharedLayout()
+  layout.record()
+
+  // 清除 portal 目标 → Vue Teleport 移回 control bar
+  PlayerStore.setPortalTargets(null, null)
+
+  // 等 Vue 移回 DOM
+  await nextTick()
+
+  // createLayout FLIP 动画：从旧位置（player view）到新位置（control bar）
+  const flipDone = new Promise(resolve => {
+    layout.animate({
+      duration: 350,
+      ease: ANIME_SPRINGS.sensitive,
+      onComplete: resolve,
+    })
+  })
+
+  // 模态退出：向下滑出 + 淡出（与 FLIP 并行）
+  const slideDone = new Promise(resolve => {
     animate(rootRef.value, {
       opacity: [1, 0],
       translateY: [0, '100%'],
       duration: 350,
       ease: ANIME_SPRINGS.sensitive,
+      onComplete: resolve,
     })
-    // 克隆飞回
-    await animateGhost(ghost, fromRect, toRect, 350, ANIME_SPRINGS.sensitive)
-    ghost.remove()
-  } else {
-    // 无共享元素：普通退出
-    await new Promise((resolve) => {
-      animate(rootRef.value, {
-        opacity: [1, 0],
-        translateY: [0, '100%'],
-        duration: 350,
-        ease: ANIME_SPRINGS.sensitive,
-        onComplete: resolve,
-      })
-    })
-  }
+  })
+
+  await Promise.all([flipDone, slideDone])
 }
 
 // ── transition hooks ──
@@ -1095,6 +1044,42 @@ watch(() => currentTrack.value?.id, (newId) => {
 }
 .track-artist-album {
   font-size: 0.8125rem; color: rgba(255,255,255,0.5); margin: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── 真共享 DOM portal 容器 ── */
+/* portal 容器在 PlayerView 内，接收从 PlayerControlBar teleport 过来的 cover/meta */
+.cover-portal {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.cover-portal:empty { display: none; }
+/* teleport 过来的 .album-cover-thumb 填充 portal */
+.cover-portal .album-cover-thumb {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.cover-portal .album-cover-thumb img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+
+.meta-portal {
+  flex: 1; min-width: 0; text-align: left;
+}
+.meta-portal:empty { display: none; }
+/* teleport 过来的 .track-info 适配 player view 样式 */
+.meta-portal .track-info {
+  display: flex; flex-direction: column;
+}
+.meta-portal .track-title {
+  font-size: 1.05rem; font-weight: 700; color: rgba(255,255,255,0.92);
+  margin: 0 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.meta-portal .track-meta {
+  font-size: 0.8125rem; color: rgba(255,255,255,0.5);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .meta-more-btn {

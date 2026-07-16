@@ -68,6 +68,9 @@ const state = reactive({
     currentDevice: 'mobile',          // 'mobile' | 'desktop'（768px 断点）
     sharedElementSource: null,        // markRaw DOM 元素引用，用于 FLIP 共享元素动画
     playerViewTransitioning: false,   // 过渡中，阻止交互
+    // 真共享 DOM portal 目标（动态 Teleport）
+    coverPortalTarget: null,          // markRaw DOM 元素，PlayerView 内的封面 portal 容器
+    metaPortalTarget: null,           // markRaw DOM 元素，PlayerView 内的元信息 portal 容器
   }
 });
 
@@ -122,6 +125,8 @@ const getters = {
   isImmersive: computed(() => state.ui.isImmersive),
   currentDevice: computed(() => state.ui.currentDevice),
   playerViewTransitioning: computed(() => state.ui.playerViewTransitioning),
+  coverPortalTarget: computed(() => state.ui.coverPortalTarget),
+  metaPortalTarget: computed(() => state.ui.metaPortalTarget),
 };
 
 // 格式化时间
@@ -676,6 +681,16 @@ const actions = {
    */
   setPlayerViewTransitioning(v) {
     state.ui.playerViewTransitioning = v;
+  },
+
+  /**
+   * 设置共享 DOM portal 目标（用于真共享 DOM 动画）
+   * @param {HTMLElement|null} coverEl - 封面 portal 容器
+   * @param {HTMLElement|null} metaEl - 元信息 portal 容器
+   */
+  setPortalTargets(coverEl = null, metaEl = null) {
+    state.ui.coverPortalTarget = coverEl ? markRaw(coverEl) : null;
+    state.ui.metaPortalTarget = metaEl ? markRaw(metaEl) : null;
   },
 
   /**
