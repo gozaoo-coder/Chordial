@@ -69,7 +69,8 @@ const gradientRef = ref(null);
 
 const startDrift = () => {
   if (!gridRef.value) return;
-  driftAnim?.pause();
+  // revert 旧实例：清除其内联 transform，避免与新动画的 WAAPI 关键帧叠加
+  driftAnim?.revert();
   // 60s 缓慢正弦漂移，5 个关键帧对应原 CSS collage-drift
   driftAnim = animate(gridRef.value, {
     scale: 1.1,
@@ -84,7 +85,7 @@ const startDrift = () => {
 
 const startGradient = () => {
   if (!gradientRef.value) return;
-  gradientAnim?.pause();
+  gradientAnim?.revert();
   // 15s 渐变背景位置循环
   gradientAnim = animate(gradientRef.value, {
     backgroundPositionX: ['0%', '100%', '0%'],
@@ -127,8 +128,12 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  driftAnim?.pause();
-  gradientAnim?.pause();
+  // revert() 而非 pause()：停止动画并清除 anime.js 写入的内联 transform/backgroundPosition，
+  // 防止组件被 <keep-alive> 缓存时残留内联样式干扰下次挂载的 CSS 布局
+  driftAnim?.revert();
+  gradientAnim?.revert();
+  driftAnim = null;
+  gradientAnim = null;
   if (stopFps) stopFps();
 });
 

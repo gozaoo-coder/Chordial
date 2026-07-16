@@ -15,7 +15,7 @@
           </div>
         </div>
 
-        <div class="p2p-list">
+        <div ref="listRef" class="p2p-list">
           <div v-for="req in pendingRequests" :key="req.request_id" class="p2p-card">
             <div class="p2p-card-info">
               <div class="p2p-card-name">{{ req.peer_name }}</div>
@@ -43,13 +43,37 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue';
+import { reactive, ref, watch, nextTick } from 'vue';
 import { animate } from 'animejs';
-import { ANIME_PRESETS } from '@/utils/animePresets.js';
+import { ANIME_PRESETS, ANIME_LAYOUT } from '@/utils/animePresets.js';
+import { useAnime } from '@/composables/useAnime.js';
 import { useP2pEvents } from '@/composables/useP2pEvents.js';
 
 const { pendingRequests, toasts, accept, reject, dismissToast } = useP2pEvents();
 const busy = reactive({});
+
+// createLayout 实例：对 .p2p-list 内 .p2p-card 做 FLIP，组件卸载时自动 revert
+const listRef = ref(null);
+const { useLayout } = useAnime();
+const layout = useLayout(() => listRef.value, {
+  ...ANIME_LAYOUT.list,
+  children: '.p2p-card',
+});
+
+// 列表项增删 FLIP：仅在对话框保持打开时（length 从 N→M，N/M 都 > 0）触发
+// - 0→N：由 onEnter 整体 scaleIn 处理
+// - N→0：由 onLeave 整体 scaleOut 处理
+watch(
+  () => pendingRequests.value?.length ?? 0,
+  async (newLen, oldLen) => {
+    if (newLen === 0 || oldLen === 0) return; // 开/关由 transition 处理
+    if (!listRef.value) return;
+    layout.record();               // pre-flush：记录旧位置（DOM 尚未更新）
+    await nextTick();              // 等 Vue 更新 DOM
+    if (!listRef.value) return;    // 期间对话框可能已关闭
+    layout.animate();              // FLIP 剩余项 + enterFrom 新项 + leaveTo 移除项
+  }
+);
 
 // 弹窗入场：遮罩 fadeIn，内容 scaleIn
 function onEnter(el, done) {

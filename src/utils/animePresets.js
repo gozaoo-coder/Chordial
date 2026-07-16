@@ -157,3 +157,63 @@ export const ANIME_LOOP = {
     loop: true,
   },
 };
+
+/**
+ * createLayout 预设。用于 FLIP 布局动画（列表项增删/排序、模态 display 切换、
+ * 父元素交换等场景）。配合 useAnime().createLayout(root, preset) 使用。
+ *
+ * 字段说明：
+ *  - enterFrom: 新元素入场起点（opacity/scale/translateY...）
+ *  - leaveTo:   旧元素退场终点
+ *  - swapAt:    父元素交换时同时存在的两元素动画
+ *  - duration/ease/delay: 全局默认时长与缓动
+ *
+ * 注意：与 CSS content-visibility: auto / 虚拟列表 transform 定位冲突，仅用于
+ * 普通 DOM 列表（如 P2pMatchDialog 的请求列表）。
+ */
+export const ANIME_LAYOUT = {
+  // 模态对话框 display 切换：进入缩放淡入，离开缩放淡出
+  modal: {
+    duration: ANIME_DURATIONS.slow,
+    ease: ANIME_EASINGS.spring,
+    enterFrom: {
+      opacity: [0, 1],
+      scale: [0.92, 1],
+      duration: ANIME_DURATIONS.slow,
+      ease: ANIME_EASINGS.spring,
+    },
+    leaveTo: {
+      opacity: [1, 0],
+      scale: [1, 0.92],
+      duration: ANIME_DURATIONS.fast,
+      ease: ANIME_EASINGS.standard,
+    },
+  },
+  // 列表项增删 FLIP：新项从透明缩放进入，旧项淡出缩小
+  list: {
+    duration: ANIME_DURATIONS.normal,
+    ease: ANIME_EASINGS.standard,
+    enterFrom: {
+      opacity: [0, 1],
+      scale: [0.85, 1],
+      duration: ANIME_DURATIONS.normal,
+      ease: ANIME_EASINGS.standard,
+    },
+    leaveTo: {
+      opacity: [1, 0],
+      scale: [1, 0.85],
+      duration: ANIME_DURATIONS.fast,
+      ease: ANIME_EASINGS.standard,
+    },
+  },
+  // 父元素交换（crossfade 同时存在两元素）
+  swap: {
+    duration: ANIME_DURATIONS.normal,
+    ease: ANIME_EASINGS.standard,
+    swapAt: {
+      opacity: [0, 1],
+      duration: ANIME_DURATIONS.normal,
+      ease: ANIME_EASINGS.standard,
+    },
+  },
+};
