@@ -1,12 +1,14 @@
 <script setup>
-import { computed, onMounted, useTemplateRef } from 'vue';
+import { computed, onMounted, useTemplateRef, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import { useAnime } from '@/composables/useAnime.js';
+import { ANIME_SPRINGS } from '@/utils/animePresets.js';
 
 const route = useRoute();
 
 const rootRef = useTemplateRef('root');
-const { run } = useAnime(() => rootRef.value);
+const indicatorRef = useTemplateRef('indicator');
+const { run, animate } = useAnime(() => rootRef.value);
 
 // 菜单项错峰入场（slideInLeft + stagger）
 onMounted(() => {
@@ -22,6 +24,8 @@ onMounted(() => {
       },
     });
   });
+  // 初始化 active 指示器
+  nextTick(updateIndicator);
 });
 
 const navItems = [
@@ -58,10 +62,39 @@ const isActive = (path) => {
   }
   return route.path.startsWith(path);
 };
+
+// active 指示器滑动动画（anime.js spring 物理，垂直滑动）
+function updateIndicator() {
+  const root = rootRef.value;
+  const indicator = indicatorRef.value;
+  if (!root || !indicator) return;
+  const activeEl = root.querySelector('.nav-item.active');
+  if (!activeEl) {
+    animate(indicator, { opacity: 0, duration: 200, ease: ANIME_SPRINGS.sensitive });
+    return;
+  }
+  const rootRect = root.getBoundingClientRect();
+  const itemRect = activeEl.getBoundingClientRect();
+  const y = itemRect.top - rootRect.top;
+  const h = itemRect.height;
+  animate(indicator, {
+    translateY: y,
+    height: h,
+    opacity: 1,
+    duration: 420,
+    ease: ANIME_SPRINGS.bouncy,
+  });
+}
+
+// 路由切换 → FLIP 指示器滑动
+watch(() => route.path, () => {
+  nextTick(updateIndicator);
+});
 </script>
 
 <template>
   <aside ref="root" class="app-sidebar">
+    <div ref="indicator" class="nav-indicator"></div>
     <nav class="sidebar-nav">
       <router-link
         v-for="item in navItems"
@@ -74,7 +107,7 @@ const isActive = (path) => {
         <span class="nav-text">{{ item.name }}</span>
       </router-link>
     </nav>
-    
+
     <div class="sidebar-footer">
       <router-link to="/about" class="nav-item" :class="{ active: isActive('/about') }">
         <i class="bi bi-info-circle nav-icon"></i>
@@ -96,6 +129,22 @@ const isActive = (path) => {
   border: 1px solid var(--border-light);
 
   height: fit-content;
+  position: relative;
+}
+
+/* active 指示器（绝对定位背景，由 anime.js animate translateY/height 垂直滑动） */
+.nav-indicator {
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 16px;
+  height: 0;
+  background: var(--primary-light);
+  border-radius: var(--radius-md);
+  opacity: 0;
+  z-index: 0;
+  pointer-events: none;
+  will-change: transform, height, opacity;
 }
 
 .sidebar-nav {
@@ -103,7 +152,6 @@ const isActive = (path) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-
 }
 
 .nav-item {
@@ -113,18 +161,18 @@ const isActive = (path) => {
   padding: 10px 16px;
   color: var(--text-secondary);
   text-decoration: none;
-  transition: all var(--transition-fast);
+  transition: color var(--transition-fast);
   cursor: pointer;
   font-weight: 500;
+  position: relative;
+  z-index: 1;
 }
 
 .nav-item:hover {
-  /* background: var(--bg-hover); */
   color: var(--text-primary);
 }
 
 .nav-item.active {
-  /* background: var(--primary-color); */
   color: var(--primary-color);
   text-shadow: var(--primary-color)  0 0 3em;
   font-weight: 600;
@@ -151,7 +199,7 @@ const isActive = (path) => {
   }
 
   .nav-item.active {
-    background: var(--primary-color);
+    color: var(--primary-color);
   }
 }
 </style>

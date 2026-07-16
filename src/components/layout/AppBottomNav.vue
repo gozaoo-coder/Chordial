@@ -1,15 +1,17 @@
 <script setup>
 import { useRoute } from 'vue-router';
-import { computed, onMounted, useTemplateRef } from 'vue';
+import { computed, onMounted, useTemplateRef, watch, nextTick } from 'vue';
 import PlayerStore from '@/stores/player.js';
 import { useAnime } from '@/composables/useAnime.js';
+import { ANIME_SPRINGS } from '@/utils/animePresets.js';
 
 const route = useRoute();
 
 const hasCurrentTrack = computed(() => PlayerStore.hasCurrentTrack.value);
 
 const rootRef = useTemplateRef('root');
-const { run } = useAnime(() => rootRef.value);
+const indicatorRef = useTemplateRef('indicator');
+const { run, animate } = useAnime(() => rootRef.value);
 
 // 导航项错峰入场（fadeInUp + stagger）
 onMounted(() => {
@@ -25,6 +27,8 @@ onMounted(() => {
       },
     });
   });
+  // 初始化 active 指示器
+  nextTick(updateIndicator);
 });
 
 const navItems = [
@@ -61,10 +65,40 @@ const isActive = (path) => {
   }
   return route.path.startsWith(path);
 };
+
+// active 指示器滑动动画（anime.js spring 物理，替代 CSS transition 的生硬切换）
+function updateIndicator() {
+  const root = rootRef.value;
+  const indicator = indicatorRef.value;
+  if (!root || !indicator) return;
+  const activeEl = root.querySelector('.bottom-nav-item.active');
+  if (!activeEl) {
+    // 无 active 项：隐藏指示器
+    animate(indicator, { opacity: 0, duration: 200, ease: ANIME_SPRINGS.sensitive });
+    return;
+  }
+  const navRect = root.getBoundingClientRect();
+  const itemRect = activeEl.getBoundingClientRect();
+  const x = itemRect.left - navRect.left;
+  const w = itemRect.width;
+  animate(indicator, {
+    translateX: x,
+    width: w,
+    opacity: 1,
+    duration: 420,
+    ease: ANIME_SPRINGS.bouncy,
+  });
+}
+
+// 路由切换 → FLIP 指示器滑动
+watch(() => route.path, () => {
+  nextTick(updateIndicator);
+});
 </script>
 
 <template>
   <nav ref="root" class="app-bottom-nav" :class="{ 'with-player': hasCurrentTrack }">
+    <div ref="indicator" class="nav-indicator"></div>
     <router-link v-for="item in navItems" :key="item.path" :to="item.path" class="bottom-nav-item"
       :class="{ active: isActive(item.path) }">
       <i :class="item.icon" class="bottom-nav-icon"></i>
@@ -109,6 +143,22 @@ const isActive = (path) => {
   }
 }
 
+/* active 指示器（绝对定位背景胶囊，由 anime.js animate translateX/width 滑动） */
+.nav-indicator {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: calc(var(--bottom-nav-height) * 0.72);
+  width: 0;
+  background: var(--primary-light);
+  border-radius: var(--radius-md);
+  transform: translate(0, -50%);
+  opacity: 0;
+  z-index: 0;
+  pointer-events: none;
+  will-change: transform, width;
+}
+
 .bottom-nav-item {
   display: flex;
   flex-direction: column;
@@ -117,11 +167,13 @@ const isActive = (path) => {
   padding: 0 18px;
   color: var(--text-secondary);
   text-decoration: none;
-  transition: all var(--transition-fast);
+  transition: color var(--transition-fast);
   border-radius: var(--radius-md);
   flex: 1;
   font-weight: 500;
   min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .bottom-nav-item:hover {
@@ -131,7 +183,6 @@ const isActive = (path) => {
 .bottom-nav-item.active {
   color: var(--primary-color);
   text-shadow: var(--primary-color) 0 0 2em;
-  /* background: var(--primary-light); */
 }
 
 .bottom-nav-icon {
@@ -155,7 +206,6 @@ const isActive = (path) => {
 @media (prefers-color-scheme: dark) {
   .bottom-nav-item.active {
     color: var(--primary-color);
-    background: var(--primary-light);
   }
 }
 </style>
