@@ -31,15 +31,15 @@
         <!-- ── 模式内容区 ── -->
         <template v-else>
           <!-- 移动端 -->
-          <div v-if="!isDesktop" class="mode-content mobile-mode">
+          <div v-show="!isDesktop" class="mode-content mobile-mode">
             <transition :css="false" mode="out-in" @enter="onModeEnter" @leave="onModeLeave">
               <!-- 详细信息模式 -->
               <div v-if="mode === 'details'" key="details" class="mode-details">
-                <div class="details-cover" data-flip-key="cover">
+                <div class="details-cover" data-layout-id="cover">
                   <img v-if="coverUrl" :src="coverUrl" alt="" />
                   <i v-else class="bi bi-disc-fill cover-fallback"></i>
                 </div>
-                <div class="details-info" data-flip-key="meta">
+                <div class="details-info" data-layout-id="meta">
                   <h2 class="details-title">{{ currentTrack.title }}</h2>
                   <p class="details-artist">{{ currentTrack.artist }}</p>
                   <p v-if="currentTrack.albumTitle" class="details-album">专辑：{{ currentTrack.albumTitle }}</p>
@@ -79,7 +79,7 @@
                 <!-- 专辑大图 -->
                 <div class="cover-section">
                   <transition :css="false" mode="out-in" @enter="onCoverEnter" @leave="onCoverLeave">
-                    <div class="cover-art" :key="currentTrack.id" data-flip-key="cover">
+                    <div class="cover-art" :key="currentTrack.id" data-layout-id="cover">
                       <img v-if="coverUrl" :src="coverUrl" alt="" />
                       <i v-else class="bi bi-disc-fill cover-fallback"></i>
                     </div>
@@ -87,17 +87,17 @@
                 </div>
                 <!-- 音乐信息 bar -->
                 <transition :css="false" mode="out-in" @enter="onMetaEnter" @leave="onMetaLeave">
-                  <div class="track-meta" :key="currentTrack.id" data-flip-key="meta">
+                  <div class="track-meta" :key="currentTrack.id" data-layout-id="meta">
                     <h1 class="track-title">{{ currentTrack.title }}</h1>
                     <p class="track-artist">{{ currentTrack.artist }}</p>
                     <p v-if="currentTrack.albumTitle" class="track-album">{{ currentTrack.albumTitle }}</p>
                   </div>
                 </transition>
                 <!-- 进度条 + 控制按钮 + 功能控件 -->
-                <div class="regular-controls" data-flip-key="controls">
+                <div class="regular-controls" data-layout-id="controls">
                   <div class="progress-area">
                     <span class="time-label">{{ formattedCurrentTime }}</span>
-                    <div class="progress-bar" ref="progressTrack"
+                    <div class="progress-bar"
                       @mousedown="startSeek" @touchstart="startSeek">
                       <div class="progress-bg"></div>
                       <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
@@ -159,7 +159,7 @@
                   </div>
                 </div>
                 <!-- 歌词渲染 -->
-                <div class="lyrics-render-area" data-flip-key="lyrics">
+                <div class="lyrics-render-area" data-layout-id="lyrics">
                   <transition :css="false" mode="out-in" @enter="onLyricsEnter" @leave="onLyricsLeave">
                     <div v-if="hasLyrics" class="lyrics-wrapper" :key="'sync-' + currentTrack.id">
                       <LyricPlayer
@@ -187,28 +187,28 @@
           </div>
 
           <!-- 桌面端 -->
-          <div v-else class="mode-content desktop-mode">
+          <div v-show="isDesktop" class="mode-content desktop-mode">
             <!-- 左侧：常规控件（始终显示） -->
             <div class="desktop-left">
               <div class="cover-section">
                 <transition :css="false" mode="out-in" @enter="onCoverEnter" @leave="onCoverLeave">
-                  <div class="cover-art" :key="currentTrack.id" data-flip-key="cover">
+                  <div class="cover-art" :key="currentTrack.id" data-layout-id="cover">
                     <img v-if="coverUrl" :src="coverUrl" alt="" />
                     <i v-else class="bi bi-disc-fill cover-fallback"></i>
                   </div>
                 </transition>
               </div>
               <transition :css="false" mode="out-in" @enter="onMetaEnter" @leave="onMetaLeave">
-                <div class="track-meta" :key="currentTrack.id" data-flip-key="meta">
+                <div class="track-meta" :key="currentTrack.id" data-layout-id="meta">
                   <h1 class="track-title">{{ currentTrack.title }}</h1>
                   <p class="track-artist">{{ currentTrack.artist }}</p>
                   <p v-if="currentTrack.albumTitle" class="track-album">{{ currentTrack.albumTitle }}</p>
                 </div>
               </transition>
-              <div class="regular-controls" :class="{ 'desktop-centered': mode === 'info' }" data-flip-key="controls">
+              <div class="regular-controls" :class="{ 'desktop-centered': mode === 'info' }" data-layout-id="controls">
                 <div class="progress-area">
                   <span class="time-label">{{ formattedCurrentTime }}</span>
-                  <div class="progress-bar" ref="progressTrack"
+                  <div class="progress-bar"
                     @mousedown="startSeek" @touchstart="startSeek">
                     <div class="progress-bg"></div>
                     <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
@@ -258,7 +258,7 @@
 
             <!-- 右侧：歌词 / 歌单（info 模式时隐藏） -->
             <transition :css="false" mode="out-in" @enter="onModeEnter" @leave="onModeLeave">
-              <div v-if="mode === 'lyrics'" key="lyrics" class="desktop-right desktop-lyrics" data-flip-key="lyrics">
+              <div v-if="mode === 'lyrics'" key="lyrics" class="desktop-right desktop-lyrics" data-layout-id="lyrics">
                 <transition :css="false" mode="out-in" @enter="onLyricsEnter" @leave="onLyricsLeave">
                   <div v-if="hasLyrics" class="lyrics-wrapper" :key="'sync-' + currentTrack.id">
                     <LyricPlayer
@@ -325,11 +325,10 @@ const { log } = usePerf('PlayerView')
 
 const rootRef = useTemplateRef('root')
 const playerBodyRef = useTemplateRef('playerBody')
-const progressTrack = useTemplateRef('progressTrack')
 const coverBgKey = ref(0)
 let seekDragging = false
 
-const { animate, enter, exit, spring, run } = useAnime(() => rootRef.value)
+const { animate, enter, exit, spring, run, useLayout } = useAnime(() => rootRef.value)
 
 // ── player state ──
 const currentTrack = computed(() => PlayerStore.state.currentTrack)
@@ -470,9 +469,11 @@ function onKeydown(e) {
 }
 
 // ── seek ──
+let seekTarget = null
 function startSeek(e) {
   e.preventDefault?.()
   seekDragging = true
+  seekTarget = e.currentTarget
   updateSeek(e)
   document.addEventListener('mousemove', updateSeek)
   document.addEventListener('mouseup', endSeek)
@@ -480,14 +481,15 @@ function startSeek(e) {
   document.addEventListener('touchend', endSeek)
 }
 function updateSeek(e) {
-  if (!seekDragging || !progressTrack.value) return
-  const r = progressTrack.value.getBoundingClientRect()
+  if (!seekDragging || !seekTarget) return
+  const r = seekTarget.getBoundingClientRect()
   const x = e.touches ? e.touches[0].clientX : e.clientX
   const ratio = Math.max(0, Math.min(1, (x - r.left) / r.width))
   PlayerStore.seek(ratio * (duration.value || 0))
 }
 function endSeek() {
   seekDragging = false
+  seekTarget = null
   document.removeEventListener('mousemove', updateSeek)
   document.removeEventListener('mouseup', endSeek)
   document.removeEventListener('touchmove', updateSeek)
@@ -744,61 +746,24 @@ function swipeUpAction() {
   else setMode('lyrics')
 }
 
-// ── cross-device FLIP (相同组件父元素交换动画) ──
-// 当设备在 mobile ↔ desktop 间切换时，共享组件（封面/元信息/控件/歌词）
-// 通过 data-flip-key 匹配，FLIP 动画平滑过渡到新布局位置
-const flipRecords = new Map()
+// ── cross-device createLayout FLIP ──
+// 使用 anime.js v4 createLayout + data-layout-id 实现跨设备模式切换的父元素交换动画。
+// 移动端和桌面端共享组件（封面/元信息/控件/歌词）标记 data-layout-id，
+// v-show 切换 display 时 createLayout 自动检测配对元素并 FLIP 动画。
+const deviceLayout = useLayout(
+  () => playerBodyRef.value,
+  {
+    children: '[data-layout-id]',
+    duration: 600,
+    ease: ANIME_SPRINGS.powerful,
+  }
+)
 
-function recordFlipElements() {
-  flipRecords.clear()
-  if (!rootRef.value) return
-  const els = rootRef.value.querySelectorAll('[data-flip-key]')
-  els.forEach(el => {
-    const key = el.getAttribute('data-flip-key')
-    flipRecords.set(key, el.getBoundingClientRect())
-  })
-}
-
-function animateFlipElements() {
-  if (!rootRef.value || flipRecords.size === 0) return
-  const newEls = rootRef.value.querySelectorAll('[data-flip-key]')
-  newEls.forEach(newEl => {
-    const key = newEl.getAttribute('data-flip-key')
-    const oldRect = flipRecords.get(key)
-    if (!oldRect) return
-    const newRect = newEl.getBoundingClientRect()
-    const dx = oldRect.left - newRect.left
-    const dy = oldRect.top - newRect.top
-    const sx = oldRect.width / newRect.width
-    const sy = oldRect.height / newRect.height
-    // 变化太小则跳过
-    if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < 0.02 && Math.abs(sy - 1) < 0.02) return
-    // 瞬间应用反向变换（从旧位置开始）
-    newEl.style.transformOrigin = 'top left'
-    newEl.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`
-    // anime.js spring 动画到 identity（新位置）
-    animate(newEl, {
-      translateX: [dx, 0],
-      translateY: [dy, 0],
-      scaleX: [sx, 1],
-      scaleY: [sy, 1],
-      duration: 500,
-      ease: ANIME_SPRINGS.powerful,
-      onComplete: () => {
-        newEl.style.transform = ''
-        newEl.style.transformOrigin = ''
-      },
-    })
-  })
-  flipRecords.clear()
-}
-
-// 设备切换：pre-flush 记录旧位置 → nextTick 动画到新位置
-watch(isDesktop, () => {
-  recordFlipElements()
-  nextTick(() => {
-    animateFlipElements()
-  })
+// 设备切换：record() 记录旧布局 → nextTick 等 Vue 更新 v-show → animate() FLIP
+watch(isDesktop, async () => {
+  deviceLayout.record()
+  await nextTick()
+  deviceLayout.animate()
 })
 
 // ── lifecycle ──
