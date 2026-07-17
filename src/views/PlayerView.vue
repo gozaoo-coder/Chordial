@@ -35,11 +35,11 @@
             <transition :css="false" mode="out-in" @enter="onModeEnter" @leave="onModeLeave">
               <!-- 详细信息模式 -->
               <div v-if="mode === 'details'" key="details" class="mode-details">
-                <div class="details-cover" data-layout-id="cover">
+                <div class="details-cover" data-flip-key="cover">
                   <img v-if="coverUrl" :src="coverUrl" alt="" />
                   <i v-else class="bi bi-disc-fill cover-fallback"></i>
                 </div>
-                <div class="details-info" data-layout-id="meta">
+                <div class="details-info" data-flip-key="meta">
                   <h2 class="details-title">{{ currentTrack.title }}</h2>
                   <p class="details-artist">{{ currentTrack.artist }}</p>
                   <p v-if="currentTrack.albumTitle" class="details-album">专辑：{{ currentTrack.albumTitle }}</p>
@@ -79,17 +79,17 @@
                 <!-- 专辑大图 portal（真共享 DOM 容器） -->
                 <div class="cover-section">
                   <img v-if="coverUrl" :src="coverUrl" class="cover-glow" aria-hidden="true" alt="" />
-                  <div ref="coverPortal" class="cover-portal" data-layout-id="cover"></div>
+                  <div ref="coverPortal" class="cover-portal" data-flip-key="cover"></div>
                 </div>
                 <!-- 音乐信息 bar portal（真共享 DOM 容器） + 三点 icon -->
-                <div class="track-meta-bar" data-layout-id="meta">
+                <div class="track-meta-bar" data-flip-key="meta">
                   <div ref="metaPortal" class="meta-portal track-meta-info"></div>
                   <button class="meta-more-btn" @click="showTrackActionsSheet = true" title="操作">
                     <i class="bi bi-three-dots"></i>
                   </button>
                 </div>
                 <!-- 进度条 + 控制按钮 + 功能控件 -->
-                <div class="regular-controls" data-layout-id="controls">
+                <div class="regular-controls" data-flip-key="controls">
                   <div class="progress-area">
                     <span class="time-label">{{ formattedCurrentTime }}</span>
                     <div class="progress-bar"
@@ -153,7 +153,7 @@
                   </div>
                 </div>
                 <!-- 歌词渲染 -->
-                <div class="lyrics-render-area" data-layout-id="lyrics">
+                <div class="lyrics-render-area" data-flip-key="lyrics">
                   <transition :css="false" mode="out-in" @enter="onLyricsEnter" @leave="onLyricsLeave">
                     <div v-if="hasLyrics" class="lyrics-wrapper" :key="'sync-' + currentTrack.id">
                       <LyricPlayer
@@ -216,18 +216,18 @@
           <!-- 桌面端 — AMLL horizontalLayout grid 风格 -->
           <div v-show="isDesktop" class="mode-content desktop-mode" :class="`desktop-grid-${mode}`">
             <!-- 左侧：封面 + 信息 + 控件（grid 左列，info 模式居中放大） -->
-            <div ref="desktopLeft" class="desktop-left" data-layout-id="left-panel">
+            <div ref="desktopLeft" class="desktop-left" data-flip-key="left-panel">
               <div class="cover-section">
                 <img v-if="coverUrl" :src="coverUrl" class="cover-glow" aria-hidden="true" alt="" />
-                <div ref="coverPortalDesktop" class="cover-portal" data-layout-id="cover"></div>
+                <div ref="coverPortalDesktop" class="cover-portal" data-flip-key="cover"></div>
               </div>
-              <div class="track-meta-bar" data-layout-id="meta">
+              <div class="track-meta-bar" data-flip-key="meta">
                 <div ref="metaPortalDesktop" class="meta-portal track-meta-info"></div>
                 <button class="meta-more-btn" @click="showTrackActionsSheet = true" title="操作">
                   <i class="bi bi-three-dots"></i>
                 </button>
               </div>
-              <div class="regular-controls" data-layout-id="controls">
+              <div class="regular-controls" data-flip-key="controls">
                 <div class="progress-area">
                   <span class="time-label">{{ formattedCurrentTime }}</span>
                   <div class="progress-bar"
@@ -286,7 +286,7 @@
             </div>
 
             <!-- 右侧：歌词 / 歌单（grid 右列，info 模式时不存在） -->
-            <div v-if="mode !== 'info'" class="desktop-right" :class="`desktop-right-${mode}`" data-layout-id="right-panel">
+            <div v-if="mode !== 'info'" class="desktop-right" :class="`desktop-right-${mode}`" data-flip-key="right-panel">
               <transition :css="false" mode="out-in" @enter="onModeEnter" @leave="onModeLeave">
                 <div v-if="mode === 'lyrics'" key="lyrics" class="desktop-lyrics-inner">
                   <transition :css="false" mode="out-in" @enter="onLyricsEnter" @leave="onLyricsLeave">
@@ -653,11 +653,23 @@ async function playEnter() {
   if (!rootRef.value) return
 
   // 模态进入：从底部滑入 + 淡入
+  // 注意：opacity 必须在 onComplete 中强制设为 1，防止 createLayout FLIP
+  // 或其他动画管线将 opacity 重置为 0
+  rootRef.value.style.opacity = '0'
+  rootRef.value.style.transform = 'translateY(100%)'
+
+  // 使用 requestAnimationFrame 确保浏览器先渲染初始状态
+  await new Promise(r => requestAnimationFrame(r))
+
   animate(rootRef.value, {
     opacity: [0, 1],
     translateY: ['100%', 0],
     duration: 500,
     ease: ANIME_SPRINGS.powerful,
+    onComplete: () => {
+      // 强制清除内联 opacity，防止后续 FLIP 动画读到 0
+      if (rootRef.value) rootRef.value.style.opacity = '1'
+    },
   })
 
   // 等待 portal 容器渲染
@@ -724,6 +736,12 @@ async function playExit() {
   })
 
   await Promise.all([flipDone, slideDone])
+
+  // 退出完成后清除内联样式，防止下次进入时残留
+  if (rootRef.value) {
+    rootRef.value.style.opacity = ''
+    rootRef.value.style.transform = ''
+  }
 }
 
 // ── transition hooks ──
@@ -871,18 +889,24 @@ function swipeUpAction() {
 }
 
 // ── cross-mode createLayout FLIP（仅桌面端模式切换）──
-// 使用 anime.js v4 createLayout + data-layout-id 实现桌面端模式切换的
+// 使用 anime.js v4 createLayout + data-flip-key 实现桌面端模式切换的
 // grid 布局变化 FLIP 动画（info ↔ lyrics ↔ playlist）。
-// 注意：跨设备切换（mobile ↔ desktop）不使用 FLIP，因为 v-show 会导致
-// display:none 元素无法测量位置，引发 anime.js 挂起/卡死。
+// 注意：
+//  1. 跨设备切换（mobile ↔ desktop）不使用 FLIP，因为 v-show 会导致
+//     display:none 元素无法测量位置，引发 anime.js 挂起/卡死。
+//  2. 使用 data-flip-key（而非 data-layout-id）避免匹配 createLayout
+//     自动生成的 data-layout-id="node-XXX" 标签，防止 FLIP 跑在所有元素上。
 const deviceLayout = useLayout(
   () => playerBodyRef.value,
   {
-    children: '[data-layout-id]',
+    children: '[data-flip-key]',
     duration: 600,
     ease: ANIME_SPRINGS.powerful,
   }
 )
+
+// 挂载守卫：首次 onMounted 后跳过一次 watch(mode) 的 FLIP，避免与 playEnter 冲突
+let skipNextModeFlip = true
 
 // 设备切换：仅重建 draggable，不执行 FLIP（避免 v-show display:none 卡死）
 watch(isDesktop, async () => {
@@ -895,6 +919,10 @@ watch(isDesktop, async () => {
 watch(mode, async (newMode, oldMode) => {
   if (!isDesktop.value) return // 移动端模式切换由 <transition> 处理
   if (newMode === oldMode) return
+  if (skipNextModeFlip) {
+    skipNextModeFlip = false
+    return
+  }
   deviceLayout.record()
   await nextTick()
   deviceLayout.animate()
