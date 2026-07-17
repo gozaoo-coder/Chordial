@@ -925,7 +925,6 @@ watch(() => currentTrack.value?.id, (newId) => {
   background: #0b0b0e;
   outline: none;
   overflow: hidden;
-  opacity: 0;
 }
 
 /* ── background ── */
