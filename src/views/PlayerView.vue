@@ -216,7 +216,7 @@
           <!-- 桌面端 — AMLL horizontalLayout grid 风格 -->
           <div v-show="isDesktop" class="mode-content desktop-mode" :class="`desktop-grid-${mode}`">
             <!-- 左侧：封面 + 信息 + 控件（grid 左列，info 模式居中放大） -->
-            <div class="desktop-left" data-layout-id="left-panel">
+            <div ref="desktopLeft" class="desktop-left" data-layout-id="left-panel">
               <div class="cover-section">
                 <img v-if="coverUrl" :src="coverUrl" class="cover-glow" aria-hidden="true" alt="" />
                 <div ref="coverPortalDesktop" class="cover-portal" data-layout-id="cover"></div>
@@ -423,6 +423,7 @@ const { log } = usePerf('PlayerView')
 
 const rootRef = useTemplateRef('root')
 const playerBodyRef = useTemplateRef('playerBody')
+const desktopLeftRef = useTemplateRef('desktopLeft')
 const playlistContainerRef = useTemplateRef('playlistContainer')
 const coverPortalRef = useTemplateRef('coverPortal')
 const coverPortalDesktopRef = useTemplateRef('coverPortalDesktop')
@@ -803,15 +804,22 @@ watch(isPlaying, (playing) => {
 })
 
 // ── draggable 手势 (左右滑模式切换 + 上滑歌单 + 下滑退出) ──
+// 仅桌面端 .desktop-left 可拖动；移动端由 <transition> + CSS 处理模式切换
 let dragInstance = null
 let lastDragX = 0
 let lastDragY = 0
 const SWIPE_THRESHOLD = 60 // 最小滑动距离 (px)
 
 function setupDraggable() {
-  if (!playerBodyRef.value || !rootRef.value) return
+  // 先销毁旧实例，避免设备切换后残留
+  if (dragInstance) {
+    dragInstance.revert()
+    dragInstance = null
+  }
+  // 仅桌面端创建 draggable，目标为 .desktop-left
+  if (!isDesktop.value || !desktopLeftRef.value || !rootRef.value) return
   run(({ createDraggable }) => {
-    dragInstance = createDraggable(playerBodyRef.value, {
+    dragInstance = createDraggable(desktopLeftRef.value, {
       container: rootRef.value,   // 限制在 player-view 内，防止拖出边界
       x: true,
       y: true,
@@ -862,12 +870,11 @@ function swipeUpAction() {
   else setMode('lyrics')
 }
 
-// ── cross-device + cross-mode createLayout FLIP ──
-// 使用 anime.js v4 createLayout + data-layout-id 实现：
-//  1. 跨设备切换（移动端 ↔ 桌面端）的父元素交换动画
-//  2. 桌面端模式切换（info ↔ lyrics ↔ playlist）的 grid 布局变化 FLIP 动画
-// 共享组件（封面/元信息/控件/歌词/左右面板）标记 data-layout-id，
-// v-show / v-if 切换时 createLayout 自动检测配对元素并 FLIP 动画。
+// ── cross-mode createLayout FLIP（仅桌面端模式切换）──
+// 使用 anime.js v4 createLayout + data-layout-id 实现桌面端模式切换的
+// grid 布局变化 FLIP 动画（info ↔ lyrics ↔ playlist）。
+// 注意：跨设备切换（mobile ↔ desktop）不使用 FLIP，因为 v-show 会导致
+// display:none 元素无法测量位置，引发 anime.js 挂起/卡死。
 const deviceLayout = useLayout(
   () => playerBodyRef.value,
   {
@@ -877,11 +884,10 @@ const deviceLayout = useLayout(
   }
 )
 
-// 设备切换：record() 记录旧布局 → nextTick 等 Vue 更新 v-show → animate() FLIP
+// 设备切换：仅重建 draggable，不执行 FLIP（避免 v-show display:none 卡死）
 watch(isDesktop, async () => {
-  deviceLayout.record()
   await nextTick()
-  deviceLayout.animate()
+  setupDraggable()
 })
 
 // 桌面端模式切换：info(单列居中) ↔ lyrics/playlist(双列) 时，
@@ -906,8 +912,11 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   endSeek()
-  // createDraggable 由 useAnime 的 onScopeDispose 自动 revert，无需手动清理
-  dragInstance = null
+  // 手动 revert draggable，避免设备切换后残留旧实例
+  if (dragInstance) {
+    dragInstance.revert()
+    dragInstance = null
+  }
 })
 
 // 曲目切换 → 背景 key 递增
@@ -1301,6 +1310,7 @@ watch(() => currentTrack.value?.id, (newId) => {
   display: flex; flex-direction: column;
   /* align-items: stretch 让子项水平撑满，cover-section 有显式宽度不受影响 */
   justify-content: center; gap: 14px; min-width: 0; height: 100%;
+  touch-action: none; /* createDraggable 手势区域，禁止浏览器默认触摸行为 */
 }
 .desktop-left .cover-art { width: 100%; }
 .desktop-left .regular-controls { width: 100%; max-width: 420px; }
