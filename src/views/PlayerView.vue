@@ -78,6 +78,7 @@
                 </div>
                 <!-- 专辑大图 portal（真共享 DOM 容器） -->
                 <div class="cover-section">
+                  <img v-if="coverUrl" :src="coverUrl" class="cover-glow" aria-hidden="true" alt="" />
                   <div ref="coverPortal" class="cover-portal" data-layout-id="cover"></div>
                 </div>
                 <!-- 音乐信息 bar portal（真共享 DOM 容器） + 三点 icon -->
@@ -217,6 +218,7 @@
             <!-- 左侧：常规控件（始终显示） -->
             <div class="desktop-left">
               <div class="cover-section">
+                <img v-if="coverUrl" :src="coverUrl" class="cover-glow" aria-hidden="true" alt="" />
                 <div ref="coverPortalDesktop" class="cover-portal" data-layout-id="cover"></div>
               </div>
               <div class="track-meta-bar" data-layout-id="meta">
@@ -785,6 +787,19 @@ watch(isImmersive, (immersive) => {
   }
 })
 
+// ── 播放按钮微脉冲 ──
+// 每次切换到播放状态时给主播放按钮一个弹跳缩放反馈
+watch(isPlaying, (playing) => {
+  if (!playing) return
+  const btn = playerBodyRef.value?.querySelector('.ctrl-play')
+  if (!btn) return
+  animate(btn, {
+    scale: [1.12, 1],
+    duration: 320,
+    ease: ANIME_SPRINGS.bouncy,
+  })
+})
+
 // ── draggable 手势 (左右滑模式切换 + 上滑歌单 + 下滑退出) ──
 let dragInstance = null
 let lastDragX = 0
@@ -1002,6 +1017,26 @@ watch(() => currentTrack.value?.id, (newId) => {
 .swipe-hint i { font-size: 0.625rem; }
 .cover-section {
   flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+  position: relative; z-index: 0;
+}
+.cover-glow {
+  position: absolute;
+  top: 8%; left: 8%; width: 84%; height: 84%;
+  object-fit: cover;
+  border-radius: var(--radius-lg, 12px);
+  filter: blur(32px) brightness(0.65) saturate(1.4);
+  opacity: 0.5;
+  transform: scale(1.15);
+  pointer-events: none;
+  z-index: -1;
+  animation: coverGlowBreathe 5s ease-in-out infinite alternate;
+}
+@keyframes coverGlowBreathe {
+  from { opacity: 0.42; transform: scale(1.12); }
+  to { opacity: 0.62; transform: scale(1.24); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cover-glow { animation: none; opacity: 0.5; transform: scale(1.15); }
 }
 .cover-art {
   width: min(48vw, 240px); aspect-ratio: 1;
@@ -1108,38 +1143,42 @@ watch(() => currentTrack.value?.id, (newId) => {
   display: flex; align-items: center; gap: 12px; width: 100%;
 }
 .time-label {
-  font-size: 0.6875rem; color: rgba(255,255,255,0.35);
+  font-size: 0.6875rem; color: rgba(255,255,255,0.5);
   font-variant-numeric: tabular-nums; min-width: 34px; text-align: center;
   user-select: none; flex-shrink: 0;
 }
 .time-remaining { min-width: 40px; }
 .progress-bar {
-  flex: 1; height: 3px; position: relative; cursor: pointer;
-  padding: 6px 0; margin: -6px 0;
+  flex: 1; height: 4px; position: relative; cursor: pointer;
+  padding: 8px 0; margin: -8px 0;
 }
 .progress-bg {
   position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
-  height: 3px; background: rgba(255,255,255,0.15); border-radius: 2px;
-  transition: height 0.15s;
+  height: 4px; background: rgba(255,255,255,0.18); border-radius: 2px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.25);
+  transition: height 0.2s;
 }
 .progress-fill {
   position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-  height: 3px; background: rgba(255,255,255,0.85); border-radius: 2px;
-  pointer-events: none; transition: height 0.15s;
+  height: 4px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.95), rgba(255,255,255,0.72));
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(255,255,255,0.35);
+  pointer-events: none; transition: height 0.2s;
 }
 .progress-knob {
-  position: absolute; top: 50%; width: 10px; height: 10px;
+  position: absolute; top: 50%; width: 12px; height: 12px;
   background: #fff; border-radius: 50%; transform: translate(-50%, -50%);
   opacity: 0; pointer-events: none;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-  transition: opacity 0.12s;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.45), 0 0 0 4px rgba(255,255,255,0.08);
+  transition: opacity 0.15s, transform 0.15s;
 }
 .progress-bar:hover .progress-bg,
-.progress-bar:active .progress-bg { height: 5px; }
+.progress-bar:active .progress-bg { height: 6px; }
 .progress-bar:hover .progress-fill,
-.progress-bar:active .progress-fill { height: 5px; }
+.progress-bar:active .progress-fill { height: 6px; }
 .progress-bar:hover .progress-knob,
-.progress-bar:active .progress-knob { opacity: 1; }
+.progress-bar:active .progress-knob { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
 
 .btn-row { display: flex; align-items: center; gap: 18px; }
 .ctrl-btn {
@@ -1153,9 +1192,11 @@ watch(() => currentTrack.value?.id, (newId) => {
 .ctrl-btn:active { transform: scale(0.9); }
 .ctrl-btn.on { color: var(--primary-color, #0A84FF); }
 .ctrl-play {
-  font-size: 2.5rem; width: 50px; height: 50px; color: rgba(255,255,255,0.9);
+  font-size: 2.5rem; width: 50px; height: 50px; color: #fff;
+  filter: drop-shadow(0 0 14px rgba(255,255,255,0.22));
+  transition: color 0.15s, transform 0.1s, filter 0.2s;
 }
-.ctrl-play:hover { color: #fff; background: none; transform: scale(1.06); }
+.ctrl-play:hover { color: #fff; background: none; transform: scale(1.08); filter: drop-shadow(0 0 20px rgba(255,255,255,0.35)); }
 .ctrl-play:active { transform: scale(0.93); }
 
 /* ── widget row (5 function widgets) ── */
@@ -1202,16 +1243,21 @@ watch(() => currentTrack.value?.id, (newId) => {
 }
 .lyrics-wrapper {
   width: 100%; height: 100%;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 6%, black 94%, transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0%, black 6%, black 94%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%);
 }
-.lyrics-wrapper :deep(.amll-lyric-player) { width: 100%; height: 100%; }
-.plain-lyrics { max-height: 100%; overflow-y: auto; text-align: center; padding: 8px 0; }
+.lyrics-wrapper :deep(.amll-lyric-player) {
+  width: 100%; height: 100%;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.35);
+}
+.plain-lyrics { max-height: 100%; overflow-y: auto; text-align: center; padding: 12px 0; }
 .plain-line {
-  padding: 4px 0; font-size: 0.9375rem; color: rgba(255,255,255,0.5);
-  line-height: 1.8; white-space: pre-wrap; word-break: break-word; margin: 0;
+  padding: 6px 0; font-size: 1rem; color: rgba(255,255,255,0.45);
+  line-height: 2; white-space: pre-wrap; word-break: break-word; margin: 0;
+  transition: color 0.2s;
 }
-.no-lyrics { font-size: 0.9375rem; color: rgba(255,255,255,0.18); user-select: none; }
+.plain-line:hover { color: rgba(255,255,255,0.75); }
+.no-lyrics { font-size: 0.9375rem; color: rgba(255,255,255,0.22); user-select: none; text-shadow: 0 1px 4px rgba(0,0,0,0.3); }
 
 /* ── desktop mode ── */
 .desktop-mode {
@@ -1277,7 +1323,7 @@ watch(() => currentTrack.value?.id, (newId) => {
   transition: color 0.15s, background 0.15s;
 }
 .switch-btn:hover { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.06); }
-.switch-btn.active { color: rgba(255,255,255,0.95); background: rgba(255,255,255,0.12); }
+.switch-btn.active { color: rgba(255,255,255,0.98); background: rgba(255,255,255,0.14); box-shadow: 0 0 18px rgba(255,255,255,0.08); }
 .switch-btn i { font-size: 0.9375rem; }
 
 /* ── immersive mode ── */

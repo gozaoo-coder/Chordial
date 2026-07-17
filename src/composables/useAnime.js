@@ -71,11 +71,38 @@ export function useAnime(rootRefGetter) {
   // 跟踪通过 useLayout 创建的 AutoLayout 实例
   const layouts = new Set();
 
+  const resolveRoot = () => {
+    if (scope) return scope.root;
+    return typeof rootRefGetter === 'function' ? rootRefGetter() : rootRefGetter;
+  };
+
   const ensureScope = () => {
     if (scope) return scope;
-    const root = typeof rootRefGetter === 'function' ? rootRefGetter() : rootRefGetter;
+    const root = resolveRoot();
     scope = createScope(root ? { root } : undefined);
     return scope;
+  };
+
+  /**
+   * 安全包装： anime.js v4 在目标不存在时会抛出 "No target found" 警告。
+   * 对字符串选择器、NodeList、数组或 null 元素提前跳过，避免组件在 v-if/teleport
+   * 等 DOM 未就绪时误触发错误。
+   */
+  const hasTargets = (target) => {
+    if (!target) return false;
+    if (target instanceof NodeList) return target.length > 0;
+    if (Array.isArray(target)) return target.length > 0 && target.some((t) => t);
+    if (typeof target === 'string') {
+      const root = resolveRoot();
+      const container = root instanceof Element ? root : document;
+      return !!container.querySelector(target);
+    }
+    return true;
+  };
+
+  const safeAnimate = (target, params) => {
+    if (!hasTargets(target)) return;
+    return animeAnimate(target, params);
   };
 
   /**
@@ -86,7 +113,7 @@ export function useAnime(rootRefGetter) {
     const s = ensureScope();
     s.add(() =>
       factory({
-        animate: animeAnimate,
+        animate: safeAnimate,
         stagger: animeStagger,
         createTimeline,
         createAnimatable,
@@ -198,7 +225,7 @@ export function useAnime(rootRefGetter) {
   return {
     run,
     // 直接暴露（用于 <transition> JS hook 等无法放入 factory 的场景）
-    animate: animeAnimate,
+    animate: safeAnimate,
     stagger: animeStagger,
     createTimeline,
     createAnimatable,
