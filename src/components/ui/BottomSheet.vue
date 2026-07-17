@@ -349,7 +349,7 @@ defineExpose({
     >
       <div
         ref="sheet"
-        class="bs-sheet clean-card"
+        class="bs-sheet"
         :class="[
           `bs-sheet--${currentDetent}`,
           { 'bs-sheet--desktop': isDesktop },
@@ -405,15 +405,14 @@ defineExpose({
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  /* 修复：动画过程中底部边缘溢出 — 裁剪超出视口的 sheet 部分 */
   overflow: hidden;
 }
 
 .bs-sheet {
   width: 100%;
   max-width: 480px;
-  background: var(--bg-50);
-  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -448,7 +447,7 @@ defineExpose({
 .bs-handle {
   width: 40px;
   height: 4px;
-  background: var(--bg-300);
+  background: var(--bg-tertiary);
   border-radius: var(--radius-full);
 }
 
@@ -472,9 +471,9 @@ defineExpose({
 }
 
 .bs-title {
-  font-size: var(--text-lg);
-  font-weight: var(--fw-bold);
-  color: var(--color-text);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -486,8 +485,8 @@ defineExpose({
   height: 32px;
   border-radius: 50%;
   border: none;
-  background: var(--bg-200);
-  color: var(--color-text-secondary);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -499,7 +498,7 @@ defineExpose({
 
 .bs-icon-btn:active {
   transform: scale(0.92);
-  background: var(--bg-300);
+  background: var(--bg-active);
 }
 
 .bs-close {
@@ -528,7 +527,7 @@ defineExpose({
   min-height: 320px;
   max-height: 90vh;
   height: 560px;
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-xl);
 }
 
 .bs-sheet--desktop.bs-sheet--large {
