@@ -13,6 +13,8 @@
   "dependencies": {
     "@applemusic-like-lyrics/core": "^0.2.0",
     "@applemusic-like-lyrics/lyric": "^0.3.0",
+    "@applemusic-like-lyrics/react": "^0.5.2",
+    "@applemusic-like-lyrics/react-full": "^0.4.2",
     "@applemusic-like-lyrics/vue": "^0.2.0",
     "@pixi/app": "^7.4.3",
     "@pixi/core": "^7.4.3",
@@ -29,15 +31,20 @@
     "@vueuse/core": "^14.3.0",
     "animejs": "^4.5.0",
     "bootstrap-icons": "^1.13.1",
+    "framer-motion": "^12.42.2",
+    "jotai": "^2.20.2",
     "jsqr": "^1.4.0",
     "jss": "^10.10.0",
     "jss-preset-default": "^10.10.0",
     "qrcode": "^1.5.4",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "vue": "^3.5.13",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@vitejs/plugin-react": "^4.7.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "vite": "^6.0.3"
   }
