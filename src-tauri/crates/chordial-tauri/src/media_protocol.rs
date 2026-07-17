@@ -9,7 +9,7 @@
 
 use chordial_core::module::music_source::registrar::SourceRegistrar;
 use chordial_core::media;
-use http::{Request, Response};
+use http::{header, HeaderValue, Request, Response};
 use std::sync::{Arc, OnceLock};
 use tauri::UriSchemeResponder;
 
@@ -24,8 +24,24 @@ pub fn init(registrar: Arc<SourceRegistrar>) {
 }
 
 /// 将 core 的 `http::Response<Vec<u8>>` 适配为 Tauri 期望的响应。
+///
+/// 注入 CORS 头：Tauri 自定义协议（`chordial://` / `http://chordial.localhost`）
+/// 没有中间件层，需在此手动添加。dev 模式下页面跑在 `http://localhost:1420`，
+/// 而 AMLL React 组件用 `fetch()` 加载封面用于 Pixi/WebGL 纹理，跨域会被拦截。
 fn to_tauri_response(response: Response<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
-    let (parts, body) = response.into_parts();
+    let (mut parts, body) = response.into_parts();
+    parts.headers.insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    parts.headers.insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, HEAD, OPTIONS"),
+    );
+    parts.headers.insert(
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("*"),
+    );
     tauri::http::Response::from_parts(parts, body)
 }
 
