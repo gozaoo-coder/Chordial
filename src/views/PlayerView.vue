@@ -213,10 +213,10 @@
             </nav>
           </div>
 
-          <!-- 桌面端 -->
-          <div v-show="isDesktop" class="mode-content desktop-mode">
-            <!-- 左侧：常规控件（始终显示） -->
-            <div class="desktop-left">
+          <!-- 桌面端 — AMLL horizontalLayout grid 风格 -->
+          <div v-show="isDesktop" class="mode-content desktop-mode" :class="`desktop-grid-${mode}`">
+            <!-- 左侧：封面 + 信息 + 控件（grid 左列，info 模式居中放大） -->
+            <div class="desktop-left" data-layout-id="left-panel">
               <div class="cover-section">
                 <img v-if="coverUrl" :src="coverUrl" class="cover-glow" aria-hidden="true" alt="" />
                 <div ref="coverPortalDesktop" class="cover-portal" data-layout-id="cover"></div>
@@ -227,7 +227,7 @@
                   <i class="bi bi-three-dots"></i>
                 </button>
               </div>
-              <div class="regular-controls" :class="{ 'desktop-centered': mode === 'info' }" data-layout-id="controls">
+              <div class="regular-controls" data-layout-id="controls">
                 <div class="progress-area">
                   <span class="time-label">{{ formattedCurrentTime }}</span>
                   <div class="progress-bar"
@@ -274,7 +274,7 @@
                   </button>
                 </div>
               </div>
-              <!-- 桌面端模式切换 bar（跟随 desktop-left 底部） -->
+              <!-- 桌面端模式切换 bar -->
               <nav class="mode-switch-bar immersive-hide">
                 <button v-for="m in modeOptions" :key="m.value"
                   class="switch-btn" :class="{ active: mode === m.value }"
@@ -285,47 +285,49 @@
               </nav>
             </div>
 
-            <!-- 右侧：歌词 / 歌单（info 模式时隐藏） -->
-            <transition :css="false" mode="out-in" @enter="onModeEnter" @leave="onModeLeave">
-              <div v-if="mode === 'lyrics'" key="lyrics" class="desktop-right desktop-lyrics" data-layout-id="lyrics">
-                <transition :css="false" mode="out-in" @enter="onLyricsEnter" @leave="onLyricsLeave">
-                  <div v-if="hasLyrics" class="lyrics-wrapper" :key="'sync-' + currentTrack.id">
-                    <LyricPlayer
-                      :lyric-lines="lyricLines"
-                      :current-time="currentTimeMs"
-                      :playing="isPlaying"
-                      align-anchor="center"
-                      :align-position="0.5"
-                      :enable-spring="true"
-                      :enable-blur="false"
-                      :enable-scale="true"
-                      :word-fade-width="0.5"
-                      :hide-passed-lines="false"
-                      @line-click="onLineClick"
-                    />
-                  </div>
-                  <div v-else-if="plainLyrics.length > 0" class="plain-lyrics" :key="'plain-' + currentTrack.id">
-                    <p v-for="(line, i) in plainLyrics" :key="i" class="plain-line">{{ line }}</p>
-                  </div>
-                  <div v-else class="no-lyrics" :key="'none-' + currentTrack.id">暂无歌词</div>
-                </transition>
-              </div>
-              <div v-else-if="mode === 'playlist'" key="playlist" class="desktop-right desktop-playlist">
-                <h3 class="playlist-title">播放列表</h3>
-                <div ref="playlistContainer" class="playlist-items" @scroll="onPlaylistScroll">
-                  <div class="playlist-items-inner" :style="{ height: playlistTotalHeight + 'px', position: 'relative' }">
-                    <div v-for="vis in visiblePlaylistItems" :key="vis.item.id"
-                      class="playlist-item" :class="{ active: vis.index === currentIndex }"
-                      :style="{ position: 'absolute', top: vis.offsetY + 'px', height: vis.height + 'px', left: 0, right: 0 }"
-                      @click="PlayerStore.play(vis.item)">
-                      <span class="playlist-item-title">{{ vis.item.title }}</span>
-                      <span class="playlist-item-artist">{{ vis.item.artist }}</span>
+            <!-- 右侧：歌词 / 歌单（grid 右列，info 模式时不存在） -->
+            <div v-if="mode !== 'info'" class="desktop-right" :class="`desktop-right-${mode}`" data-layout-id="right-panel">
+              <transition :css="false" mode="out-in" @enter="onModeEnter" @leave="onModeLeave">
+                <div v-if="mode === 'lyrics'" key="lyrics" class="desktop-lyrics-inner">
+                  <transition :css="false" mode="out-in" @enter="onLyricsEnter" @leave="onLyricsLeave">
+                    <div v-if="hasLyrics" class="lyrics-wrapper" :key="'sync-' + currentTrack.id">
+                      <LyricPlayer
+                        :lyric-lines="lyricLines"
+                        :current-time="currentTimeMs"
+                        :playing="isPlaying"
+                        align-anchor="center"
+                        :align-position="0.5"
+                        :enable-spring="true"
+                        :enable-blur="false"
+                        :enable-scale="true"
+                        :word-fade-width="0.5"
+                        :hide-passed-lines="false"
+                        @line-click="onLineClick"
+                      />
                     </div>
-                  </div>
-                  <div v-if="playlist.length === 0" class="playlist-empty">播放列表为空</div>
+                    <div v-else-if="plainLyrics.length > 0" class="plain-lyrics" :key="'plain-' + currentTrack.id">
+                      <p v-for="(line, i) in plainLyrics" :key="i" class="plain-line">{{ line }}</p>
+                    </div>
+                    <div v-else class="no-lyrics" :key="'none-' + currentTrack.id">暂无歌词</div>
+                  </transition>
                 </div>
-              </div>
-            </transition>
+                <div v-else-if="mode === 'playlist'" key="playlist" class="desktop-playlist-inner">
+                  <h3 class="playlist-title">播放列表</h3>
+                  <div ref="playlistContainer" class="playlist-items" @scroll="onPlaylistScroll">
+                    <div class="playlist-items-inner" :style="{ height: playlistTotalHeight + 'px', position: 'relative' }">
+                      <div v-for="vis in visiblePlaylistItems" :key="vis.item.id"
+                        class="playlist-item" :class="{ active: vis.index === currentIndex }"
+                        :style="{ position: 'absolute', top: vis.offsetY + 'px', height: vis.height + 'px', left: 0, right: 0 }"
+                        @click="PlayerStore.play(vis.item)">
+                        <span class="playlist-item-title">{{ vis.item.title }}</span>
+                        <span class="playlist-item-artist">{{ vis.item.artist }}</span>
+                      </div>
+                    </div>
+                    <div v-if="playlist.length === 0" class="playlist-empty">播放列表为空</div>
+                  </div>
+                </div>
+              </transition>
+            </div>
           </div>
         </template>
       </div>
@@ -860,10 +862,12 @@ function swipeUpAction() {
   else setMode('lyrics')
 }
 
-// ── cross-device createLayout FLIP ──
-// 使用 anime.js v4 createLayout + data-layout-id 实现跨设备模式切换的父元素交换动画。
-// 移动端和桌面端共享组件（封面/元信息/控件/歌词）标记 data-layout-id，
-// v-show 切换 display 时 createLayout 自动检测配对元素并 FLIP 动画。
+// ── cross-device + cross-mode createLayout FLIP ──
+// 使用 anime.js v4 createLayout + data-layout-id 实现：
+//  1. 跨设备切换（移动端 ↔ 桌面端）的父元素交换动画
+//  2. 桌面端模式切换（info ↔ lyrics ↔ playlist）的 grid 布局变化 FLIP 动画
+// 共享组件（封面/元信息/控件/歌词/左右面板）标记 data-layout-id，
+// v-show / v-if 切换时 createLayout 自动检测配对元素并 FLIP 动画。
 const deviceLayout = useLayout(
   () => playerBodyRef.value,
   {
@@ -875,6 +879,16 @@ const deviceLayout = useLayout(
 
 // 设备切换：record() 记录旧布局 → nextTick 等 Vue 更新 v-show → animate() FLIP
 watch(isDesktop, async () => {
+  deviceLayout.record()
+  await nextTick()
+  deviceLayout.animate()
+})
+
+// 桌面端模式切换：info(单列居中) ↔ lyrics/playlist(双列) 时，
+// 左侧封面/控件位置和大小变化，右侧面板增删，用 FLIP 平滑过渡
+watch(mode, async (newMode, oldMode) => {
+  if (!isDesktop.value) return // 移动端模式切换由 <transition> 处理
+  if (newMode === oldMode) return
   deviceLayout.record()
   await nextTick()
   deviceLayout.animate()
@@ -1259,25 +1273,52 @@ watch(() => currentTrack.value?.id, (newId) => {
 .plain-line:hover { color: rgba(255,255,255,0.75); }
 .no-lyrics { font-size: 0.9375rem; color: rgba(255,255,255,0.22); user-select: none; text-shadow: 0 1px 4px rgba(0,0,0,0.3); }
 
-/* ── desktop mode ── */
+/* ── desktop mode — AMLL horizontalLayout grid 风格 ── */
 .desktop-mode {
-  flex-direction: row; gap: 32px;
+  display: grid;
+  gap: 40px;
+  align-items: center;
 }
+/* info 模式：单列居中，封面放大 */
+.desktop-grid-info {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+.desktop-grid-info .desktop-left {
+  max-width: 520px; width: 100%; align-items: center;
+}
+.desktop-grid-info .cover-section { width: min(40vw, 420px); }
+/* lyrics / playlist 模式：双列 grid */
+.desktop-grid-lyrics,
+.desktop-grid-playlist {
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.3fr);
+}
+.desktop-grid-lyrics .cover-section,
+.desktop-grid-playlist .cover-section { width: min(28vw, 320px); }
+
 .desktop-left {
-  flex: 1; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 12px; min-width: 0;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 14px; min-width: 0; height: 100%;
 }
-.desktop-left .cover-section { width: min(30vw, 320px); }
 .desktop-left .cover-art { width: 100%; }
-.desktop-centered { max-width: 480px; }
+.desktop-left .regular-controls { width: 100%; max-width: 420px; }
 
 .desktop-right {
-  flex: 1; min-width: 0; height: 100%;
+  min-width: 0; height: 100%;
   display: flex; flex-direction: column;
-  background: rgba(255,255,255,0.03); border-radius: 16px; padding: 16px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 18px; padding: 20px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.04);
+  backdrop-filter: blur(8px);
 }
-.desktop-lyrics .lyrics-wrapper {
+.desktop-lyrics-inner,
+.desktop-playlist-inner {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+}
+.desktop-lyrics-inner .lyrics-wrapper {
   -webkit-mask-image: none; mask-image: none;
+  flex: 1; min-height: 0;
 }
 
 /* ── playlist ── */
