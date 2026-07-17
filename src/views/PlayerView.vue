@@ -1022,6 +1022,7 @@ watch(() => currentTrack.value?.id, (newId) => {
   flex: 1; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 12px; min-height: 0;
 }
+.mode-regular .cover-section { width: min(50vw, 280px); }
 .swipe-hint {
   display: flex; align-items: center; gap: 6px;
   font-size: 0.6875rem; color: rgba(255,255,255,0.25);
@@ -1101,16 +1102,17 @@ watch(() => currentTrack.value?.id, (newId) => {
   width: 100%;
   aspect-ratio: 1 / 1;
   display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
 .cover-portal:empty { display: none; }
-/* teleport 过来的 .album-cover-thumb 填充 portal */
-.cover-portal .album-cover-thumb {
+/* :deep() 穿透 scoped 边界，覆盖 teleport 元素的缩略图尺寸 */
+.cover-portal :deep(.album-cover-thumb) {
   width: 100% !important;
   height: 100% !important;
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
-.cover-portal .album-cover-thumb img {
+.cover-portal :deep(.album-cover-thumb img) {
   width: 100%; height: 100%; object-fit: cover;
 }
 
@@ -1276,7 +1278,7 @@ watch(() => currentTrack.value?.id, (newId) => {
 .desktop-mode {
   display: grid;
   gap: 40px;
-  align-items: center;
+  /* align-items 默认 stretch，让 grid 子项填满行高 */
 }
 /* info 模式：单列居中，封面放大 */
 .desktop-grid-info {
@@ -1284,7 +1286,7 @@ watch(() => currentTrack.value?.id, (newId) => {
   justify-items: center;
 }
 .desktop-grid-info .desktop-left {
-  max-width: 520px; width: 100%; align-items: center;
+  max-width: 520px; width: 100%;
 }
 .desktop-grid-info .cover-section { width: min(40vw, 420px); }
 /* lyrics / playlist 模式：双列 grid */
@@ -1296,7 +1298,8 @@ watch(() => currentTrack.value?.id, (newId) => {
 .desktop-grid-playlist .cover-section { width: min(28vw, 320px); }
 
 .desktop-left {
-  display: flex; flex-direction: column; align-items: center;
+  display: flex; flex-direction: column;
+  /* align-items: stretch 让子项水平撑满，cover-section 有显式宽度不受影响 */
   justify-content: center; gap: 14px; min-width: 0; height: 100%;
 }
 .desktop-left .cover-art { width: 100%; }
