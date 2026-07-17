@@ -810,7 +810,15 @@ export const PlayerStore = {
   ...actions,
 
   // 播放模式枚举
-  PlayMode
+  PlayMode,
+
+  // ── 原始资源访问器（不进入响应式系统）──────────────────────────
+  // 供音频分析器等需要直接操作 HTMLAudioElement 的模块使用。
+  // 之所以走 getter 而非 state：避免 Vue 对 HTMLAudioElement 做深代理，
+  // 同时绕过 readonly 限制，让消费者能拿到真实节点。
+  getAudioElement() {
+    return state.audioElement;
+  },
 };
 
 // 默认导出

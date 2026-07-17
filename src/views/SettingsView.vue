@@ -10,6 +10,10 @@
         <i class="bi bi-broadcast"></i>
         <span>P2P 资源共享</span>
       </router-link>
+      <router-link :to="{ name: 'SettingsLyrics' }" class="nav-item" active-class="active">
+        <i class="bi bi-music-note-list"></i>
+        <span>歌词与播放器</span>
+      </router-link>
       <router-link :to="{ name: 'SettingsIndex' }" class="nav-item" active-class="active">
         <i class="bi bi-house"></i>
         <span>设置首页</span>

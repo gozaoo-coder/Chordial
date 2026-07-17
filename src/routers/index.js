@@ -12,6 +12,7 @@ const TrackDetail = () => import('../views/TrackDetail.vue')
 const SettingsView = () => import('../views/SettingsView.vue')
 const GeneralSettingsView = () => import('../views/settings/GeneralSettingsView.vue')
 const P2pSettingsView = () => import('../views/settings/P2pSettingsView.vue')
+const LyricsSettingsView = () => import('../views/settings/LyricsSettingsView.vue')
 const TestPage = () => import('../views/TestPage.vue')
 
 // 定义路由
@@ -90,6 +91,12 @@ const routes = [
         name: 'SettingsP2p',
         component: P2pSettingsView,
         meta: { title: 'P2P 资源共享' }
+      },
+      {
+        path: 'lyrics',
+        name: 'SettingsLyrics',
+        component: LyricsSettingsView,
+        meta: { title: '歌词与播放器' }
       }
     ]
   },

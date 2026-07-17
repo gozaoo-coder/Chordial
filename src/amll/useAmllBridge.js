@@ -3,10 +3,13 @@
  *
  * 核心设计：
  *  1. 创建 Jotai store 作为 Vue ↔ React 通信层
- *  2. Vue watchers 将 PlayerStore 状态推送到 Jotai atoms（单向）
- *  3. Jotai store.sub 监听 shuffle/repeat 变化回写 Vue（反向，用于 UI 按钮）
- *  4. 回调 atoms 一次性绑定到 PlayerStore actions
- *  5. 配置 atoms 一次性设置默认值
+ *  2. 应用 AmllSettingsStore 持久化配置（首次启动从 localStorage 读取）
+ *  3. 反向绑定 Jotai → AmllSettingsStore，使设置页改 atom 时自动落盘
+ *  4. Vue watchers 将 PlayerStore 状态推送到 Jotai atoms（单向）
+ *  5. Jotai store.sub 监听 shuffle/repeat 变化回写 Vue（反向）
+ *  6. 回调 atoms 一次性绑定到 PlayerStore actions
+ *  7. 启动音频分析器，把 lowFreqVolume / fftData 实时推给 Jotai，
+ *     驱动 AMLL 流体背景随音乐跳动
  *
  * 时间单位：AMLL 使用毫秒，PlayerStore 使用秒，桥接层负责转换。
  */
@@ -17,28 +20,64 @@ import {
 	musicIdAtom, musicNameAtom, musicArtistsAtom, musicAlbumNameAtom,
 	musicCoverAtom, musicCoverIsVideoAtom, musicDurationAtom,
 	musicPlayingAtom, musicPlayingPositionAtom, musicVolumeAtom,
-	musicLyricLinesAtom, lowFreqVolumeAtom,
+	musicLyricLinesAtom, lowFreqVolumeAtom, fftDataAtom,
 	// 回调 atoms
 	onPlayOrResumeAtom, onRequestPrevSongAtom, onRequestNextSongAtom,
 	onSeekPositionAtom, onChangeVolumeAtom,
 	onRequestOpenMenuAtom, onClickControlThumbAtom,
 	// 控制 atoms
 	repeatModeAtom, isShuffleActiveAtom, isShuffleEnabledAtom, isRepeatEnabledAtom,
-	// 配置 atoms
+	// 配置 atoms（需要在 AmllSettingsStore.apply / .bind 中使用）
 	enableLyricLineBlurEffectAtom, enableLyricLineScaleEffectAtom,
 	enableLyricLineSpringAnimationAtom, enableLyricTranslationLineAtom,
-	enableLyricRomanLineAtom, lyricWordFadeWidthAtom,
+	enableLyricRomanLineAtom, enableLyricSwapTransRomanLineAtom,
+	lyricWordFadeWidthAtom, lyricFontFamilyAtom, lyricFontWeightAtom,
+	lyricLetterSpacingAtom, lyricSizePresetAtom,
+	lyricBackgroundFPSAtom, lyricBackgroundRenderScaleAtom,
+	lyricBackgroundStaticModeAtom, cssBackgroundPropertyAtom,
 	showMusicNameAtom, showMusicArtistsAtom, showMusicAlbumAtom,
 	showVolumeControlAtom, showBottomControlAtom, showRemainingTimeAtom,
-	isLyricPageOpenedAtom, hideLyricViewAtom,
-	verticalCoverLayoutAtom, lyricBackgroundFPSAtom,
-	lyricBackgroundRenderScaleAtom, lyricBackgroundStaticModeAtom,
-	lyricSizePresetAtom, playerControlsTypeAtom,
+	hideLyricViewAtom, verticalCoverLayoutAtom, playerControlsTypeAtom,
+	isLyricPageOpenedAtom,
 	// 枚举
-	RepeatMode, VerticalCoverLayout, LyricSizePreset, PlayerControlsType,
+	RepeatMode,
 } from '@applemusic-like-lyrics/react-full'
 import { PlayerStore, PlayMode } from '@/stores/player.js'
 import { parseLyrics } from '@/utils/lyricConverter.js'
+import { AmllSettingsStore } from '@/stores/amllSettings.js'
+import { startAudioAnalyser, stopAudioAnalyser } from '@/amll/useAudioAnalyser.js'
+
+// 收集所有配置 atoms，供 AmllSettingsStore.apply / .bind 使用
+// （放在模块顶层避免每次调用 useAmllBridge 重建对象）
+const CONFIG_ATOMS = {
+	enableLyricLineBlurEffectAtom,
+	enableLyricLineScaleEffectAtom,
+	enableLyricLineSpringAnimationAtom,
+	enableLyricTranslationLineAtom,
+	enableLyricRomanLineAtom,
+	enableLyricSwapTransRomanLineAtom,
+	lyricWordFadeWidthAtom,
+	lyricFontFamilyAtom,
+	lyricFontWeightAtom,
+	lyricLetterSpacingAtom,
+	lyricSizePresetAtom,
+	lyricBackgroundFPSAtom,
+	lyricBackgroundRenderScaleAtom,
+	lyricBackgroundStaticModeAtom,
+	cssBackgroundPropertyAtom,
+	showMusicNameAtom,
+	showMusicArtistsAtom,
+	showMusicAlbumAtom,
+	showVolumeControlAtom,
+	showBottomControlAtom,
+	showRemainingTimeAtom,
+	verticalCoverLayoutAtom,
+	playerControlsTypeAtom,
+	hideLyricViewAtom,
+}
+
+// 音频分析器需要的 atoms
+const ANALYSER_ATOMS = { lowFreqVolumeAtom, fftDataAtom }
 
 /**
  * 将 lyricConverter 输出的歌词行转为 AMLL LyricLine 格式
@@ -113,7 +152,15 @@ function amllToPlayMode(repeatMode, isShuffle) {
 }
 
 /**
- * 创建并初始化 AMLL Jotai store，建立 Vue ↔ React 双向同步
+ * 创建并初始化 AMLL Jotai store，建立 Vue ↔ React 双向同步。
+ *
+ * 同时做四件事：
+ *  1. 绑定回调 atoms 到 PlayerStore actions
+ *  2. 应用 AmllSettingsStore 持久化配置到 store
+ *  3. 反向监听配置 atoms 变化回写到 AmllSettingsStore（自动持久化）
+ *  4. 建立 7 个 Vue watchers + 2 个 Jotai subs
+ *  5. 启动音频分析器驱动流体背景
+ *
  * @returns {import('jotai').Store} Jotai store 实例
  */
 export function useAmllBridge() {
@@ -129,35 +176,22 @@ export function useAmllBridge() {
 	store.set(onRequestOpenMenuAtom, { onEmit: () => {} })
 	store.set(onClickControlThumbAtom, { onEmit: () => {} })
 
-	// ── 2. 配置 atoms 默认值（一次性）──
-	store.set(enableLyricLineBlurEffectAtom, true)
-	store.set(enableLyricLineScaleEffectAtom, true)
-	store.set(enableLyricLineSpringAnimationAtom, true)
-	store.set(enableLyricTranslationLineAtom, true)
-	store.set(enableLyricRomanLineAtom, false)
-	store.set(lyricWordFadeWidthAtom, 0.12)
-	store.set(showMusicNameAtom, true)
-	store.set(showMusicArtistsAtom, true)
-	store.set(showMusicAlbumAtom, true)
-	store.set(showVolumeControlAtom, true)
-	store.set(showBottomControlAtom, true)
-	store.set(showRemainingTimeAtom, true)
+	// ── 2. 应用持久化配置（从 localStorage 读取后写入 Jotai）──
+	AmllSettingsStore.apply(store, CONFIG_ATOMS)
+
+	// ── 3. 反向绑定 Jotai → AmllSettingsStore（设置页改 atom 时自动持久化）──
+	const unbindSettings = AmllSettingsStore.bind(store, CONFIG_ATOMS)
+
+	// ── 4. 一次性配置（非持久化项）──
 	store.set(isLyricPageOpenedAtom, true)
-	store.set(hideLyricViewAtom, false)
-	store.set(verticalCoverLayoutAtom, VerticalCoverLayout.Auto)
-	store.set(lyricSizePresetAtom, LyricSizePreset.Medium)
-	store.set(playerControlsTypeAtom, PlayerControlsType.Controls)
-	store.set(lyricBackgroundFPSAtom, 60)
-	store.set(lyricBackgroundRenderScaleAtom, 1)
-	store.set(lyricBackgroundStaticModeAtom, false)
 	store.set(isShuffleEnabledAtom, true)
 	store.set(isRepeatEnabledAtom, true)
 	store.set(musicCoverIsVideoAtom, false)
-	store.set(lowFreqVolumeAtom, 0.5)
+	store.set(lowFreqVolumeAtom, 0)
 
-	// ── 3. Vue → Jotai 状态同步（watchers）──
+	// ── 5. Vue → Jotai 状态同步（watchers）──
 
-	// 当前曲目变化 → 更新所有元数据
+	// 当前曲目变化 → 更新所有元数据 + 异步加载封面
 	const stopTrackWatch = watch(
 		() => PlayerStore.state.currentTrack,
 		async (track) => {
@@ -179,7 +213,7 @@ export function useAmllBridge() {
 			})))
 			store.set(musicAlbumNameAtom, track.albumTitle || '')
 
-			// 异步加载封面
+			// 异步加载封面（acquireCoverResource 返回 chordial:// URL）
 			try {
 				const { url } = await track.acquireCoverResource('large')
 				store.set(musicCoverAtom, url)
@@ -219,6 +253,8 @@ export function useAmllBridge() {
 	)
 
 	// 歌词数据 → 解析为 AMLL LyricLine[]
+	// PlayerStore.loadLyrics() 把 LRC 字符串写入 lyricsData.syncedLyrics
+	// 桥接层负责 LRC/YRC/QRC/TTML → AMLL LyricLine[] 转换
 	const stopLyricsWatch = watch(
 		() => PlayerStore.state.lyricsData?.syncedLyrics || PlayerStore.state.lyricsData?.plainLyrics || '',
 		(lyricString) => store.set(musicLyricLinesAtom, parseToAmllLyricLines(lyricString)),
@@ -239,7 +275,7 @@ export function useAmllBridge() {
 		{ immediate: true },
 	)
 
-	// ── 4. Jotai → Vue 反向同步（shuffle/repeat 按钮点击）──
+	// ── 6. Jotai → Vue 反向同步（shuffle/repeat 按钮点击）──
 	const unsubRepeat = store.sub(repeatModeAtom, () => {
 		if (syncing) return
 		syncing = true
@@ -260,7 +296,11 @@ export function useAmllBridge() {
 		syncing = false
 	})
 
-	// ── 5. 清理 ──
+	// ── 7. 启动音频分析器（驱动流体背景）──
+	// PlayerView 挂载时 audio 元素已就绪，分析器会自动接管
+	startAudioAnalyser(store, ANALYSER_ATOMS)
+
+	// ── 8. 清理 ──
 	onScopeDispose(() => {
 		stopTrackWatch()
 		stopPlayingWatch()
@@ -271,6 +311,8 @@ export function useAmllBridge() {
 		stopPlayModeWatch()
 		unsubRepeat()
 		unsubShuffle()
+		unbindSettings()
+		stopAudioAnalyser()
 	})
 
 	return store

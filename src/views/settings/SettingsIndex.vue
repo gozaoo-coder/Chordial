@@ -23,6 +23,15 @@
         </div>
         <i class="bi bi-chevron-right card-arrow"></i>
       </router-link>
+
+      <router-link :to="{ name: 'SettingsLyrics' }" class="index-card">
+        <div class="card-icon"><i class="bi bi-music-note-list"></i></div>
+        <div class="card-body">
+          <h3 class="card-title">歌词与播放器</h3>
+          <p class="card-desc">AMLL 歌词效果、流体背景、字体、显示项</p>
+        </div>
+        <i class="bi bi-chevron-right card-arrow"></i>
+      </router-link>
     </div>
   </div>
 </template>
