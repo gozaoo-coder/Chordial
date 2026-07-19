@@ -188,17 +188,64 @@
 
       <div class="setting-item">
         <div class="setting-info">
-          <label class="setting-label">背景帧率</label>
-          <span class="setting-desc">较低可提升性能，性能影响高</span>
+          <label class="setting-label">垂直同步（VSync）</label>
+          <span class="setting-desc">跟随显示器刷新率渲染，开启后下方帧率选项失效</span>
         </div>
         <div class="setting-control">
-          <select v-model.number="settings.lyricBackgroundFPS" class="select">
+          <label class="toggle">
+            <input type="checkbox" v-model="settings.lyricBackgroundVSync" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item" :class="{ 'is-disabled': settings.lyricBackgroundVSync }">
+        <div class="setting-info">
+          <label class="setting-label">背景帧率</label>
+          <span class="setting-desc">较低可提升性能，性能影响高；垂直同步开启时此选项失效</span>
+        </div>
+        <div class="setting-control">
+          <select
+            v-model.number="settings.lyricBackgroundFPS"
+            class="select"
+            :disabled="settings.lyricBackgroundVSync"
+          >
             <option :value="30">30 FPS</option>
             <option :value="45">45 FPS</option>
             <option :value="60">60 FPS</option>
             <option :value="90">90 FPS</option>
             <option :value="120">120 FPS</option>
           </select>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <label class="setting-label">鼓点频段下限</label>
+          <span class="setting-desc">驱动背景跳动的低频下限（Hz）。默认 80 对应低音鼓</span>
+        </div>
+        <div class="setting-control">
+          <input
+            type="range" min="20" max="500" step="5"
+            v-model.number="lowFreqLow"
+            class="slider"
+          />
+          <span class="setting-value">{{ lowFreqLow }} Hz</span>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <label class="setting-label">鼓点频段上限</label>
+          <span class="setting-desc">驱动背景跳动的低频上限（Hz）。默认 120；提高可让中频也参与跳动</span>
+        </div>
+        <div class="setting-control">
+          <input
+            type="range" :min="lowFreqLow + 5" max="2000" step="5"
+            v-model.number="lowFreqHigh"
+            class="slider"
+          />
+          <span class="setting-value">{{ lowFreqHigh }} Hz</span>
         </div>
       </div>
 
@@ -397,7 +444,7 @@
 </template>
 
 <script setup>
-import { onMounted, useTemplateRef } from 'vue';
+import { computed, onMounted, useTemplateRef } from 'vue';
 import { useAnime } from '@/composables/useAnime.js';
 import { AmllSettingsStore, AMLL_DEFAULTS } from '@/stores/amllSettings.js';
 
@@ -405,10 +452,33 @@ import { AmllSettingsStore, AMLL_DEFAULTS } from '@/stores/amllSettings.js';
 // 并由 AmllSettingsStore.bind 反向监听 atom 变化持久化到 localStorage
 const settings = AmllSettingsStore.state;
 
+// 鼓点频段：用 computed 把 [low, high] 数组拆成两个双向绑定的数字
+// lowFreqLow 改 → 写回 settings.lowFreqVolumeRange[0]
+// lowFreqHigh 改 → 写回 settings.lowFreqVolumeRange[1]
+const lowFreqLow = computed({
+  get: () => settings.lowFreqVolumeRange[0],
+  set: (v) => {
+    // 保证下限 < 上限
+    const high = settings.lowFreqVolumeRange[1];
+    if (v >= high) v = high - 5;
+    settings.lowFreqVolumeRange = [Math.max(20, v), high];
+  },
+});
+const lowFreqHigh = computed({
+  get: () => settings.lowFreqVolumeRange[1],
+  set: (v) => {
+    const low = settings.lowFreqVolumeRange[0];
+    if (v <= low) v = low + 5;
+    settings.lowFreqVolumeRange = [low, Math.min(2000, v)];
+  },
+});
+
 function resetToDefaults() {
   if (!confirm('确定要清除所有 AMLL 配置并恢复默认值吗？')) return;
   for (const key of Object.keys(AMLL_DEFAULTS)) {
-    settings[key] = AMLL_DEFAULTS[key];
+    settings[key] = Array.isArray(AMLL_DEFAULTS[key])
+      ? [...AMLL_DEFAULTS[key]]
+      : AMLL_DEFAULTS[key];
   }
 }
 
@@ -478,6 +548,11 @@ onMounted(() => {
 
 .setting-item:last-child {
   border-bottom: none;
+}
+
+.setting-item.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .setting-info {

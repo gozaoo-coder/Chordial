@@ -21,9 +21,6 @@ import { PlayerStore } from '@/stores/player.js'
 // ── 常量 ──────────────────────────────────────────────────────
 const FFT_SIZE = 256              // AnalyserNode.fftSize（必须是 2 的幂）
 const BIN_COUNT = FFT_SIZE / 2    // 频段数 = 128，但只用前 32 个（低频段）
-const SAMPLE_RATE = 44100         // 假设采样率；AnalyserNode 实际值会覆盖
-const LOW_FREQ_HZ = 80            // 低频下限
-const HIGH_FREQ_HZ = 120          // 低频上限（AMLL 推荐范围）
 const SMOOTHING = 0.8             // AnalyserNode.smoothingTimeConstant
 
 // ── 单例状态（模块级，多次调用 useAudioAnalyser 复用同一实例）──
@@ -36,6 +33,10 @@ let running = false
 
 // 当前 audio 元素引用，用于判断是否需要重新绑定 sourceNode
 let boundAudioEl = null
+
+// lowFreqVolume 计算频段（Hz），可由 setLowFreqRange 动态更新
+// 默认 80-120Hz（AMLL 文档推荐，对应低音鼓点）
+let lowFreqRange = [80, 120]
 
 /**
  * 取得或创建 AudioContext + AnalyserNode 单例。
@@ -85,14 +86,17 @@ function bindAudioElement(audioEl) {
 
 /**
  * 从频域数据计算 lowFreqVolume（0-1）。
- * AMLL 期望 80-120Hz 范围的音量均值，用于背景鼓点跳动。
+ * 频段范围由 lowFreqRange 决定（默认 80-120Hz，可由 setLowFreqRange 动态更新）。
+ * AMLL 用这个值驱动背景鼓点跳动。
  */
 function computeLowFreqVolume(freqData) {
 	if (!audioCtx || !analyser) return 0
 	const nyquist = audioCtx.sampleRate / 2
 	const binHz = nyquist / freqData.length
-	const lowBin = Math.max(1, Math.floor(LOW_FREQ_HZ / binHz))
-	const highBin = Math.min(freqData.length - 1, Math.ceil(HIGH_FREQ_HZ / binHz))
+	const [lowHz, highHz] = lowFreqRange
+	const lowBin = Math.max(1, Math.floor(lowHz / binHz))
+	const highBin = Math.min(freqData.length - 1, Math.ceil(highHz / binHz))
+	if (highBin < lowBin) return 0
 
 	let sum = 0
 	let count = 0
@@ -182,4 +186,18 @@ export function stopAudioAnalyser() {
 	stopLoop()
 }
 
-export default { startAudioAnalyser, stopAudioAnalyser }
+/**
+ * 更新 lowFreqVolume 计算频段（Hz）。
+ * 由桥接层 watch AmllSettingsStore.lowFreqVolumeRange 后调用，
+ * 实现设置页改频段时实时生效。
+ *
+ * @param {[number, number]} range - [低频Hz, 高频Hz]
+ */
+export function setLowFreqRange(range) {
+	if (!Array.isArray(range) || range.length !== 2) return
+	const [low, high] = range
+	if (typeof low !== 'number' || typeof high !== 'number' || low >= high || low < 0) return
+	lowFreqRange = [low, high]
+}
+
+export default { startAudioAnalyser, stopAudioAnalyser, setLowFreqRange }

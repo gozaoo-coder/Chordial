@@ -42,9 +42,14 @@ export const AMLL_DEFAULTS = {
 
 	// 背景流体
 	lyricBackgroundFPS: 60,
+	lyricBackgroundVSync: false, // 垂直同步：开启时跟随显示器刷新率（实现为高 FPS 上限，由 rAF 原生节流）
 	lyricBackgroundRenderScale: 1,
 	lyricBackgroundStaticMode: false,
 	cssBackgroundProperty: '#111111',
+
+	// 流体背景鼓点频段（Hz）— 驱动 lowFreqVolume 计算
+	// AMLL 文档推荐 80-120Hz（低音鼓点）。用户可自定义以适配不同曲风。
+	lowFreqVolumeRange: [80, 120],
 
 	// 显示项
 	showMusicName: true,
@@ -182,6 +187,9 @@ export function bindAmllSettingsFromStore(store, atoms) {
 
 	const unsubs = bindings.map(([atom, key]) =>
 		store.sub(atom, () => {
+			// VSync 开启时，桥接层会把 FPS atom 设为高值（240）以实现跟随显示器刷新率。
+			// 此时不应回写到 state.lyricBackgroundFPS，否则会覆盖用户原本选择的 FPS 值。
+			if (state.lyricBackgroundVSync && key === 'lyricBackgroundFPS') return
 			const value = store.get(atom)
 			// 避免回写触发响应式循环（值相同时 Vue 不会触发 watch）
 			if (state[key] !== value) {

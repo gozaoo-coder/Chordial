@@ -45,7 +45,14 @@ import {
 import { PlayerStore, PlayMode } from '@/stores/player.js'
 import { parseLyrics } from '@/utils/lyricConverter.js'
 import { AmllSettingsStore } from '@/stores/amllSettings.js'
-import { startAudioAnalyser, stopAudioAnalyser } from '@/amll/useAudioAnalyser.js'
+import { startAudioAnalyser, stopAudioAnalyser, setLowFreqRange } from '@/amll/useAudioAnalyser.js'
+
+// VSync 开启时使用的 FPS 上限。
+// AMLL 的 MeshGradientRenderer 用 `e < 1e3 / maxFPS` 节流：
+// - maxFPS=0 会因 1000/0=Infinity 导致永不渲染
+// - maxFPS=240 时每帧最小间隔 4.17ms，rAF 本身被浏览器限制在显示器刷新率（60/120Hz），
+//   所以实际就是垂直同步。
+const VSYNC_FPS = 240
 
 // 收集所有配置 atoms，供 AmllSettingsStore.apply / .bind 使用
 // （放在模块顶层避免每次调用 useAmllBridge 重建对象）
@@ -189,6 +196,16 @@ export function useAmllBridge() {
 	store.set(musicCoverIsVideoAtom, false)
 	store.set(lowFreqVolumeAtom, 0)
 
+	// ── 4.1 VSync 初始化 ──
+	// VSync 开启时覆盖 apply 写入的 FPS atom 为高值（实现跟随显示器刷新率）
+	const applyVSync = (enabled) => {
+		store.set(lyricBackgroundFPSAtom, enabled ? VSYNC_FPS : AmllSettingsStore.state.lyricBackgroundFPS)
+	}
+	applyVSync(AmllSettingsStore.state.lyricBackgroundVSync)
+
+	// ── 4.2 lowFreqVolume 频段初始化 ──
+	setLowFreqRange(AmllSettingsStore.state.lowFreqVolumeRange)
+
 	// ── 5. Vue → Jotai 状态同步（watchers）──
 
 	// 当前曲目变化 → 更新所有元数据 + 异步加载封面
@@ -275,6 +292,32 @@ export function useAmllBridge() {
 		{ immediate: true },
 	)
 
+	// VSync 开关变化 → 覆盖 FPS atom
+	// 开启：设为高值，由 rAF 原生节流到显示器刷新率
+	// 关闭：恢复用户选择的 FPS
+	const stopVSyncWatch = watch(
+		() => AmllSettingsStore.state.lyricBackgroundVSync,
+		(enabled) => applyVSync(enabled),
+	)
+
+	// 用户改 FPS 选择 → VSync 关闭时同步到 atom
+	// （VSync 开启时 FPS 选择器在 UI 上被禁用，但为防误改仍加保护）
+	const stopFpsWatch = watch(
+		() => AmllSettingsStore.state.lyricBackgroundFPS,
+		(fps) => {
+			if (!AmllSettingsStore.state.lyricBackgroundVSync) {
+				store.set(lyricBackgroundFPSAtom, fps)
+			}
+		},
+	)
+
+	// lowFreqVolume 频段变化 → 实时更新音频分析器
+	const stopFreqRangeWatch = watch(
+		() => AmllSettingsStore.state.lowFreqVolumeRange,
+		(range) => setLowFreqRange(range),
+		{ deep: true },
+	)
+
 	// ── 6. Jotai → Vue 反向同步（shuffle/repeat 按钮点击）──
 	const unsubRepeat = store.sub(repeatModeAtom, () => {
 		if (syncing) return
@@ -309,6 +352,9 @@ export function useAmllBridge() {
 		stopVolumeWatch()
 		stopLyricsWatch()
 		stopPlayModeWatch()
+		stopVSyncWatch()
+		stopFpsWatch()
+		stopFreqRangeWatch()
 		unsubRepeat()
 		unsubShuffle()
 		unbindSettings()
