@@ -13,7 +13,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use chordial_core::module::music_localSource;
 use chordial_core::module::music_source::resource;
-use chordial_core::module::music_source::types::SourceId;
+use chordial_core::module::music_source::types::{EntityType, SourceId};
 use chordial_core::module::platform::{self, PlatformPath};
 use chordial_core::module::storage::entry::Ttl;
 use serde::Deserialize;
@@ -320,6 +320,19 @@ fn dispatch(state: &AppState, name: &str, args: &Value) -> Result<Value, String>
             serde_json::to_value(&state.ctx.library.search_albums(q)).map_err(|e| format!("序列化失败: {}", e))
         }
 
+        // Library 统一搜索（trigram 倒排索引）
+        "library_search" => {
+            let query = args["query"].as_str().ok_or("缺少 query")?;
+            let entity_type = match args.get("entity_type").and_then(|v| v.as_str()) {
+                Some(s) => Some(parse_entity_type(s)?),
+                None => None,
+            };
+            let source_name = args.get("source_name").and_then(|v| v.as_str());
+            let limit_per_type = args.get("limit_per_type").and_then(|v| v.as_u64()).map(|n| n as usize);
+            let results = state.ctx.library.search(query, entity_type, source_name, limit_per_type);
+            serde_json::to_value(&results).map_err(|e| format!("序列化失败: {}", e))
+        }
+
         // Library Lyric
         "library_lyric_count" => Ok(json!(state.ctx.library.lyric_count())),
         "library_get_lyric" => {
@@ -388,5 +401,16 @@ fn parse_ttl(args: &Value) -> Result<Ttl, String> {
         }
         None => Ok(Ttl::Session), // 默认
         _ => Err("无效的 TTL 格式".into()),
+    }
+}
+
+/// 将字符串解析为 `EntityType`（大小写不敏感）。
+fn parse_entity_type(s: &str) -> Result<EntityType, String> {
+    match s.to_lowercase().as_str() {
+        "song" => Ok(EntityType::Song),
+        "artist" => Ok(EntityType::Artist),
+        "album" => Ok(EntityType::Album),
+        "lyric" => Ok(EntityType::Lyric),
+        other => Err(format!("未知实体类型 '{}'（支持: song/artist/album/lyric）", other)),
     }
 }

@@ -1,10 +1,13 @@
-use super::{albums, artists, lyrics, models::*, relations, songs};
+use super::{albums, artists, lyrics, models::*, relations, search, songs};
 use crate::module::music_source::registrar::SourceCleanup;
 use crate::module::music_source::types::{EntityType, SourceId};
 use crate::module::perf;
 use crate::module::storage::persistent::PersistentStore;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// 音乐库 — 所有音乐实体的统一管理入口。
 ///
@@ -20,8 +23,14 @@ use std::path::PathBuf;
 /// | [`albums`] | 专辑 CRUD + 搜索 |
 /// | [`lyrics`] | 歌词 CRUD + 搜索 |
 /// | [`relations`] | 跨实体关系追溯 |
+/// | [`search`] | 统一搜索引擎（trigram 倒排索引） |
 pub struct MusicLibrary {
     store: PersistentStore,
+    /// 库版本号 — 任何写操作递增，用于 [`search::SearchIndex`] 失效检测。
+    version: AtomicU64,
+    /// 搜索索引缓存 — 首次查询时构建，写操作使其失效。
+    /// `Arc<SearchIndex>` 允许并发查询无锁读取。
+    search_index: RwLock<Option<Arc<search::SearchIndex>>>,
 }
 
 impl MusicLibrary {
@@ -29,7 +38,27 @@ impl MusicLibrary {
     pub fn new(path: PathBuf) -> Self {
         Self {
             store: PersistentStore::new(path),
+            version: AtomicU64::new(0),
+            search_index: RwLock::new(None),
         }
+    }
+
+    /// 返回当前库版本号（每次写操作后递增）。
+    pub fn version(&self) -> u64 {
+        self.version.load(Ordering::Acquire)
+    }
+
+    /// 标记搜索索引失效，下次查询时重建。
+    /// 由所有写操作调用。
+    fn bump_version(&self) {
+        self.version.fetch_add(1, Ordering::Release);
+        // 直接丢弃缓存的索引；正在使用旧索引的查询线程仍持有 Arc，安全继续。
+        *self.search_index.write() = None;
+    }
+
+    /// 强制使搜索索引失效（外部数据变更时调用，如 reload 后）。
+    pub fn invalidate_search_index(&self) {
+        self.bump_version();
     }
 
     // ── 持久化 ───────────────────────────────────────
@@ -46,7 +75,8 @@ impl MusicLibrary {
 
     /// 从磁盘重新加载，丢弃所有未保存的修改。
     pub fn reload(&self) {
-        self.store.reload()
+        self.store.reload();
+        self.bump_version();
     }
 
     /// 返回持久化存储的文件路径。
@@ -57,6 +87,7 @@ impl MusicLibrary {
     /// 从内存缓存中删除指定 key（标记脏，下次 save 时落盘）。
     pub fn remove_store_key(&self, key: &str) {
         self.store.remove(key);
+        self.bump_version();
     }
 
     // ── Song ─────────────────────────────────────────
@@ -122,16 +153,25 @@ impl MusicLibrary {
         if alc {
             self.store.set("albums", &all_albums)?;
         }
+        if sc || ac || alc {
+            self.bump_version();
+        }
 
         Ok(stored_id)
     }
 
     pub fn update_song(&self, song: &Song) -> Result<(), String> {
-        songs::update(&self.store, song)
+        songs::update(&self.store, song)?;
+        self.bump_version();
+        Ok(())
     }
 
     pub fn remove_song(&self, id: &str) -> Result<bool, String> {
-        songs::remove(&self.store, id)
+        let removed = songs::remove(&self.store, id)?;
+        if removed {
+            self.bump_version();
+        }
+        Ok(removed)
     }
 
     pub fn search_songs(&self, query: &str) -> Vec<Song> {
@@ -167,15 +207,23 @@ impl MusicLibrary {
     }
 
     pub fn add_artist(&self, artist: &Artist) -> Result<(), String> {
-        artists::add(&self.store, artist)
+        artists::add(&self.store, artist)?;
+        self.bump_version();
+        Ok(())
     }
 
     pub fn update_artist(&self, artist: &Artist) -> Result<(), String> {
-        artists::update(&self.store, artist)
+        artists::update(&self.store, artist)?;
+        self.bump_version();
+        Ok(())
     }
 
     pub fn remove_artist(&self, id: &str) -> Result<bool, String> {
-        artists::remove(&self.store, id)
+        let removed = artists::remove(&self.store, id)?;
+        if removed {
+            self.bump_version();
+        }
+        Ok(removed)
     }
 
     pub fn search_artists(&self, query: &str) -> Vec<Artist> {
@@ -238,15 +286,23 @@ impl MusicLibrary {
     }
 
     pub fn add_album(&self, album: &Album) -> Result<(), String> {
-        albums::add(&self.store, album)
+        albums::add(&self.store, album)?;
+        self.bump_version();
+        Ok(())
     }
 
     pub fn update_album(&self, album: &Album) -> Result<(), String> {
-        albums::update(&self.store, album)
+        albums::update(&self.store, album)?;
+        self.bump_version();
+        Ok(())
     }
 
     pub fn remove_album(&self, id: &str) -> Result<bool, String> {
-        albums::remove(&self.store, id)
+        let removed = albums::remove(&self.store, id)?;
+        if removed {
+            self.bump_version();
+        }
+        Ok(removed)
     }
 
     pub fn search_albums(&self, query: &str) -> Vec<Album> {
@@ -459,6 +515,8 @@ impl MusicLibrary {
             }
         }
 
+        // Songs / Artists / Albums 任一变化都要重建搜索索引
+        self.bump_version();
         self.save()
     }
 
@@ -522,6 +580,27 @@ impl MusicLibrary {
             }
             for id in &to_remove {
                 self.store.remove_entry(songs::KEY, id);
+            }
+            self.bump_version();
+        }
+
+        // ── Lyrics ──
+        // Lyrics 的 source_id 是单对象（非数组），按 (source_name, entity_id) 精准匹配
+        // 场景：unindex_file / reindex_file 移除某个音频文件时，对应 Lyric 一并删除，
+        //      避免孤儿 Lyric 残留（旧 song_id 指向已删除的歌曲）
+        {
+            let affected_lyrics: Vec<Lyric> = self
+                .store
+                .get_entries_filtered::<Lyric, _>(lyrics::KEY, |v| {
+                    let Some(sid) = v.get("source_id") else { return false };
+                    sid.get("source_name").and_then(|n| n.as_str()) == Some(source_name)
+                        && sid
+                            .get("entity_id")
+                            .and_then(|eid| eid.as_str())
+                            .map_or(false, |eid| entity_ids.contains(eid))
+                });
+            for lyric in &affected_lyrics {
+                self.store.remove_entry(lyrics::KEY, &lyric.id);
             }
         }
 
@@ -600,6 +679,7 @@ impl MusicLibrary {
         }
 
         if !empty_songs.is_empty() || !empty_artists.is_empty() || !empty_albums.is_empty() || !empty_lyrics.is_empty() {
+            self.bump_version();
             self.save()?;
         }
         Ok(())
@@ -651,8 +731,132 @@ impl MusicLibrary {
         if albums_changed {
             self.store.set("albums", &all_albums)?;
         }
+        if songs_changed || artists_changed || albums_changed {
+            self.bump_version();
+        }
 
         Ok(stored_ids)
+    }
+
+    // ── 统一搜索 ─────────────────────────────────────
+
+    /// 统一搜索引擎 — 跨 Song / Artist / Album 的子串搜索，
+    /// 基于 [`search::SearchIndex`]（trigram 倒排索引，支持 Unicode）。
+    ///
+    /// # 参数
+    ///
+    /// - `query`：搜索关键词，大小写不敏感的子串匹配
+    /// - `entity_type`：限定实体类型；`None` 表示三类全搜
+    /// - `source_name`：限定来源名称；`None` 表示不限制
+    /// - `limit_per_type`：每类实体最多返回多少条；`None` 表示无限制
+    ///
+    /// # 缓存策略
+    ///
+    /// 首次查询构建索引并缓存；后续查询无锁读 `Arc<SearchIndex>`。
+    /// 任何写操作通过 [`bump_version`](Self::bump_version) 失效缓存，
+    /// 查询时若版本号不匹配则重建。
+    pub fn search(
+        &self,
+        query: &str,
+        entity_type: Option<EntityType>,
+        source_name: Option<&str>,
+        limit_per_type: Option<usize>,
+    ) -> search::SearchResults {
+        let _scope = perf::scope("library.search");
+
+        let index = self.get_or_build_search_index();
+        let filter = search::SearchFilter {
+            query,
+            entity_type,
+            source_name,
+            limit: limit_per_type,
+        };
+        let id_sets = search::search_ids(&index, &filter);
+
+        // 按 ID 反序列化具体实体；若指定了 source_name，再做来源过滤
+        let songs = if !id_sets.songs.is_empty() {
+            let mut v: Vec<Song> = self
+                .get_songs_by_ids(&id_sets.songs)
+                .into_iter()
+                .filter(|s| {
+                    source_name.map_or(true, |name| {
+                        s.source_ids.iter().any(|sid| sid.source_name == name)
+                    })
+                })
+                .collect();
+            v.truncate(limit_per_type.unwrap_or(usize::MAX));
+            v
+        } else {
+            Vec::new()
+        };
+
+        let artists = if !id_sets.artists.is_empty() {
+            let mut v: Vec<Artist> = self
+                .get_artists_by_ids(&id_sets.artists)
+                .into_iter()
+                .filter(|a| {
+                    source_name.map_or(true, |name| {
+                        a.source_ids.iter().any(|sid| sid.source_name == name)
+                    })
+                })
+                .collect();
+            v.truncate(limit_per_type.unwrap_or(usize::MAX));
+            v
+        } else {
+            Vec::new()
+        };
+
+        let albums = if !id_sets.albums.is_empty() {
+            let mut v: Vec<Album> = self
+                .get_albums_by_ids(&id_sets.albums)
+                .into_iter()
+                .filter(|a| {
+                    source_name.map_or(true, |name| {
+                        a.source_ids.iter().any(|sid| sid.source_name == name)
+                    })
+                })
+                .collect();
+            v.truncate(limit_per_type.unwrap_or(usize::MAX));
+            v
+        } else {
+            Vec::new()
+        };
+
+        search::SearchResults {
+            songs,
+            artists,
+            albums,
+        }
+    }
+
+    /// 获取或构建缓存的搜索索引（按版本号校验）。
+    ///
+    /// 临界区仅做版本比较与 `Arc::clone`，构建在临界区外完成
+    /// （构建期间不阻塞其他读线程，仅最后写入时短暂加锁）。
+    fn get_or_build_search_index(&self) -> Arc<search::SearchIndex> {
+        // 快速路径：读锁检查已有缓存且版本匹配
+        {
+            let guard = self.search_index.read();
+            if let Some(arc) = guard.as_ref() {
+                if arc.version() == self.version() {
+                    return Arc::clone(arc);
+                }
+            }
+        }
+
+        // 慢速路径：构建新索引。构建在锁外完成，避免阻塞其他读者。
+        let new_index = Arc::new(search::SearchIndex::build(&self.store, self.version()));
+
+        // 写入缓存。若期间另一线程已抢先构建并写入，丢弃本线程结果即可。
+        // 双重检查版本号，避免覆盖更新鲜的索引。
+        let mut guard = self.search_index.write();
+        if let Some(existing) = guard.as_ref() {
+            if existing.version() == self.version() {
+                return Arc::clone(existing);
+            }
+        }
+        *guard = Some(Arc::clone(&new_index));
+        new_index
     }
 
     // ── 私有辅助 ─────────────────────────────────────

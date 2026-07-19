@@ -38,7 +38,11 @@ const searchQuery = ref('');
 const emit = defineEmits(['search']);
 
 const handleSearch = () => {
-  emit('search', searchQuery.value);
+  const q = searchQuery.value.trim();
+  if (!q) return;
+  emit('search', q);
+  router.push({ name: 'Search', query: { q } });
+  searchQuery.value = '';
 };
 
 const goToSettings = () => {

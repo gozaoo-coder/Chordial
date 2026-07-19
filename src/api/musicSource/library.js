@@ -193,6 +193,36 @@ export async function searchAlbums(query) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// 统一搜索 — 基于 Rust trigram 倒排索引的跨类型快速子串搜索
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 统一搜索 — 同时搜索歌曲、艺术家、专辑，支持按类型与来源过滤。
+ *
+ * 后端基于 Rust trigram 倒排索引，10k 条目查询约 0.3ms。
+ * 索引首次查询时构建并缓存，写操作自动失效。
+ *
+ * @param {object} opts
+ * @param {string} opts.query - 搜索关键词（大小写不敏感子串匹配）
+ * @param {'song'|'artist'|'album'|null} [opts.entityType=null] - 限定实体类型，null 全搜
+ * @param {string|null} [opts.sourceName=null] - 限定来源名称，null 不限制
+ * @param {number|null} [opts.limitPerType=null] - 每类实体最多返回多少条
+ * @returns {Promise<{songs: Song[], artists: Artist[], albums: Album[]}>}
+ */
+export async function search({ query, entityType = null, sourceName = null, limitPerType = null }) {
+  const args = { query };
+  if (entityType) args.entity_type = entityType;
+  if (sourceName) args.source_name = sourceName;
+  if (limitPerType != null) args.limit_per_type = limitPerType;
+  const data = await transport.command('library_search', args);
+  return {
+    songs: Song.fromDataArray(data.songs || []),
+    artists: Artist.fromDataArray(data.artists || []),
+    albums: Album.fromDataArray(data.albums || []),
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Lyric
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -349,6 +379,7 @@ export const library = {
   getAllAlbums,
   getAlbumsPage,
   searchAlbums,
+  search,
   homeStats,
   lyricCount,
   getLyric,

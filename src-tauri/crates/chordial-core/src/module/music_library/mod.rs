@@ -30,4 +30,5 @@ pub mod library;
 pub mod lyrics;
 pub mod models;
 pub mod relations;
+pub mod search;
 pub mod songs;

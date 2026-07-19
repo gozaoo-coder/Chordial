@@ -35,6 +35,11 @@ const navItems = [
     icon: 'bi-house'
   },
   {
+    path: '/search',
+    name: '搜索',
+    icon: 'bi-search'
+  },
+  {
     path: '/tracks',
     name: '歌曲',
     icon: 'bi-music-note-beamed'

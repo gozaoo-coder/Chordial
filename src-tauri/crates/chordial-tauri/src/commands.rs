@@ -8,7 +8,7 @@
 
 use chordial_core::module::music_localSource;
 use chordial_core::module::music_source::resource;
-use chordial_core::module::music_source::types::SourceId;
+use chordial_core::module::music_source::types::{EntityType, SourceId};
 use chordial_core::module::platform::{self, PlatformPath};
 use chordial_core::module::storage::entry::Ttl;
 use chordial_core::AppContext;
@@ -623,6 +623,40 @@ pub fn library_get_home_stats(ctx: State<'_, Arc<AppContext>>) -> Result<serde_j
 pub fn library_search_albums(ctx: State<'_, Arc<AppContext>>, query: String) -> Result<serde_json::Value, String> {
     let albums = ctx.library.search_albums(&query);
     serde_json::to_value(&albums).map_err(|e| format!("序列化失败: {}", e))
+}
+
+/// 统一搜索引擎 — 基于 trigram 倒排索引的跨类型子串搜索。
+///
+/// 参数：
+/// - `query`：搜索关键词（大小写不敏感子串匹配）
+/// - `entity_type`：可选，限定实体类型（"song" / "artist" / "album"）
+/// - `source_name`：可选，限定来源名称
+/// - `limit_per_type`：可选，每类实体最多返回多少条
+#[tauri::command]
+pub fn library_search(
+    ctx: State<'_, Arc<AppContext>>,
+    query: String,
+    entity_type: Option<String>,
+    source_name: Option<String>,
+    limit_per_type: Option<usize>,
+) -> Result<serde_json::Value, String> {
+    let et = entity_type
+        .as_deref()
+        .map(parse_entity_type)
+        .transpose()?;
+    let results = ctx.library.search(&query, et, source_name.as_deref(), limit_per_type);
+    serde_json::to_value(&results).map_err(|e| format!("序列化失败: {}", e))
+}
+
+/// 将字符串解析为 `EntityType`（大小写不敏感）。
+fn parse_entity_type(s: &str) -> Result<EntityType, String> {
+    match s.to_lowercase().as_str() {
+        "song" => Ok(EntityType::Song),
+        "artist" => Ok(EntityType::Artist),
+        "album" => Ok(EntityType::Album),
+        "lyric" => Ok(EntityType::Lyric),
+        other => Err(format!("未知实体类型 '{}'（支持: song/artist/album/lyric）", other)),
+    }
 }
 
 // ── Lyric ───────────────────────────────────────────

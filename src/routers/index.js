@@ -14,6 +14,7 @@ const GeneralSettingsView = () => import('../views/settings/GeneralSettingsView.
 const P2pSettingsView = () => import('../views/settings/P2pSettingsView.vue')
 const LyricsSettingsView = () => import('../views/settings/LyricsSettingsView.vue')
 const TestPage = () => import('../views/TestPage.vue')
+const Search = () => import('../views/Search.vue')
 
 // 定义路由
 const routes = [
@@ -22,6 +23,12 @@ const routes = [
     name: 'Home',
     component: Home,
     meta: { title: '首页' }
+  },
+  {
+    path: '/search',
+    name: 'Search',
+    component: Search,
+    meta: { title: '搜索' }
   },
   {
     path: '/tracks',

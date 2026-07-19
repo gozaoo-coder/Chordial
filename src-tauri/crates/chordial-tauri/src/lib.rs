@@ -130,6 +130,8 @@ pub fn run() {
             commands::library_get_albums_by_ids,
             commands::library_get_albums_page,
             commands::library_search_albums,
+            // MusicLibrary — 统一搜索（trigram 倒排索引）
+            commands::library_search,
             // MusicLibrary — Home
             commands::library_get_home_stats,
             // MusicLibrary — Lyric CRUD + 搜索
