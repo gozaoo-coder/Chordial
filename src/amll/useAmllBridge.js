@@ -1,17 +1,26 @@
 /**
  * useAmllBridge — Vue ↔ React(AMLL) 状态桥接层
  *
- * 核心设计：
- *  1. 创建 Jotai store 作为 Vue ↔ React 通信层
- *  2. 应用 AmllSettingsStore 持久化配置（首次启动从 localStorage 读取）
- *  3. 反向绑定 Jotai → AmllSettingsStore，使设置页改 atom 时自动落盘
- *  4. Vue watchers 将 PlayerStore 状态推送到 Jotai atoms（单向）
- *  5. Jotai store.sub 监听 shuffle/repeat 变化回写 Vue（反向）
- *  6. 回调 atoms 一次性绑定到 PlayerStore actions
- *  7. 启动音频分析器，把 lowFreqVolume / fftData 实时推给 Jotai，
- *     驱动 AMLL 流体背景随音乐跳动
+ * # 同步架构
+ * Vue → Jotai（程序化同步）：watch PlayerStore.state → store.set(atom)
+ * Jotai → Vue（用户交互同步）：回调 atoms onEmit → PlayerStore actions
  *
- * 时间单位：AMLL 使用毫秒，PlayerStore 使用秒，桥接层负责转换。
+ * # 媒体控件绑定
+ * - 播放/暂停/上一首/下一首：onPlayOrResume / onRequestPrev / onRequestNext
+ * - 进度条拖动：onSeekPosition（毫秒 → 秒）
+ * - 音量滑块：onChangeVolume（0-1）
+ * - 随机按钮：onToggleShuffle → toggleShufflePlayMode
+ * - 循环按钮：onCycleRepeatMode → cyclePlayMode（Off→All→One→Off）
+ * - 歌词行点击：onLyricLineClick → seek(line.startTime)
+ * - 顶部横条点击：onClickControlThumb → closePlayerView
+ *
+ * # 歌词数据链路
+ * PlayerStore.loadLyrics → state.lyricsData.syncedLyrics (LRC/YRC/QRC/TTML)
+ * → watch → parseToAmllLyricLines → musicLyricLinesAtom (LyricLine[])
+ * 纯文本歌词兜底：无时间戳时每行一个 LyricLine，时间戳递增占位
+ *
+ * # 时间单位
+ * AMLL 使用毫秒，PlayerStore 使用秒，桥接层负责转换。
  */
 import { watch, onScopeDispose } from 'vue'
 import { createStore } from 'jotai'
@@ -21,10 +30,13 @@ import {
 	musicCoverAtom, musicCoverIsVideoAtom, musicDurationAtom,
 	musicPlayingAtom, musicPlayingPositionAtom, musicVolumeAtom,
 	musicLyricLinesAtom, lowFreqVolumeAtom, fftDataAtom,
-	// 回调 atoms
+	// 回调 atoms（媒体控件入口）
 	onPlayOrResumeAtom, onRequestPrevSongAtom, onRequestNextSongAtom,
 	onSeekPositionAtom, onChangeVolumeAtom,
 	onRequestOpenMenuAtom, onClickControlThumbAtom,
+	onClickAudioQualityTagAtom,
+	onLyricLineClickAtom, onLyricLineContextMenuAtom,
+	onToggleShuffleAtom, onCycleRepeatModeAtom,
 	// 控制 atoms
 	repeatModeAtom, isShuffleActiveAtom, isShuffleEnabledAtom, isRepeatEnabledAtom,
 	// 配置 atoms（需要在 AmllSettingsStore.apply / .bind 中使用）
@@ -125,7 +137,11 @@ function parseToAmllLyricLines(lyricString) {
 	if (!lyricString || typeof lyricString !== 'string') return []
 	try {
 		const parsed = parseLyrics(lyricString)
-		if (!parsed || parsed.length === 0) return []
+		if (!parsed || parsed.length === 0) {
+			// 兜底：纯文本歌词（无时间戳）→ 每行一个 LyricLine，时间戳从 0 递增
+			// 让 AMLL 至少能展示文本，不会一片空白
+			return parsePlainTextToLyricLines(lyricString)
+		}
 		parsed.sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
 		return parsed.map((line, i) => {
 			const nextLine = parsed[i + 1]
@@ -138,6 +154,28 @@ function parseToAmllLyricLines(lyricString) {
 	}
 }
 
+/**
+ * 纯文本歌词兜底：无时间戳时按行切分，每行一个 LyricLine。
+ * 时间戳从 0 开始按 5 秒递增（仅用于占位，实际不会驱动高亮）。
+ */
+function parsePlainTextToLyricLines(text) {
+	const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+	if (lines.length === 0) return []
+	return lines.map((text, i) => {
+		const startTime = i * 5000
+		const endTime = startTime + 5000
+		return {
+			words: [{ word: text, startTime, endTime, romanWord: '' }],
+			startTime,
+			endTime,
+			translatedLyric: '',
+			romanLyric: '',
+			isBG: false,
+			isDuet: false,
+		}
+	})
+}
+
 /** PlayMode → { repeatMode, isShuffle } */
 function playModeToAmll(playMode) {
 	switch (playMode) {
@@ -148,14 +186,28 @@ function playModeToAmll(playMode) {
 	}
 }
 
-/** { repeatMode, isShuffle } → PlayMode */
-function amllToPlayMode(repeatMode, isShuffle) {
-	if (isShuffle) return PlayMode.RANDOM
-	switch (repeatMode) {
-		case RepeatMode.One: return PlayMode.LOOP_ONE
-		case RepeatMode.All: return PlayMode.LOOP
-		default:             return PlayMode.SEQUENCE
+/**
+ * 用户点 AMLL 循环按钮时的 PlayMode 循环逻辑。
+ * AMLL 的 RepeatMode 循环：Off → All → One → Off
+ * 映射到 PlayMode：SEQUENCE → LOOP → LOOP_ONE → SEQUENCE
+ * 注意：RANDOM 模式下点循环按钮，应切到 LOOP（退出随机）
+ */
+function cyclePlayMode(currentPlayMode) {
+	switch (currentPlayMode) {
+		case PlayMode.SEQUENCE: return PlayMode.LOOP
+		case PlayMode.LOOP:     return PlayMode.LOOP_ONE
+		case PlayMode.LOOP_ONE: return PlayMode.SEQUENCE
+		case PlayMode.RANDOM:   return PlayMode.LOOP // 退出随机，进入列表循环
+		default:                return PlayMode.LOOP
 	}
+}
+
+/**
+ * 用户点 AMLL 随机按钮时的 PlayMode 切换逻辑。
+ * 当前是 RANDOM → 切到 SEQUENCE；否则切到 RANDOM。
+ */
+function toggleShufflePlayMode(currentPlayMode) {
+	return currentPlayMode === PlayMode.RANDOM ? PlayMode.SEQUENCE : PlayMode.RANDOM
 }
 
 /**
@@ -172,16 +224,61 @@ function amllToPlayMode(repeatMode, isShuffle) {
  */
 export function useAmllBridge() {
 	const store = createStore()
-	let syncing = false // 防止双向同步循环
 
-	// ── 1. 回调 atoms 绑定（一次性）──
+	// ── 1. 媒体控件回调 atoms 绑定 ──
+	// 所有 AMLL UI 按钮点击都通过回调 atoms 流回 PlayerStore，
+	// 这是"用户交互入口"的权威通道；Vue→Jotai watcher 负责程序化状态同步。
+
+	// 播放/暂停按钮
 	store.set(onPlayOrResumeAtom, { onEmit: () => PlayerStore.togglePlay() })
+	// 上一首 / 下一首
 	store.set(onRequestPrevSongAtom, { onEmit: () => PlayerStore.playPrevious() })
 	store.set(onRequestNextSongAtom, { onEmit: () => PlayerStore.playNext() })
+	// 进度条拖动（毫秒 → 秒）
 	store.set(onSeekPositionAtom, { onEmit: (ms) => PlayerStore.seek(ms / 1000) })
+	// 音量滑块（0-1）
 	store.set(onChangeVolumeAtom, { onEmit: (v) => PlayerStore.setVolume(v) })
+
+	// 随机按钮：用户点击时切换 PlayMode 的 RANDOM 状态
+	// 不依赖 AMLL 内部 atom 更新时序，直接基于 PlayerStore 当前状态计算新值
+	store.set(onToggleShuffleAtom, {
+		onEmit: () => {
+			const newMode = toggleShufflePlayMode(PlayerStore.state.playMode)
+			PlayerStore.setPlayMode(newMode)
+			// Vue watcher 会把新 PlayMode 同步回 Jotai atoms，纠正 AMLL 内部状态
+		},
+	})
+
+	// 循环按钮：Off → All → One → Off，映射到 PlayMode 循环
+	store.set(onCycleRepeatModeAtom, {
+		onEmit: () => {
+			const newMode = cyclePlayMode(PlayerStore.state.playMode)
+			PlayerStore.setPlayMode(newMode)
+		},
+	})
+
+	// 歌词行左键点击 → 跳转到该行开始时间
+	// LyricLineMouseEvent.line.startTime 是毫秒
+	store.set(onLyricLineClickAtom, {
+		onEmit: (evt) => {
+			const startTime = evt?.line?.startTime
+			if (typeof startTime === 'number' && !isNaN(startTime)) {
+				PlayerStore.seek(startTime / 1000)
+			}
+		},
+	})
+
+	// 歌词行右键点击（暂无功能，预留）
+	store.set(onLyricLineContextMenuAtom, { onEmit: () => {} })
+
+	// 顶部控制横条点击 → 关闭 PlayerView（与 PlayerView 的关闭按钮一致）
+	store.set(onClickControlThumbAtom, {
+		onEmit: () => PlayerStore.closePlayerView(),
+	})
+
+	// 菜单按钮 / 音质标签（暂无功能，预留）
 	store.set(onRequestOpenMenuAtom, { onEmit: () => {} })
-	store.set(onClickControlThumbAtom, { onEmit: () => {} })
+	store.set(onClickAudioQualityTagAtom, { onEmit: () => {} })
 
 	// ── 2. 应用持久化配置（从 localStorage 读取后写入 Jotai）──
 	AmllSettingsStore.apply(store, CONFIG_ATOMS)
@@ -279,15 +376,15 @@ export function useAmllBridge() {
 	)
 
 	// 播放模式 → RepeatMode + isShuffle
+	// 这是单向同步：Vue PlayMode 变化 → Jotai atoms。
+	// 反向（用户点 AMLL 按钮）通过 onToggleShuffleAtom / onCycleRepeatModeAtom 回调处理，
+	// 回调里 setPlayMode 后会再次触发这个 watcher，把权威状态写回 atoms。
 	const stopPlayModeWatch = watch(
 		() => PlayerStore.state.playMode,
 		(mode) => {
-			if (syncing) return
 			const { repeatMode, isShuffle } = playModeToAmll(mode)
-			syncing = true
 			store.set(repeatModeAtom, repeatMode)
 			store.set(isShuffleActiveAtom, isShuffle)
-			syncing = false
 		},
 		{ immediate: true },
 	)
@@ -318,26 +415,12 @@ export function useAmllBridge() {
 		{ deep: true },
 	)
 
-	// ── 6. Jotai → Vue 反向同步（shuffle/repeat 按钮点击）──
-	const unsubRepeat = store.sub(repeatModeAtom, () => {
-		if (syncing) return
-		syncing = true
-		const mode = amllToPlayMode(store.get(repeatModeAtom), store.get(isShuffleActiveAtom))
-		if (PlayerStore.state.playMode !== mode) {
-			PlayerStore.setPlayMode(mode)
-		}
-		syncing = false
-	})
-
-	const unsubShuffle = store.sub(isShuffleActiveAtom, () => {
-		if (syncing) return
-		syncing = true
-		const mode = amllToPlayMode(store.get(repeatModeAtom), store.get(isShuffleActiveAtom))
-		if (PlayerStore.state.playMode !== mode) {
-			PlayerStore.setPlayMode(mode)
-		}
-		syncing = false
-	})
+	// ── 6. Jotai → Vue 反向同步 ──
+	// 已改用回调 atoms（onToggleShuffleAtom / onCycleRepeatModeAtom）作为用户点击入口，
+	// 不再需要 store.sub 监听 repeatModeAtom / isShuffleActiveAtom。
+	// 回调里直接基于 PlayerStore 当前状态计算新值并 setPlayMode，
+	// Vue watcher 会把新 PlayMode 同步回 Jotai atoms，纠正 AMLL 内部状态。
+	// 这样避免了 AMLL 内部初始化或程序化改 atom 时误触发反向同步。
 
 	// ── 7. 启动音频分析器（驱动流体背景）──
 	// PlayerView 挂载时 audio 元素已就绪，分析器会自动接管
@@ -355,8 +438,6 @@ export function useAmllBridge() {
 		stopVSyncWatch()
 		stopFpsWatch()
 		stopFreqRangeWatch()
-		unsubRepeat()
-		unsubShuffle()
 		unbindSettings()
 		stopAudioAnalyser()
 	})
