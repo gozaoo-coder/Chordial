@@ -16,7 +16,12 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
+
+/// 库变更事件名 — 任何改变库内容的操作（添加/移除源、扫描、CRUD）都应 emit。
+///
+/// 前端通过 `listen("library-changed")` 订阅，触发专辑/艺人列表刷新。
+const LIBRARY_CHANGED_EVENT: &str = "library-changed";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // TTL 参数辅助类型
@@ -338,27 +343,22 @@ pub fn local_stats(ctx: State<'_, Arc<AppContext>>) -> Result<serde_json::Value,
 #[tauri::command]
 pub fn local_add_folder(
     ctx: State<'_, Arc<AppContext>>,
+    app: AppHandle,
     path: String,
 ) -> Result<serde_json::Value, String> {
     let source = &ctx.local_source;
     let folder_path = PlatformPath::from(path.as_str());
     source.folder_manager.add_folder(&folder_path)?;
 
-    // 扫描并索引文件夹中的音频文件
+    // 扫描并索引文件夹中的音频文件（批量：单次加载库 + 并行探测 + 单次写回）
     let files = music_localSource::folder::collect_audio_files(&folder_path);
-    let mut indexed = 0u64;
-    let mut errors = Vec::new();
-
-    for file in &files {
-        match source.index_file(file) {
-            Ok(true) => indexed += 1,
-            Ok(false) => {} // 跳过非音频文件
-            Err(e) => errors.push(format!("{}: {}", platform::path_to_string(file), e)),
-        }
-    }
+    let (indexed, errors) = source.batch_index_files(&files)?;
 
     // 持久化音乐库
     source.library.save()?;
+
+    // 通知前端：库内容已变更，触发专辑/艺人列表刷新
+    let _ = app.emit(LIBRARY_CHANGED_EVENT, ());
 
     Ok(serde_json::json!({
         "added": true,
@@ -372,32 +372,15 @@ pub fn local_add_folder(
 #[tauri::command]
 pub fn local_remove_folder(
     ctx: State<'_, Arc<AppContext>>,
+    app: AppHandle,
     path: String,
 ) -> Result<serde_json::Value, String> {
     let source = &ctx.local_source;
     let folder_path = PlatformPath::from(path.as_str());
 
-    // 1. 清理该文件夹下所有文件的 SourceId
-    use std::collections::HashSet;
+    // 1. 批量清理该文件夹下所有文件的库引用 + 本地索引（单次库调用）
     let files = music_localSource::folder::collect_audio_files(&folder_path);
-    let entity_ids: HashSet<String> = files
-        .iter()
-        .map(|f| {
-            platform::path_to_string(&platform::canonicalize(f).unwrap_or_else(|_| f.clone()))
-        })
-        .collect();
-
-    if !entity_ids.is_empty() {
-        source.library.remove_specific_song_source_ids(
-            music_localSource::source::LOCAL_SOURCE_NAME,
-            &entity_ids,
-        )?;
-    }
-
-    // 清理本地索引
-    for file in &files {
-        let _ = source.unindex_file(file);
-    }
+    let cleaned = source.batch_unindex_files(&files)?;
 
     // 2. 从文件夹管理器移除
     let removed = source.folder_manager.remove_folder(&folder_path);
@@ -405,10 +388,13 @@ pub fn local_remove_folder(
     // 3. 持久化
     source.library.save()?;
 
+    // 通知前端：库内容已变更，触发专辑/艺人列表刷新
+    let _ = app.emit(LIBRARY_CHANGED_EVENT, ());
+
     Ok(serde_json::json!({
         "removed": removed,
         "path": path,
-        "cleaned_files": entity_ids.len(),
+        "cleaned_files": cleaned,
     }))
 }
 
@@ -424,29 +410,34 @@ pub fn local_get_folders(ctx: State<'_, Arc<AppContext>>) -> Result<Vec<String>,
 }
 
 #[tauri::command]
-pub fn local_rescan(ctx: State<'_, Arc<AppContext>>) -> Result<serde_json::Value, String> {
+pub fn local_rescan(
+    ctx: State<'_, Arc<AppContext>>,
+    app: AppHandle,
+) -> Result<serde_json::Value, String> {
     let source = &ctx.local_source;
     let folders = source.folder_manager.get_folders();
-    let mut total = 0u64;
 
+    // 收集所有文件夹下的音频文件，一次性批量索引
+    let mut all_files: Vec<PlatformPath> = Vec::new();
     for folder in &folders {
-        let files = music_localSource::folder::collect_audio_files(folder);
-        for file in &files {
-            match source.index_file(file) {
-                Ok(true) => total += 1,
-                Ok(false) => {}
-                Err(e) => {
-                    eprintln!("[local_rescan] {}: {}", platform::path_to_string(file), e);
-                }
-            }
-        }
+        all_files.extend(music_localSource::folder::collect_audio_files(folder));
+    }
+    let files_found = all_files.len();
+    let (indexed, errors) = source.batch_index_files(&all_files)?;
+    for e in &errors {
+        eprintln!("[local_rescan] {}", e);
     }
 
     source.library.save()?;
 
+    // 通知前端：库内容已变更，触发专辑/艺人列表刷新
+    let _ = app.emit(LIBRARY_CHANGED_EVENT, ());
+
     Ok(serde_json::json!({
-        "indexed": total,
+        "indexed": indexed,
+        "files_found": files_found,
         "folders_scanned": folders.len(),
+        "errors": errors,
     }))
 }
 

@@ -4,6 +4,7 @@ import AlbumList from '../components/common/AlbumList.vue';
 import { library } from '../api/musicSource';
 import { usePerf } from '@/utils/performanceMonitor.js';
 import { useAnime } from '@/composables/useAnime.js';
+import { useLibraryEvents } from '@/composables/useLibraryEvents.js';
 
 const { start, end } = usePerf('Albums');
 
@@ -17,6 +18,9 @@ const hasMore = ref(true);
 
 const rootRef = useTemplateRef('root');
 const { run } = useAnime(() => rootRef.value);
+
+// 订阅全局库变更事件 — 移除/添加音乐源后自动刷新列表
+const { libraryVersion } = useLibraryEvents();
 
 const loadAlbums = async () => {
   isLoading.value = true;
@@ -78,6 +82,13 @@ onMounted(() => {
   } else {
     isLoading.value = false;
   }
+});
+
+// 监听库变更事件：后端 emit "library-changed" 时 libraryVersion 自增，触发刷新。
+// 跳过初始值 0，避免与 onMounted 的首次加载重复。
+watch(libraryVersion, (v) => {
+  if (v === 0) return;
+  loadAlbums();
 });
 
 // loading 状态切换：启动 spinner（列表入场由 AlbumList 组件内部 playEnter 处理）

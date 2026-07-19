@@ -22,6 +22,9 @@ pub struct Song {
     pub lyric_id: Option<String>,
     /// 来源引用 — 该歌曲在哪些来源中存在
     pub source_ids: Vec<SourceId>,
+    /// 发行年份（来自音频标签 Year/Date）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub year: Option<u32>,
 }
 
 /// 艺术家。
@@ -52,6 +55,9 @@ pub struct Album {
     pub song_ids: Vec<String>,
     /// 来源引用
     pub source_ids: Vec<SourceId>,
+    /// 专辑发行年份（从同名歌曲标签聚合得到）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub year: Option<u32>,
 }
 
 /// 歌词。

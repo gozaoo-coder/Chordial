@@ -33,6 +33,8 @@ pub struct AudioMeta {
     pub channels: Option<u8>,
     /// 容器格式名称（如 "FLAC", "MP3", "MP4"）
     pub format_name: Option<String>,
+    /// 发行年份（来自 ID3 TYER/TDRC、Vorbis DATE/YEAR、MP4 ©day 等标签）
+    pub year: Option<u32>,
 }
 
 /// 探测音频文件，提取元数据。
@@ -102,6 +104,31 @@ pub fn probe_file(path: &PlatformPath) -> Result<AudioMeta, String> {
                     meta.album = Some(album.to_string());
                 }
                 _ => {}
+            }
+
+            // 年份兜底解析：StandardTag 未覆盖或解析失败时，
+            // 通过 raw tag key（不区分大小写）匹配常见 year/date 字段名。
+            // 覆盖 ID3 (TYER/TDRC/TDRL)、Vorbis (DATE/YEAR)、MP4 (©day) 等。
+            if meta.year.is_none() {
+                let key_lower = tag.raw.key.to_lowercase();
+                let is_year_key = matches!(
+                    key_lower.as_str(),
+                    "year"
+                        | "date"
+                        | "tdrc"
+                        | "tdrl"
+                        | "tory"
+                        | "tyer"
+                        | "release_date"
+                        | "releasedate"
+                        | "originaldate"
+                        | "©day"
+                );
+                if is_year_key {
+                    if let Some(y) = parse_year_from_value(&tag.raw.value) {
+                        meta.year = Some(y);
+                    }
+                }
             }
         }
     }
@@ -193,6 +220,29 @@ pub fn extract_cover_art(path: &PlatformPath) -> Result<Vec<u8>, String> {
     Err("音频文件中无嵌入封面".to_string())
 }
 
+/// 读取与音频文件同名的歌词文件（`.lrc` 优先，`.txt` 兜底）。
+///
+/// 给定音频文件路径 `foo.mp3`，依次尝试 `foo.lrc` 和 `foo.txt`。
+/// 命中后以 UTF-8 解码；不存在或解码失败时返回 `None`。
+///
+/// 该函数仅做字节读取，不解析 LRC 时间戳。LRC 解析在前端 `lyricConverter.js` 完成。
+pub fn read_lyric_file(path: &PlatformPath) -> Option<String> {
+    for ext in &["lrc", "txt"] {
+        let lyric_path = platform::path_with_extension(path, ext);
+        if !platform::exists(&lyric_path) {
+            continue;
+        }
+        match platform::read_bytes(&lyric_path) {
+            Ok(bytes) => match String::from_utf8(bytes) {
+                Ok(text) if !text.trim().is_empty() => return Some(text),
+                _ => continue,
+            },
+            Err(_) => continue,
+        }
+    }
+    None
+}
+
 /// 检查文件是否为 symphonia 支持的音频格式。
 ///
 /// 通过扩展名快速过滤。
@@ -216,6 +266,28 @@ pub fn is_supported_audio(path: &PlatformPath) -> bool {
     } else {
         false
     }
+}
+
+/// 从 symphonia `RawValue` 提取合法的年份（1900..=2100）。
+///
+/// 支持三种形式：
+/// - 数字 `RawValue::UnsignedInt(2024)` / `RawValue::SignedInt(2024)` → 直接取值
+/// - 字符串 `"2024"`、`"2024-01-01"`、`"2024-05"` → 取前 4 位数字解析
+fn parse_year_from_value(value: &symphonia::core::meta::RawValue) -> Option<u32> {
+    use symphonia::core::meta::RawValue;
+    let raw_year: Option<u32> = match value {
+        RawValue::UnsignedInt(n) => Some(*n as u32),
+        RawValue::SignedInt(n) if *n > 0 => Some(*n as u32),
+        RawValue::String(s) => s
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .take(4)
+            .collect::<String>()
+            .parse::<u32>()
+            .ok(),
+        _ => None,
+    };
+    raw_year.filter(|y| (1900..=2100).contains(y))
 }
 
 #[cfg(test)]

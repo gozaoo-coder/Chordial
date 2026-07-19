@@ -903,6 +903,11 @@ fn merge_or_init_song_in_memory(
                 existing.album_title = song.album_title.clone();
                 songs_changed = true;
             }
+            // 反向填充 year：已有歌曲缺失 year 而新扫描歌曲有 year 时补齐
+            if existing.year.is_none() && song.year.is_some() {
+                existing.year = song.year;
+                songs_changed = true;
+            }
         }
 
         let artists_changed = merge_artists_in_memory(
@@ -921,6 +926,7 @@ fn merge_or_init_song_in_memory(
                 &song.artist_ids,
                 &song.source_ids,
                 &existing_id,
+                song.year,
                 all_albums,
                 album_index,
             );
@@ -948,6 +954,7 @@ fn merge_or_init_song_in_memory(
                 &song.artist_ids,
                 &song.source_ids,
                 &song.id,
+                song.year,
                 all_albums,
                 album_index,
             );
@@ -1007,12 +1014,16 @@ fn merge_artists_in_memory(
 }
 
 /// 在内存中合并或创建专辑，使用 (title, artist_id) 索引 O(1) 查找。返回是否有变化。
+///
+/// `song_year` 来自扫描得到的 Song.year，会反向写入 album.year（若 album.year 为 None）。
+/// 这实现了"专辑年份从同名歌曲年份聚合"的需求。
 fn merge_album_in_memory(
     album_id: &str,
     album_title: &str,
     artist_ids: &[String],
     song_source_ids: &[SourceId],
     song_id: &str,
+    song_year: Option<u32>,
     all_albums: &mut HashMap<String, Album>,
     album_index: &mut HashMap<(String, String), String>,
 ) -> bool {
@@ -1034,6 +1045,11 @@ fn merge_album_in_memory(
             album.song_ids.push(song_id.to_string());
             changed = true;
         }
+        // 反向填充 year：album 缺失 year 而扫描到的 song.year 存在时补齐
+        if album.year.is_none() && song_year.is_some() {
+            album.year = song_year;
+            changed = true;
+        }
     } else if let Some(aid) = album_index.get(&lookup_key).cloned() {
         if let Some(album) = all_albums.get_mut(&aid) {
             let sid_before = album.source_ids.len();
@@ -1043,6 +1059,10 @@ fn merge_album_in_memory(
             }
             if !album.song_ids.iter().any(|s| s == song_id) {
                 album.song_ids.push(song_id.to_string());
+                changed = true;
+            }
+            if album.year.is_none() && song_year.is_some() {
+                album.year = song_year;
                 changed = true;
             }
         }
@@ -1056,6 +1076,7 @@ fn merge_album_in_memory(
                 cover_url: None,
                 song_ids: vec![song_id.to_string()],
                 source_ids: album_sids,
+                year: song_year,
             },
         );
         album_index.insert(lookup_key, album_id.to_string());

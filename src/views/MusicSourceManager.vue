@@ -10,6 +10,7 @@ import {
 } from '../api/musicSource';
 import { usePerf } from '@/utils/performanceMonitor.js';
 import { useAnime } from '@/composables/useAnime.js';
+import { useLibraryEvents } from '@/composables/useLibraryEvents.js';
 
 const { start, end, log } = usePerf('MusicSourceManager');
 
@@ -24,6 +25,9 @@ const isScanning = ref(false);
 const isAdding = ref(false);
 const isRemoving = ref(false);
 
+// 订阅全局库变更事件 — 在其他视图触发变更时同步刷新本页统计
+const { libraryVersion } = useLibraryEvents();
+
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 onMounted(async () => {
   if (folders.value.length === 0) {
@@ -31,6 +35,14 @@ onMounted(async () => {
   } else {
     isLoading.value = false;
   }
+});
+
+// 监听库变更事件：跳过初始值 0，避免与 onMounted 重复。
+// 本页自身的删除/添加/扫描操作完成后，后端也会 emit 此事件触发刷新，
+// 因此 handleDeleteSource 等不再主动调用 loadData，统一由事件驱动。
+watch(libraryVersion, (v) => {
+  if (v === 0) return;
+  loadData();
 });
 
 // 数据加载完成后触入场动画（isLoading 由 true → false）
